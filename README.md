@@ -39,8 +39,11 @@ Initial ICP: research-intensive public-market investment teams such as long/shor
 
 ## Documents
 
+- [`AGENT_CONTEXT.md`](./AGENT_CONTEXT.md) — live orientation doc for agents; read this first before changing product, UX, engine, roadmap, or docs.
+- [`LIVE_ROADMAP.md`](./LIVE_ROADMAP.md) — active build roadmap reflecting current repo state, next priorities, and definition of done.
 - [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) — detailed product specification covering positioning, personas, workflows, MVP, features, architecture, data model, AI pipeline, integrations, security/compliance, notifications, risks, open questions, and launch plan.
-- [`ROADMAP.md`](./ROADMAP.md) — practical phased roadmap from discovery through private alpha, contradiction detection, synthesis, news integration, enterprise readiness, and GA.
+- [`ROADMAP.md`](./ROADMAP.md) — original phased roadmap from discovery through private alpha, contradiction detection, synthesis, news integration, enterprise readiness, and GA.
+- [`MVP_PLAN.md`](./MVP_PLAN.md) — concise implementation plan and validation approach for the current MVP.
 
 ## MVP Thesis
 
