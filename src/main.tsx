@@ -106,21 +106,29 @@ function App() {
 
     <section className="shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow"><Sparkles size={14}/> Mycelium research intelligence</p>
-          <h1>Turn messy notes into a living investment memory.</h1>
+        <div className="workspace-title">
+          <p className="eyebrow"><Sparkles size={14}/> Research notebook</p>
+          <h1>Mycelium</h1>
+          <p>{user.team} workspace · {graph.visibleNotes.length} visible notes · as of {graph.asOf}</p>
         </div>
-        <label className="operator-card">
-          <span>Viewing as</span>
-          <select value={userId} onChange={e => setUserId(e.target.value)}>{users.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role} · {u.team}</option>)}</select>
-          <small><ShieldCheck size={14}/> {user.role === 'PM' || user.role === 'Compliance' ? 'Full workspace visibility' : `Public, ${user.team}, and own private notes`}</small>
-        </label>
+        <div className="top-actions">
+          <div className="access-note"><ShieldCheck size={15}/> {user.role === 'PM' || user.role === 'Compliance' ? 'Full workspace visibility' : `Public, ${user.team}, and own private notes`}</div>
+          <label className="operator-card">
+            <span>Viewing as</span>
+            <select value={userId} onChange={e => setUserId(e.target.value)}>{users.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role} · {u.team}</option>)}</select>
+          </label>
+        </div>
       </header>
 
-      <section className="hero-grid">
-        <article className="capture panel">
-          <div className="panel-title"><FilePlus2/> Capture</div>
-          <h2>Paste a meeting note, call readout, or thesis fragment.</h2>
+      <section className="note-workbench">
+        <article className="capture panel primary-note">
+          <div className="panel-title"><FilePlus2/> New note</div>
+          <div className="note-meta">
+            <span>Typed note</span>
+            <span>{user.team}</span>
+            <span>{new Date().toISOString().slice(0, 10)}</span>
+          </div>
+          <h2>Write the research note.</h2>
           <textarea value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={onDraftKeyDown} placeholder="Paste meeting notes, channel checks, earnings transcript snippets…" aria-label="Research note draft" />
           <div className="capture-actions">
             <select value={visibility} onChange={e => setVisibility(e.target.value as Note['visibility'])} aria-label="Note visibility"><option value="public">public</option><option value="team">team</option><option value="private">private</option></select>
@@ -131,25 +139,26 @@ function App() {
           </div>
         </article>
 
-        <article className="panel live-preview">
-          <div className="panel-title"><Eye/> Live extraction</div>
-          {previewEntities.length ? <div className="entity-cloud">
-            {previewEntities.slice(0, 12).map(e => <button className={`chip ${e.kind}`} key={`${e.kind}-${e.name}`} onClick={() => setSelected(e.kind === 'ticker' ? tickerToCompany(e.name) : e.name)}>{e.kind}<b>{e.name}</b></button>)}
-          </div> : <EmptyState title="No entities yet" body="Mention a company, ticker, KPI, or theme and the graph starts forming here." />}
-          <div className="preview-claims">
-            {previewClaims.map(c => <ClaimCard key={c.id} claim={c} compact />)}
-          </div>
-        </article>
+        <aside className="note-side">
+          <article className="panel live-preview">
+            <div className="panel-title"><Eye/> Live extraction</div>
+            {previewEntities.length ? <div className="entity-cloud">
+              {previewEntities.slice(0, 12).map(e => <button className={`chip ${e.kind}`} key={`${e.kind}-${e.name}`} onClick={() => setSelected(e.kind === 'ticker' ? tickerToCompany(e.name) : e.name)}>{e.kind}<b>{e.name}</b></button>)}
+            </div> : <EmptyState title="No entities yet" body="Mention a company, ticker, KPI, or theme and the graph starts forming here." />}
+            <div className="preview-claims">
+              {previewClaims.map(c => <ClaimCard key={c.id} claim={c} compact />)}
+            </div>
+          </article>
 
-        <article className="panel pulse">
-          <div className="panel-title"><Radar/> Morning pulse</div>
-          <div className="pulse-score"><span>{contradictions}</span><p>true contradictions have overlapping validity windows. Trend reversals are kept separate from stale noise.</p></div>
-          <div className="mini-metrics">
-            <Metric icon={<Eye/>} label="Visible notes" value={graph.visibleNotes.length} sub={`as of ${graph.asOf}`} />
-            <Metric icon={<Network/>} label="Claims" value={graph.claims.length} sub={`${privateHidden} notes hidden`} />
-            <Metric icon={<Workflow/>} label="Map" value={graph.relations.length} sub={`${corroborations} corroborate · ${reversals} reversal · ${tensions} tension`} />
-          </div>
-        </article>
+          <article className="panel pulse">
+            <div className="panel-title"><Radar/> Workspace pulse</div>
+            <div className="mini-metrics">
+              <Metric icon={<Eye/>} label="Visible notes" value={graph.visibleNotes.length} sub={`as of ${graph.asOf}`} />
+              <Metric icon={<Network/>} label="Claims" value={graph.claims.length} sub={`${privateHidden} notes hidden`} />
+              <Metric icon={<Workflow/>} label="Relations" value={graph.relations.length} sub={`${contradictions} contradiction · ${reversals} reversal · ${tensions} tension · ${corroborations} corroborate`} />
+            </div>
+          </article>
+        </aside>
       </section>
 
       <section className="workspace">
@@ -201,6 +210,14 @@ function App() {
         </section>
 
         <aside className="right-stack">
+          <article className="panel recent-notes">
+            <div className="panel-title"><BookOpen/> Recent notes</div>
+            {graph.visibleNotes.slice(0, 4).map(n => <button key={n.id} onClick={() => setViewMode('archive')}>
+              <span>{n.createdAt} · {n.visibility}</span>
+              <b>{n.title}</b>
+              <small>{n.body.slice(0, 110)}...</small>
+            </button>)}
+          </article>
           <article className="panel alerts">
             <div className="panel-title"><AlertTriangle/> Signals</div>
             {graph.alerts.length ? graph.alerts.map(a => <button key={a.id} className={`alert ${a.severity}`} onClick={() => a.company && setSelected(a.company)}>

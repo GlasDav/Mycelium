@@ -15,7 +15,7 @@ The repo contains a working local MVP:
 - Vite + React + TypeScript app.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Seed demo data for analysts, PM, compliance, companies, notes, claims, permissions, and temporal examples.
-- Polished dark editorial research-workspace UI inspired by Notion, Granola, and Obsidian.
+- Minimal note-taking-first research workspace UI with a compact header, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
 - Tests covering extraction, permissions, temporal contradiction logic, trend reversals, stale evidence, and relation filtering.
 
 Run it:
@@ -46,8 +46,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` — primary React app and UX flows.
-- `src/styles.css` — product styling and visual system.
+- `src/main.tsx` — primary React app and UX flows, including note capture, live extraction, workspace pulse, recent notes, subject navigation, synthesis, relationship map, and archive modes.
+- `src/styles.css` — minimal note-taking-first visual system and responsive layout.
 - `index.html` — Vite entry.
 
 ### Intelligence Engine
@@ -155,6 +155,9 @@ The app has three main modes:
 
 Design principles:
 
+- Note-taking is the primary surface: the first viewport should prioritize writing or pasting research notes.
+- Intelligence panels should support capture without overwhelming it: live extraction, workspace pulse, signals, and recent notes are secondary rails.
+- Keep the header compact and functional rather than hero-like.
 - Calm, fast capture like Granola.
 - Clear workspace hierarchy like Notion.
 - Connected knowledge/backlink feel like Obsidian.
@@ -196,6 +199,7 @@ See `LIVE_ROADMAP.md`. The highest-leverage next phase is to turn the demo into 
 ## Agent Operating Notes
 
 - Keep the temporal claim graph as the center of gravity.
+- Preserve the note-taking-first UI hierarchy when iterating on the frontend.
 - Do not collapse relation types back into simple contradiction/agreement.
 - Preserve `npm run validate` before reporting success.
 - Avoid paid APIs or secret requirements unless explicitly requested.

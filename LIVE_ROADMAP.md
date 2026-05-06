@@ -16,7 +16,8 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Original phased roadmap created.
 - [x] GitHub repo created and pushed.
 - [x] Working local Vite/React/TypeScript MVP built.
-- [x] Polished UX pass inspired by Notion, Granola, and Obsidian.
+- [x] Initial polished dark editorial UX pass inspired by Notion, Granola, and Obsidian.
+- [x] Minimal note-taking-first UI pass with compact header, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
 - [x] Deterministic local extraction for companies, tickers, themes, KPIs, and claims.
 - [x] Mock permission-aware workspace lenses for Analyst, PM, and Compliance users.
 - [x] Company/theme synthesis views.
@@ -54,6 +55,7 @@ These must remain true after every change:
 - Relation classification is time-aware.
 - Permissions filter graph computation, not just rendering.
 - `npm run validate` passes.
+- Note capture remains the primary first-viewport workflow.
 - The UI explains why something is a contradiction, reversal, tension, corroboration, or stale evidence.
 
 ### P1 — Turn Demo into Durable Local Alpha
@@ -239,7 +241,7 @@ Suggested tasks:
 
 1. Add local persistence layer.
 2. Add claim/relation review state.
-3. Add capture metadata controls for dates/windows.
+3. Expand the current note-first capture workbench with real metadata controls for dates/windows.
 4. Add stock/ticker and industry linking controls.
 5. Add source-person/participant field and person-level history view.
 6. Add relation detail drawer.
@@ -275,6 +277,7 @@ A change is not done until:
 - Code builds.
 - Tests pass.
 - UX still preserves core capture/review/map/archive flows.
+- First-viewport UI still feels like note-taking software, with intelligence panels supporting capture rather than crowding it.
 - Permissions still affect graph computation.
 - Temporal relation behavior is not regressed.
 - Relevant docs are updated:
