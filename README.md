@@ -6,12 +6,13 @@ A B2B investment research intelligence product concept: a secure research notes 
 
 Investment teams produce valuable private research in meeting notes, expert calls, channel checks, earnings notes, and internal discussions. That knowledge is usually fragmented across documents, chat, CRM/RMS systems, and individual notebooks.
 
-This product turns those notes into a **permission-aware claim graph**:
+This product turns those notes into a **permission-aware temporal claim graph**:
 
 - What do we believe?
 - Who said it?
 - What evidence supports it?
-- What contradicts it?
+- What contradicts it right now?
+- What was true historically but has since reversed or gone stale?
 - Which teammates should know?
 - What has news flow changed?
 
@@ -28,9 +29,9 @@ Initial ICP: research-intensive public-market investment teams such as long/shor
 
 - Secure research note capture and import.
 - Entity extraction for companies, tickers, sectors, products, people, KPIs, and themes.
-- Structured investment claim extraction with source citations.
-- Contradiction/agreement detection across teammates' notes.
-- Company and industry/theme synthesis from multiple notes.
+- Structured investment claim extraction with source citations and temporal windows (`observedAt`, applies-to start/end, horizon, freshness).
+- Temporal relation detection across teammates' notes: true contradictions, tensions, trend reversals, corroboration, and stale evidence.
+- Company and industry/theme synthesis that separates current view from historical evidence.
 - News and filings monitoring against internal claims.
 - Permission-aware search and Q&A.
 - In-app, Slack/Teams, and email notification strategy.
@@ -51,7 +52,7 @@ The highest-leverage first loop is:
 2. Extract entities and claims.
 3. Analyst reviews claims.
 4. Compare against accessible prior claims.
-5. Surface high-confidence contradictions/agreements.
+5. Surface high-confidence temporal relations: overlapping contradictions, non-overlapping reversals, corroboration, and stale evidence.
 6. Notify relevant teammates.
 7. Update company/theme synthesis.
 
@@ -73,11 +74,11 @@ This repo now includes a practical local MVP of the Mycelium investment research
 - Calm research-capture workspace with keyboard-friendly `Cmd/Ctrl + Enter` note intake.
 - Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview.
 - Claim direction classification with citation snippets and a lightweight analyst review queue.
-- Agreement and contradiction detection across accessible notes.
+- Temporal relationship detection across accessible notes, with dates explaining why an opposing read is a true contradiction vs a trend reversal.
 - Mock permission-aware workspace lenses for Analyst, PM, and Compliance users.
-- Synthesized company/theme views with backlinks, stance summaries, and supporting/skeptical claim evidence.
-- Relationship-map affordance for contradiction/agreement clusters across the claim graph.
-- In-app alerts for contradictions, agreement clusters, and research-density changes.
+- Synthesized company/theme views with backlinks, current-vs-historical stance summaries, and supporting/skeptical claim evidence.
+- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, and grey stale evidence.
+- In-app alerts for contradictions, tensions, reversals, corroboration clusters, stale evidence, and research-density changes.
 - Permission-aware note archive and seed demo data so the app is useful immediately.
 
 ### Stack
@@ -113,10 +114,10 @@ This runs a production build/typecheck and the deterministic engine tests.
 ### Useful files
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
-- `src/engine.ts` — local extraction, permission filtering, relation detection, synthesis, and alerts.
-- `src/data.ts` — seed users and research notes.
+- `src/engine.ts` — local extraction, permission filtering, temporal relation detection, synthesis, and alerts.
+- `src/data.ts` — seed users and research notes, including 12-month-apart opposing reads that become trend reversals rather than contradictions.
 - `src/main.tsx` — polished workspace UI: capture, live extraction, claim review, relationship map, alerts, and archive.
-- `tests/engine.test.ts` — validation coverage for extraction, RBAC, and contradiction alerts.
+- `tests/engine.test.ts` — validation coverage for extraction, RBAC, overlapping contradictions, non-overlapping reversals, stale evidence, and permission filtering.
 
 ### Tradeoffs in this MVP
 

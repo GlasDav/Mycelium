@@ -22,7 +22,7 @@ import {
   Workflow,
   XCircle
 } from 'lucide-react';
-import { detectEntities, extractClaims, runPipeline, type Claim, type Note, type Relation } from './engine';
+import { detectEntities, extractClaims, relationLabel, runPipeline, type Claim, type Note, type Relation } from './engine';
 import { seedNotes, users } from './data';
 import './styles.css';
 
@@ -61,7 +61,9 @@ function App() {
   const previewClaims = extractClaims(previewNote);
   const previewEntities = detectEntities(draft);
   const contradictions = graph.relations.filter(r => r.type === 'contradiction').length;
-  const agreements = graph.relations.filter(r => r.type === 'agreement').length;
+  const reversals = graph.relations.filter(r => r.type === 'update_or_trend_reversal').length;
+  const tensions = graph.relations.filter(r => r.type === 'historical_tension' || r.type === 'open_tension').length;
+  const corroborations = graph.relations.filter(r => r.type === 'corroboration' || r.type === 'agreement').length;
   const reviewQueue = graph.claims.slice(0, 7);
   const privateHidden = notes.length - graph.visibleNotes.length;
 
@@ -141,11 +143,11 @@ function App() {
 
         <article className="panel pulse">
           <div className="panel-title"><Radar/> Morning pulse</div>
-          <div className="pulse-score"><span>{contradictions}</span><p>active contradictions need a human read before they become conviction.</p></div>
+          <div className="pulse-score"><span>{contradictions}</span><p>true contradictions have overlapping validity windows. Trend reversals are kept separate from stale noise.</p></div>
           <div className="mini-metrics">
-            <Metric icon={<Eye/>} label="Visible notes" value={graph.visibleNotes.length} sub={`${privateHidden} hidden`} />
-            <Metric icon={<Network/>} label="Claims" value={graph.claims.length} sub="citation atoms" />
-            <Metric icon={<Workflow/>} label="Agreements" value={agreements} sub="reinforcing reads" />
+            <Metric icon={<Eye/>} label="Visible notes" value={graph.visibleNotes.length} sub={`as of ${graph.asOf}`} />
+            <Metric icon={<Network/>} label="Claims" value={graph.claims.length} sub={`${privateHidden} notes hidden`} />
+            <Metric icon={<Workflow/>} label="Map" value={graph.relations.length} sub={`${corroborations} corroborate · ${reversals} reversal · ${tensions} tension`} />
           </div>
         </article>
       </section>
@@ -176,7 +178,7 @@ function App() {
             <div className="stance-strip">
               <span><CheckCircle2/> {selectedSynth.positives} supportive</span>
               <span><XCircle/> {selectedSynth.negatives} skeptical</span>
-              <span><AlertTriangle/> {selectedSynth.contradictions} contradictions</span>
+              <span><AlertTriangle/> {selectedSynth.contradictions} contradictions · {selectedSynth.updates} reversals</span>
             </div>
             <div className="backlinks">
               {selectedSynth.topThemes.map(t => <button className="chip hot" key={t} onClick={() => setSelected(t)}>backlink: {t}<ArrowUpRight size={13}/></button>)}
@@ -187,7 +189,7 @@ function App() {
             </div>
           </article>}
 
-          {viewMode === 'map' && <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} selected={selectedSynth?.subject ?? selected} onSelect={setSelected} />}
+          {viewMode === 'map' && <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} onSelect={setSelected} />}
 
           {viewMode === 'archive' && <article className="panel notes">
             <div className="panel-title"><LockKeyhole/> Permission-aware note archive</div>
@@ -218,25 +220,29 @@ function App() {
 function ClaimCard({ claim, compact = false, reviewed = false, onReview }: { claim: Claim; compact?: boolean; reviewed?: boolean; onReview?: () => void }) {
   return <article className={`claim ${claim.direction} ${reviewed ? 'reviewed' : ''}`}>
     <p>{claim.text}</p>
-    <small>{claim.subject} · {claim.direction} · {claim.createdAt} · confidence {Math.round(claim.confidence * 100)}% · {claim.visibility}</small>
+    <small>{claim.subject} · {claim.direction} · observed {claim.observedAt} · applies {claim.appliesToStart}→{claim.appliesToEnd ?? 'open'} · {claim.freshness} · {claim.visibility}</small>
     {!compact && <button onClick={onReview}>{reviewed ? 'Reviewed' : 'Mark reviewed'}</button>}
   </article>;
 }
 
-function RelationshipMap({ relations, selected, onSelect }: { relations: Relation[]; selected: string; onSelect: (subject: string) => void }) {
+function RelationshipMap({ relations, selected, asOf, onSelect }: { relations: Relation[]; selected: string; asOf: string; onSelect: (subject: string) => void }) {
   return <article className="panel graph-panel">
-    <div className="panel-title"><GitBranch/> Claim relationship map</div>
+    <div className="panel-title"><GitBranch/> Temporal claim graph · as of {asOf}</div>
+    <div className="timeline-affordance"><span>historical</span><i/><b>{asOf}</b><span>current view</span></div>
+    <div className="relation-legend"><span className="contradiction">red true contradiction</span><span className="open_tension">amber tension</span><span className="update_or_trend_reversal">blue trend reversal</span><span className="corroboration">green corroboration</span><span className="stale_evidence">grey stale evidence</span></div>
     <div className="graph-canvas" aria-label="Relationship graph">
       <div className="node primary"><CircleDot/> {selected}</div>
       {relations.slice(0, 8).map((r, i) => <React.Fragment key={r.id}>
-        <button className={`node satellite n${i} ${r.type}`} onClick={() => onSelect(r.a.subject)}>{r.a.subject}<small>{r.type}</small></button>
+        <button className={`node satellite n${i} ${r.type}`} onClick={() => onSelect(r.a.subject)}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
         <i className={`edge e${i} ${r.type}`} />
       </React.Fragment>)}
     </div>
     <div className="relation-list">
       {relations.slice(0, 5).map(r => <article key={r.id} className={r.type}>
-        <b>{r.type === 'contradiction' ? 'Contradiction' : 'Agreement'} · {Math.round(r.score * 100)}%</b>
-        <p>{r.a.text}</p><p>{r.b.text}</p><small>{r.reason}</small>
+        <b>{relationLabel(r.type)} · {Math.round(r.score * 100)}%</b>
+        <p><span>{r.a.appliesToStart}→{r.a.appliesToEnd ?? 'open'}</span> {r.a.text}</p>
+        <p><span>{r.b.appliesToStart}→{r.b.appliesToEnd ?? 'open'}</span> {r.b.text}</p>
+        <small>{r.reason} Snippets are shown so analysts can see why this is or is not a contradiction.</small>
       </article>)}
     </div>
   </article>;

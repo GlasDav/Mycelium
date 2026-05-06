@@ -4,17 +4,21 @@ import { canAccess, detectEntities, detectRelations, extractClaims, runPipeline,
 
 const analyst: User = { id: 'a', name: 'Analyst', role: 'Analyst', team: 'Semis' };
 const pm: User = { id: 'p', name: 'PM', role: 'PM', team: 'Portfolio' };
-const base = { authorId: 'a', team: 'Semis', visibility: 'team' as const, sourceType: 'call', createdAt: '2026-05-01' };
+const base = { authorId: 'a', team: 'Semis', visibility: 'team' as const, sourceType: 'call', createdAt: '2026-05-01', observedAt: '2026-05-01', appliesToStart: '2026-05-01', appliesToEnd: '2026-08-01', horizon: 'near_term' as const };
 
-test('extracts entities and claims from investment notes', () => {
+test('extracts entities, claims, and temporal metadata from investment notes', () => {
   const note: Note = { ...base, id: 'n1', title: 'note', body: 'Nvidia demand is strong and GPU supply is tight. Apple iPhone demand is soft.' };
   const entities = detectEntities(note.body);
   assert(entities.some(e => e.name === 'Nvidia' && e.kind === 'company'));
   assert(entities.some(e => e.name === 'NVDA' && e.kind === 'ticker'));
-  const claims = extractClaims(note);
+  const claims = extractClaims(note, '2026-05-03');
   assert.equal(claims.length, 2);
   assert.equal(claims[0].direction, 'positive');
   assert.equal(claims[1].direction, 'negative');
+  assert.equal(claims[0].observedAt, '2026-05-01');
+  assert.equal(claims[0].appliesToStart, '2026-05-01');
+  assert.equal(claims[0].appliesToEnd, '2026-08-01');
+  assert.equal(claims[0].freshness, 'fresh');
 });
 
 test('permission model hides other-team restricted notes from analysts', () => {
@@ -23,12 +27,46 @@ test('permission model hides other-team restricted notes from analysts', () => {
   assert.equal(canAccess(pm, hidden), true);
 });
 
-test('detects contradictions across accessible claims', () => {
+test('overlapping opposing claims are true contradictions', () => {
   const notes: Note[] = [
     { ...base, id: 'n1', title: 'bull', body: 'Nvidia demand is strong and GPU supply is tight.' },
-    { ...base, id: 'n2', title: 'bear', body: 'Nvidia demand is weak as cloud capex slows.' }
+    { ...base, id: 'n2', title: 'bear', body: 'Nvidia demand is weak as GPU supply slows.' }
   ];
   const graph = runPipeline(notes, analyst);
-  assert(graph.relations.some(r => r.type === 'contradiction'));
+  const contradiction = graph.relations.find(r => r.type === 'contradiction');
+  assert(contradiction);
+  assert(contradiction.overlapDays >= 30);
   assert(graph.alerts.some(a => a.severity === 'high'));
+});
+
+test('non-overlapping opposing claims twelve months apart are trend reversals, not contradictions', () => {
+  const notes: Note[] = [
+    { ...base, id: 'n1', title: 'old bear', createdAt: '2025-05-01', observedAt: '2025-05-01', appliesToStart: '2025-05-01', appliesToEnd: '2025-07-31', body: 'Nvidia demand is weak as GPU supply growth slows.' },
+    { ...base, id: 'n2', title: 'new bull', createdAt: '2026-05-01', observedAt: '2026-05-01', appliesToStart: '2026-05-01', appliesToEnd: '2026-08-01', body: 'Nvidia demand is strong and GPU supply is tight.' }
+  ];
+  const graph = runPipeline(notes, analyst);
+  assert(graph.relations.some(r => r.type === 'update_or_trend_reversal'));
+  assert(!graph.relations.some(r => r.type === 'contradiction'));
+});
+
+test('old aligned claim becomes stale evidence beside a newer read', () => {
+  const notes: Note[] = [
+    { ...base, id: 'n1', title: 'old bull', createdAt: '2025-01-01', observedAt: '2025-01-01', appliesToStart: '2025-01-01', appliesToEnd: '2025-03-31', body: 'Nvidia demand is strong and GPU supply is tight.' },
+    { ...base, id: 'n2', title: 'new bull', createdAt: '2026-05-01', observedAt: '2026-05-01', appliesToStart: '2026-05-01', appliesToEnd: '2026-08-01', body: 'Nvidia demand is strong and GPU supply is tight.' }
+  ];
+  const graph = runPipeline(notes, analyst);
+  assert(graph.claims.some(c => c.noteId === 'n1' && c.freshness === 'stale'));
+  assert(graph.relations.some(r => r.type === 'stale_evidence'));
+});
+
+test('permission filtering still applies to temporal relation graph', () => {
+  const notes: Note[] = [
+    { ...base, id: 'n1', title: 'visible bull', body: 'Nvidia demand is strong and GPU supply is tight.' },
+    { ...base, id: 'n2', title: 'hidden bear', team: 'Consumer', authorId: 'other', body: 'Nvidia demand is weak as GPU supply slows.' }
+  ];
+  const analystGraph = runPipeline(notes, analyst);
+  const pmGraph = runPipeline(notes, pm);
+  assert.equal(analystGraph.claims.length, 1);
+  assert.equal(analystGraph.relations.length, 0);
+  assert(pmGraph.relations.some(r => r.type === 'contradiction'));
 });
