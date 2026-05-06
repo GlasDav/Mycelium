@@ -90,6 +90,9 @@ Each claim should carry:
 - `text` — extracted atomic claim.
 - `direction` — `positive`, `negative`, or `neutral`.
 - `themes` — related product/sector themes.
+- `securities` / `tickers` — explicit stock/security links, ideally mapped through a security master or watchlist.
+- `industries` / `sectors` — explicit industry/sector/theme links, not just inferred free-text tags.
+- `sourcePeople` — external experts, company contacts, meeting participants, or internal authors tied to the claim when known.
 - `observedAt` — when the evidence was observed.
 - `appliesToStart` / `appliesToEnd` — validity/decision window.
 - `horizon` — `point_in_time`, `near_term`, `quarter`, `year`, or `unknown`.
@@ -119,7 +122,28 @@ A contradiction should fire strongly only when the claims overlap in:
 - direction,
 - validity window,
 - access permissions,
+- same stock/security or industry context where relevant,
+- source-person context where relevant,
 - and enough evidence similarity to be meaningfully comparable.
+
+### Stock / Industry Linking
+
+Notes should be explicitly linkable to stocks/securities and industries/sectors, even when entity extraction is imperfect. Treat these as first-class graph nodes, not just text tags. The product should support many-to-many links:
+
+- one note can mention multiple stocks and industries;
+- one claim can attach to a specific security, issuer, KPI, and industry;
+- synthesis and map filters should work by company, ticker/security, industry/sector, theme, watchlist, and portfolio relevance.
+
+### Source-Person Memory
+
+Notes should be aware of prior notes by or about the same people. This matters for expert calls, company meetings, management comments, and internal analyst work. Track person-level history so Mycelium can show:
+
+- sentiment changes by the same person over time;
+- self-inconsistencies where a person contradicts their earlier view within overlapping windows;
+- credible trend reversals where the same person updates their view after conditions changed;
+- disagreement between different people separately from a person changing their own mind.
+
+Identity confidence matters: ambiguous transcript speakers or common names should stay reviewable rather than silently merged.
 
 ## Current UX Shape
 
@@ -162,10 +186,12 @@ See `LIVE_ROADMAP.md`. The highest-leverage next phase is to turn the demo into 
 1. Add persistence and server-enforced permissions.
 2. Improve temporal claim extraction and analyst review controls.
 3. Build a richer relationship map with timeline/as-of controls.
-4. Add import paths for real notes, transcripts, files, and audio.
-5. Design transcription as a first-class capture path with timestamped transcript chunks, speaker diarization, correction workflow, and compliance/consent controls.
-6. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
-7. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
+4. Add explicit stock/ticker/security and industry/sector linking to notes, claims, synthesis, and map filters.
+5. Add source-person memory so prior notes by the same expert/company contact/analyst can surface sentiment changes and inconsistencies.
+6. Add import paths for real notes, transcripts, files, and audio.
+7. Design transcription as a first-class capture path with timestamped transcript chunks, speaker diarization, correction workflow, and compliance/consent controls.
+8. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
+9. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
 
 ## Agent Operating Notes
 

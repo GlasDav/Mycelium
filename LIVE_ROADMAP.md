@@ -68,7 +68,15 @@ Goal: make the app feel like a real product a design partner could use with samp
   - source type,
   - visibility,
   - team,
-  - company/watchlist tags.
+  - linked stocks/securities/tickers,
+  - linked industries/sectors/themes,
+  - company/watchlist tags,
+  - source people/meeting participants.
+- [ ] Add explicit stock and industry linking UX:
+  - attach notes to one or more tickers/securities,
+  - attach notes to one or more industries/sectors/themes,
+  - support manual correction when entity extraction is wrong,
+  - show linked stocks/industries in archive, synthesis, and map filters.
 - [ ] Add claim edit/review controls:
   - edit subject,
   - edit direction,
@@ -90,9 +98,11 @@ Goal: make the map the product’s “aha” moment.
 - [ ] Add true timeline/as-of control.
 - [ ] Let users filter map by:
   - company,
-  - theme,
+  - stock/ticker/security,
+  - industry/sector/theme,
   - relation type,
   - author/team,
+  - source person/meeting participant,
   - freshness,
   - source type.
 - [ ] Add current vs historical lanes.
@@ -121,7 +131,19 @@ Goal: improve extraction/relation quality while keeping explainability.
   - alerting.
 - [ ] Add unit tests around temporal helper functions directly.
 - [ ] Improve topic/KPI matching beyond shared words.
-- [ ] Add confidence scoring by extraction quality, source type, and relation evidence strength.
+- [ ] Add stock/security and industry ontology layer:
+  - issuer/company aliases,
+  - ticker/security identifiers,
+  - industry/sector hierarchy,
+  - watchlist/portfolio membership,
+  - many-to-many note ↔ stock and note ↔ industry links.
+- [ ] Add source-person memory:
+  - identify recurring people across notes/transcripts,
+  - link claims to the person who said them when available,
+  - compare a person’s latest view against their own prior notes,
+  - flag sentiment changes, thesis drift, and self-inconsistencies,
+  - distinguish “person changed view over time” from “two people disagree.”
+- [ ] Add confidence scoring by extraction quality, source type, source-person identity confidence, and relation evidence strength.
 - [ ] Add candidate retrieval abstraction for future vector search/RAG.
 - [ ] Add optional LLM extraction interface with deterministic fallback.
 - [ ] Add eval fixtures for known contradiction/reversal/stale examples.
@@ -139,6 +161,12 @@ Goal: move from in-browser mock to production-shaped architecture.
   - teams,
   - notes,
   - entities,
+  - securities/stocks,
+  - industries/sectors/themes,
+  - source people/meeting participants,
+  - note-security links,
+  - note-industry links,
+  - source-person claim links,
   - claims,
   - relations,
   - alerts,
@@ -212,10 +240,12 @@ Suggested tasks:
 1. Add local persistence layer.
 2. Add claim/relation review state.
 3. Add capture metadata controls for dates/windows.
-4. Add relation detail drawer.
-5. Add timeline/as-of filter.
-6. Add tests for persisted review decisions and temporal filters.
-7. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
+4. Add stock/ticker and industry linking controls.
+5. Add source-person/participant field and person-level history view.
+6. Add relation detail drawer.
+7. Add timeline/as-of filter.
+8. Add tests for persisted review decisions, temporal filters, stock/industry links, and source-person sentiment changes.
+9. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
 
 ## Product Questions to Resolve
 
@@ -225,6 +255,8 @@ Suggested tasks:
 - Should Mycelium start local-first/private-cloud, or hosted SaaS with strict tenant controls?
 - How much manual review should be required before claims enter the graph?
 - What is the alert threshold that avoids false-positive fatigue?
+- Should “same people” tracking mean internal analyst authors, external experts/company contacts, or both?
+- How should source-person identity resolution work when transcripts contain ambiguous names or speaker labels?
 
 ## Technical Questions to Resolve
 
@@ -233,6 +265,8 @@ Suggested tasks:
 - LLM strategy: model-provider abstraction, self-hosted option, or no-LLM alpha?
 - Temporal model: fixed windows by source type, analyst-specified windows, or model-inferred windows with review?
 - How should stale thresholds differ by sector/source type/KPI?
+- What canonical security master / industry taxonomy should the product use first: manual watchlist, GICS, custom fund sectors, or data-provider mapping?
+- Should person-level sentiment history be modeled as its own timeline, or as filtered views over the claim graph?
 
 ## Definition of Done for Major Changes
 
