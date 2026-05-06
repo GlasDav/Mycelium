@@ -63,3 +63,63 @@ The highest-leverage first loop is:
 - Not an automated compliance or MNPI determination tool.
 
 It is decision-support infrastructure for organizing evidence and surfacing disagreement; humans remain responsible for investment decisions and compliance judgments.
+
+## Working MVP App
+
+This repo now includes a practical local MVP of the Mycelium investment research intelligence product.
+
+### What it demonstrates
+
+- Calm research-capture workspace with keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview.
+- Claim direction classification with citation snippets and a lightweight analyst review queue.
+- Agreement and contradiction detection across accessible notes.
+- Mock permission-aware workspace lenses for Analyst, PM, and Compliance users.
+- Synthesized company/theme views with backlinks, stance summaries, and supporting/skeptical claim evidence.
+- Relationship-map affordance for contradiction/agreement clusters across the claim graph.
+- In-app alerts for contradictions, agreement clusters, and research-density changes.
+- Permission-aware note archive and seed demo data so the app is useful immediately.
+
+### Stack
+
+- Vite
+- React
+- TypeScript
+- Local heuristic intelligence engine (`src/engine.ts`)
+- No paid APIs, secrets, or hosted model calls required
+
+### Setup
+
+```bash
+npm install
+```
+
+### Run locally
+
+```bash
+npm run dev
+```
+
+Open the URL Vite prints, usually `http://localhost:5173`.
+
+### Validate
+
+```bash
+npm run validate
+```
+
+This runs a production build/typecheck and the deterministic engine tests.
+
+### Useful files
+
+- `MVP_PLAN.md` — concise implementation plan and validation approach.
+- `src/engine.ts` — local extraction, permission filtering, relation detection, synthesis, and alerts.
+- `src/data.ts` — seed users and research notes.
+- `src/main.tsx` — polished workspace UI: capture, live extraction, claim review, relationship map, alerts, and archive.
+- `tests/engine.test.ts` — validation coverage for extraction, RBAC, and contradiction alerts.
+
+### Tradeoffs in this MVP
+
+- Extraction is deterministic and transparent rather than LLM-backed. The interfaces are small enough to replace with model providers later.
+- Permissions are mocked in-browser for product demonstration; production needs server-side enforcement, audit logs, and row/object-level access controls.
+- Note import is text paste only; PDF/DOCX parsing and RMS integrations are deferred.
