@@ -162,8 +162,10 @@ See `LIVE_ROADMAP.md`. The highest-leverage next phase is to turn the demo into 
 1. Add persistence and server-enforced permissions.
 2. Improve temporal claim extraction and analyst review controls.
 3. Build a richer relationship map with timeline/as-of controls.
-4. Add import paths for real notes/transcripts.
-5. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
+4. Add import paths for real notes, transcripts, files, and audio.
+5. Design transcription as a first-class capture path with timestamped transcript chunks, speaker diarization, correction workflow, and compliance/consent controls.
+6. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
+7. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
 
 ## Agent Operating Notes
 

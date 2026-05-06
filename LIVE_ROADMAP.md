@@ -148,18 +148,50 @@ Goal: move from in-browser mock to production-shaped architecture.
 - [ ] Add tenant isolation assumptions and tests.
 - [ ] Add deployment path for private alpha.
 
-### P5 — Real Input Sources
+### P5 — Real Input Sources + Transcription
 
-Goal: reduce friction for actual analysts.
+Goal: reduce friction for actual analysts by capturing research where it already happens: calls, meetings, transcripts, files, chat, and mobile notes.
 
 - [ ] Import pasted meeting notes with templates.
 - [ ] Add transcript/file upload path.
 - [ ] Parse DOCX/PDF/TXT/Markdown.
+- [ ] Add audio upload transcription for expert calls, company meetings, and internal research discussions.
+- [ ] Add live/near-live meeting transcription design:
+  - speaker diarization,
+  - timestamped transcript chunks,
+  - source confidence,
+  - correction workflow,
+  - explicit consent/compliance controls.
+- [ ] Convert transcript chunks into reviewed claims with source timestamps and temporal windows.
 - [ ] Add calendar/meeting metadata attachment.
 - [ ] Add Slack/Teams/email ingest design, not necessarily implementation.
 - [ ] Add source licensing/compliance notes for external data.
 
-### P6 — External Evidence / News Flow
+### P6 — Mobile Capture App
+
+Goal: make capture effortless at the edge — immediately after meetings, calls, conferences, site visits, and channel checks.
+
+- [ ] Define mobile app scope: capture-first companion, not full desktop replacement.
+- [ ] Add mobile note capture:
+  - quick text note,
+  - voice memo,
+  - photo/document attachment,
+  - company/theme/watchlist tags,
+  - visibility/team selector.
+- [ ] Add mobile transcription flow for voice memos and recorded meetings.
+- [ ] Add offline-first queue for flights, conferences, and field research.
+- [ ] Add push notifications for high-signal contradictions, trend reversals, and review requests.
+- [ ] Add mobile claim review-lite:
+  - approve/reject extracted claims,
+  - fix company/entity,
+  - adjust date window,
+  - mark sensitive/MNPI concern.
+- [ ] Evaluate implementation path:
+  - React Native / Expo for speed,
+  - PWA first if backend is not ready,
+  - native later only if audio/background capture requires it.
+
+### P7 — External Evidence / News Flow
 
 Goal: connect internal claims to external corroboration/contradiction.
 
@@ -226,3 +258,4 @@ A change is not done until:
 - LLM-backed extraction.
 - Full compliance admin console.
 - Portfolio/watchlist integration.
+- Native mobile app if PWA/Expo cannot support required audio capture, offline sync, or enterprise controls.
