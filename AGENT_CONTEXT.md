@@ -1,6 +1,6 @@
 # Mycelium — Agent Context
 
-_Last updated: 2026-05-06_
+_Last updated: 2026-05-07_
 
 This is the live orientation file for agents working on Mycelium. Read this before changing product, UX, engine, roadmap, or docs.
 
@@ -10,18 +10,22 @@ Mycelium is a secure investment research intelligence workspace that turns analy
 
 ## Current Product State
 
-The repo contains a working local MVP:
+The repo contains a production-shaped MVP foundation:
 
 - Vite + React + TypeScript app.
+- Fastify backend-for-frontend serving `/api/*` and the production React bundle.
+- Supabase Auth/Postgres/RLS project files and raw migrations.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
-- Seed demo data for analysts, PM, compliance, companies, notes, claims, permissions, and temporal examples.
-- Minimal note-taking-first research workspace UI with a compact header, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
-- Tests covering extraction, permissions, temporal contradiction logic, trend reversals, stale evidence, and relation filtering.
+- Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
+- Server-side graph materialization for notes, claims, relations, audit events, and extraction jobs.
+- Minimal note-taking-first research workspace UI with auth, metadata capture, large primary editor, live extraction side panel, workspace pulse, recent notes rail, claim editing, relation review, and responsive mobile layout.
+- Tests covering extraction, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions, and relation filtering.
 
 Run it:
 
 ```bash
 npm install
+npm run supabase:start
 npm run dev
 ```
 
@@ -46,9 +50,23 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` — primary React app and UX flows, including note capture, live extraction, workspace pulse, recent notes, subject navigation, synthesis, relationship map, and archive modes.
+- `src/main.tsx` now includes Supabase Auth, note capture, metadata controls, live extraction, workspace pulse, recent notes, subject navigation, synthesis, claim editing, relationship review, relationship map, and archive modes.
+- `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
+
 - `src/styles.css` — minimal note-taking-first visual system and responsive layout.
 - `index.html` — Vite entry.
+
+### Backend
+
+- `server/index.ts` is the single-service Node entrypoint.
+- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace, notes, claims, relations, and audit events.
+- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, review state, audit events, and the extraction provider contract.
+- `server/supabase-repository.ts` adapts the workspace service to Supabase.
+
+### Supabase
+
+- `supabase/config.toml` configures local Supabase.
+- `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
 
 ### Intelligence Engine
 
@@ -65,11 +83,15 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Data
 
+- Supabase demo notes are seeded by `app.seed_demo_notes` when a local auth user creates an organization.
 - `src/data.ts` — seed users and notes.
 - Includes 12-month-apart Nvidia examples so old bearish reads become trend reversals/stale evidence rather than false contradictions.
 
 ### Tests
 
+- `tests/schema.test.ts` checks the migration/RLS contract.
+- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, claim edit/reject, relation dismissal/reclassification.
+- `tests/bff.test.ts` checks Fastify API auth and route behavior.
 - `tests/engine.test.ts` — core deterministic behavior.
 
 ### Planning / Product Docs
@@ -166,18 +188,19 @@ Design principles:
 
 ## Current Validation Status
 
-As of 2026-05-06:
+As of 2026-05-07:
 
 - `npm run validate` passes.
 - Build passes.
-- 6/6 engine tests pass.
+- 14/14 tests pass.
+- Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
 
 - Extraction is deterministic heuristic logic, not LLM-backed.
-- Permissions are mocked client-side only.
+- Permissions are enforced in the server-side workspace service and represented in Supabase RLS policies.
 - Note capture is typed/pasted text only.
-- No persistent backend or auth.
+- Real Supabase Auth and Postgres/RLS schema are present; deployment still needs real hosted Supabase credentials.
 - No external news/filings ingestion yet.
 - Relationship topic matching is still coarse: shared company + themes/keyword overlap.
 - The map is an affordance, not a full interactive graph canvas yet.

@@ -1,5 +1,8 @@
 .codex-original/
 node_modules/
 dist/
+server-dist/
+supabase/.temp/
 .env
+.env.local
 .DS_Store

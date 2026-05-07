@@ -70,15 +70,18 @@ It is decision-support infrastructure for organizing evidence and surfacing disa
 
 ## Working MVP App
 
-This repo now includes a practical local MVP of the Mycelium investment research intelligence product.
+This repo now includes a production-shaped Mycelium foundation for the investment research intelligence product.
 
 ### What it demonstrates
 
 - Calm research-capture workspace with keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Supabase Auth-backed sign-in/sign-up flow with organization/profile/team bootstrap.
+- Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
+- Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, and can serve the built React app as one deployable Node service.
 - Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview.
-- Claim direction classification with citation snippets and a lightweight analyst review queue.
+- Claim direction classification with citation snippets, approve/reject/edit review state, and persisted relation review controls.
 - Temporal relationship detection across accessible notes, with dates explaining why an opposing read is a true contradiction vs a trend reversal.
-- Mock permission-aware workspace lenses for Analyst, PM, and Compliance users.
+- Server-side permission filtering for Analyst, PM, and Compliance roles.
 - Synthesized company/theme views with backlinks, current-vs-historical stance summaries, and supporting/skeptical claim evidence.
 - Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, and grey stale evidence.
 - In-app alerts for contradictions, tensions, reversals, corroboration clusters, stale evidence, and research-density changes.
@@ -89,6 +92,8 @@ This repo now includes a practical local MVP of the Mycelium investment research
 - Vite
 - React
 - TypeScript
+- Fastify
+- Supabase Auth/Postgres/RLS/Storage-ready local project
 - Local heuristic intelligence engine (`src/engine.ts`)
 - No paid APIs, secrets, or hosted model calls required
 
@@ -98,13 +103,42 @@ This repo now includes a practical local MVP of the Mycelium investment research
 npm install
 ```
 
+### Configure Supabase
+
+Install/start Docker Desktop, then run:
+
+```bash
+npm run supabase:start
+```
+
+Create a local `.env` with the values printed by Supabase:
+
+```bash
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+MYCELIUM_ORG_SEED_DOMAIN=example.test
+PORT=5174
+```
+
+The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies.
+
 ### Run locally
 
 ```bash
 npm run dev
 ```
 
-Open the URL Vite prints, usually `http://localhost:5173`.
+Open the URL Vite prints, usually `http://localhost:5173`. Vite proxies `/api` to the Fastify BFF on `http://localhost:5174`.
+
+### Production-style run
+
+```bash
+npm run build
+npm start
+```
+
+This serves the built React assets from the Fastify Node service and exposes `/api/*` from the same process.
 
 ### Validate
 
@@ -117,13 +151,18 @@ This runs a production build/typecheck and the deterministic engine tests.
 ### Useful files
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
-- `src/engine.ts` — local extraction, permission filtering, temporal relation detection, synthesis, and alerts.
-- `src/data.ts` — seed users and research notes, including 12-month-apart opposing reads that become trend reversals rather than contradictions.
-- `src/main.tsx` — polished workspace UI: capture, live extraction, claim review, relationship map, alerts, and archive.
-- `tests/engine.test.ts` — validation coverage for extraction, RBAC, overlapping contradictions, non-overlapping reversals, stale evidence, and permission filtering.
+- `src/engine.ts` — deterministic extraction, temporal relation detection, synthesis, and alerts.
+- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, claim/relation review behavior, and extraction provider boundary.
+- `server/app.ts` — Fastify BFF routes for workspace, notes, claim review, relation review, audit events, and auth bootstrap.
+- `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
+- `supabase/migrations/202605060001_production_foundation.sql` — production-shaped Postgres schema and RLS policies.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, metadata, live extraction, claim editing, relationship review, alerts, and archive.
+- `tests/*.test.ts` — validation coverage for engine behavior, schema contract, workspace service behavior, and BFF routes.
 
 ### Tradeoffs in this MVP
 
 - Extraction is deterministic and transparent rather than LLM-backed. The interfaces are small enough to replace with model providers later.
-- Permissions are mocked in-browser for product demonstration; production needs server-side enforcement, audit logs, and row/object-level access controls.
+- Supabase local development requires Docker Desktop to be running.
+- The first extraction provider remains deterministic and transparent. The server-side provider interface is ready for later model-backed extraction without changing UI or persistence contracts.
+- The current automated RLS test is a migration/schema contract test. Run `npm run supabase:start` and `npm run supabase:db:reset` in an environment with Docker Desktop running for live Supabase migration verification.
 - Note import is text paste only; PDF/DOCX parsing and RMS integrations are deferred.

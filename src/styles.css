@@ -656,6 +656,10 @@ textarea::placeholder {
   opacity: 0.64;
 }
 
+.claim.editable {
+  padding-right: 12px;
+}
+
 .claim p {
   margin: 0;
   color: var(--ink);
@@ -686,6 +690,14 @@ textarea::placeholder {
 .claim button:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.claim.editable button {
+  position: static;
+  top: auto;
+  right: auto;
+  text-transform: none;
+  font-size: 12px;
 }
 
 .right-stack {
@@ -1193,5 +1205,178 @@ textarea::placeholder {
 
   .synthesis h2 {
     font-size: 30px;
+  }
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  width: min(760px, 100%);
+  padding: 28px;
+}
+
+.auth-panel h1 {
+  margin: 12px 0 8px;
+  font-size: 44px;
+}
+
+.auth-panel p {
+  max-width: 680px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.auth-grid,
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auth-grid {
+  margin: 22px 0;
+}
+
+.metadata-grid {
+  margin-top: 14px;
+}
+
+.metadata-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-grid label,
+.metadata-grid label,
+.claim-editor label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.auth-grid span,
+.metadata-grid span,
+.claim-editor span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-grid input,
+.auth-grid select,
+.metadata-grid input,
+.metadata-grid select,
+.claim-editor input,
+.claim-editor select,
+.claim-editor textarea,
+.relation-actions select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 10px 11px;
+  font: inherit;
+}
+
+.claim-editor textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.auth-actions,
+.review-actions,
+.relation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.auth-actions button,
+.review-actions button,
+.relation-actions button,
+.ghost-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  padding: 9px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.auth-actions button:first-child,
+.review-actions button:first-child {
+  background: var(--accent);
+  border-color: transparent;
+  color: #12140f;
+  font-weight: 700;
+}
+
+.ghost-action {
+  white-space: nowrap;
+}
+
+.inline-error,
+.inline-success {
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.inline-error {
+  border: 1px solid rgba(255, 98, 98, 0.4);
+  background: rgba(255, 98, 98, 0.1);
+  color: #ffb7b7;
+}
+
+.inline-success {
+  border: 1px solid rgba(169, 255, 94, 0.35);
+  background: rgba(169, 255, 94, 0.1);
+  color: #d8ffc2;
+}
+
+.claim-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.review-actions {
+  margin-top: 2px;
+}
+
+.relation-actions {
+  margin-top: 12px;
+}
+
+.relation-actions select {
+  max-width: 240px;
+}
+
+@media (max-width: 920px) {
+  .auth-grid,
+  .metadata-grid,
+  .metadata-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-actions button,
+  .review-actions button,
+  .relation-actions button,
+  .ghost-action {
+    width: 100%;
   }
 }
