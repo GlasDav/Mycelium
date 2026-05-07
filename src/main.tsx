@@ -86,7 +86,7 @@ import {
   type NoteFilters,
   type NoteSort
 } from './note-filters';
-import type { MarkdownCommand } from './markdown-tools';
+import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import type {
   ClaimReviewStatus,
   UpdateClaimInput,
@@ -123,6 +123,7 @@ turndownService.addRule('fontSizeSpan', {
 });
 
 type ViewMode = 'review' | 'map' | 'archive';
+const DEFAULT_NOTE_SOURCE_TYPE = 'Typed note';
 
 function App() {
   const [authClient, setAuthClient] = useState<SupabaseClient | null>(null);
@@ -135,11 +136,7 @@ function App() {
   const [noteTitle, setNoteTitle] = useState('');
   const [draft, setDraft] = useState('');
   const [visibility, setVisibility] = useState<Note['visibility']>('team');
-  const [sourceType, setSourceType] = useState('Typed note');
   const [observedAt, setObservedAt] = useState(today());
-  const [appliesToStart, setAppliesToStart] = useState(today());
-  const [appliesToEnd, setAppliesToEnd] = useState('');
-  const [horizon, setHorizon] = useState<Horizon>('near_term');
   const [viewMode, setViewMode] = useState<ViewMode>('review');
   const [tickers, setTickers] = useState<string[]>([]);
   const [manualThemes, setManualThemes] = useState<string[]>([]);
@@ -205,11 +202,7 @@ function App() {
         title: noteTitle.trim() || undefined,
         body: draft,
         visibility,
-        sourceType,
         observedAt,
-        appliesToStart,
-        appliesToEnd: appliesToEnd || undefined,
-        horizon,
         tickers,
         manualThemes,
         kpis
@@ -255,12 +248,9 @@ function App() {
       authorId: viewer?.id ?? 'preview',
       team: viewer?.team ?? 'Research',
       visibility,
-      sourceType,
+      sourceType: DEFAULT_NOTE_SOURCE_TYPE,
       createdAt: observedAt || today(),
       observedAt,
-      appliesToStart,
-      appliesToEnd: appliesToEnd || undefined,
-      horizon,
       tickers,
       manualThemes,
       kpis
@@ -273,11 +263,7 @@ function App() {
     setNoteTitle('');
     setDraft('');
     setVisibility('team');
-    setSourceType('Typed note');
     setObservedAt(date);
-    setAppliesToStart(date);
-    setAppliesToEnd('');
-    setHorizon('near_term');
     setTickers([]);
     setManualThemes([]);
     setKpis([]);
@@ -322,7 +308,7 @@ function App() {
         <button className={viewMode === 'map' ? 'active' : ''} onClick={() => setViewMode('map')} title="Relationship map"><GitBranch size={18}/></button>
         <button className={viewMode === 'archive' ? 'active' : ''} onClick={() => setViewMode('archive')} title="Archive"><Layers3 size={18}/></button>
       </nav>
-      <div className="rail-footer"><KeyRound size={16}/><span>{user.role}</span></div>
+      <button className="rail-footer" type="button" onClick={signOut} title="Sign out"><LogOut size={16}/><span>{user.role}</span></button>
     </aside>
 
     <NotesSidebar
@@ -341,11 +327,7 @@ function App() {
         setNoteTitle(note.title);
         setDraft(note.body);
         setVisibility(note.visibility);
-        setSourceType(note.sourceType);
         setObservedAt(note.observedAt ?? note.createdAt);
-        setAppliesToStart(note.appliesToStart ?? note.observedAt ?? note.createdAt);
-        setAppliesToEnd(note.appliesToEnd ?? '');
-        setHorizon(note.horizon ?? 'near_term');
         setTickers(note.tickers ?? []);
         setManualThemes(note.manualThemes ?? []);
         setKpis(note.kpis ?? []);
@@ -354,18 +336,6 @@ function App() {
     />
 
     <section className="shell">
-      <header className="topbar">
-        <div className="workspace-title">
-          <p className="eyebrow"><Sparkles size={14}/> Production-backed notebook</p>
-          <h1>Mycelium</h1>
-          <p>{user.team} workspace · {graph.visibleNotes.length} visible notes · as of {graph.asOf}</p>
-        </div>
-        <div className="top-actions">
-          <div className="access-note"><ShieldCheck size={15}/> {user.role === 'PM' || user.role === 'Compliance' ? 'Full org visibility through server policy' : `Public, ${user.team}, and own private notes`}</div>
-          <button className="ghost-action" onClick={signOut}><LogOut size={15}/> Sign out</button>
-        </div>
-      </header>
-
       {appError && <div className="inline-error">{appError}</div>}
 
       <section className="note-workbench">
@@ -375,18 +345,13 @@ function App() {
             <button type="button" className="new-note-action" onClick={startNewNote}><FilePlus2 size={14}/>New note</button>
           </div>
           <div className="note-meta">
-            <span>{sourceType}</span>
             <span>{user.team}</span>
             <span>{observedAt}</span>
           </div>
           <input className="note-title-input" value={noteTitle} onChange={event => setNoteTitle(event.target.value)} placeholder="Title..." aria-label="Note title" />
           <MarkdownEditor value={draft} onChange={setDraft} onSubmit={addNote} />
           <div className="metadata-grid">
-            <label><span>Source</span><input value={sourceType} onChange={e => setSourceType(e.target.value)} /></label>
             <label><span>Observed</span><input type="date" value={observedAt} onChange={e => setObservedAt(e.target.value)} /></label>
-            <label><span>Applies from</span><input type="date" value={appliesToStart} onChange={e => setAppliesToStart(e.target.value)} /></label>
-            <label><span>Applies to</span><input type="date" value={appliesToEnd} onChange={e => setAppliesToEnd(e.target.value)} /></label>
-            <label><span>Horizon</span><select value={horizon} onChange={e => setHorizon(e.target.value as Horizon)}><option value="point_in_time">point in time</option><option value="near_term">near term</option><option value="quarter">quarter</option><option value="year">year</option><option value="unknown">unknown</option></select></label>
             <label><span>Visibility</span><select value={visibility} onChange={e => setVisibility(e.target.value as Note['visibility'])}><option value="public">public</option><option value="team">team</option><option value="private">private</option></select></label>
           </div>
           <div className="metadata-linking">
@@ -463,7 +428,7 @@ function App() {
           {viewMode === 'archive' && <article className="panel notes">
             <div className="panel-title"><LockKeyhole/> Permission-aware note archive</div>
             {graph.visibleNotes.map(n => <article key={n.id} className={`note-card ${selectedNoteId === n.id ? 'selected' : ''}`}>
-              <div><h3>{n.title}</h3><small>{n.sourceType} · {n.team} · {n.visibility} · {n.createdAt}</small></div>
+              <div><h3>{n.title}</h3><small>{n.team} · {n.visibility} · {n.createdAt}</small></div>
               <NoteMetadataChips note={n} />
               <MarkdownPreview source={n.body} />
             </article>)}
@@ -535,15 +500,14 @@ function NotesSidebar({
           <FilterSelect label="Stock" value={filters.ticker ?? ''} options={options.tickers} onChange={value => onFilterChange({ ticker: value })} />
           <FilterSelect label="Theme" value={filters.theme ?? ''} options={options.themes} onChange={value => onFilterChange({ theme: value })} />
           <FilterSelect label="KPI" value={filters.kpi ?? ''} options={options.kpis} onChange={value => onFilterChange({ kpi: value })} />
-          <FilterSelect label="Source" value={filters.sourceType ?? ''} options={options.sourceTypes} onChange={value => onFilterChange({ sourceType: value })} />
           <FilterSelect label="Visibility" value={filters.visibility ?? ''} options={options.visibilities} onChange={value => onFilterChange({ visibility: value as NoteFilters['visibility'] })} />
-          <label><span>Sort</span><select value={filters.sort ?? 'newest'} onChange={event => onFilterChange({ sort: event.target.value as NoteSort })}><option value="newest">newest</option><option value="oldest">oldest</option><option value="title">title</option><option value="sourceType">source</option></select></label>
+          <label><span>Sort</span><select value={filters.sort ?? 'newest'} onChange={event => onFilterChange({ sort: event.target.value as NoteSort })}><option value="newest">newest</option><option value="oldest">oldest</option><option value="title">title</option></select></label>
         </div>
         <div className="date-filter-grid">
           <label><span>From</span><input type="date" value={filters.dateFrom ?? ''} onChange={event => onFilterChange({ dateFrom: event.target.value })} /></label>
           <label><span>To</span><input type="date" value={filters.dateTo ?? ''} onChange={event => onFilterChange({ dateTo: event.target.value })} /></label>
         </div>
-        <button className="clear-note-filters" onClick={() => onFilterChange({ query: '', ticker: '', theme: '', kpi: '', dateFrom: '', dateTo: '', sourceType: '', visibility: '', sort: 'newest' })}><ListFilter size={14}/> Clear filters</button>
+        <button className="clear-note-filters" onClick={() => onFilterChange({ query: '', ticker: '', theme: '', kpi: '', dateFrom: '', dateTo: '', visibility: '', sort: 'newest' })}><ListFilter size={14}/> Clear filters</button>
       </div>}
     </div>
 
@@ -567,7 +531,6 @@ function activeFilterCount(filters: NoteFilters) {
     filters.kpi,
     filters.dateFrom,
     filters.dateTo,
-    filters.sourceType,
     filters.visibility
   ].filter(Boolean).length;
 }
@@ -575,6 +538,9 @@ function activeFilterCount(filters: NoteFilters) {
 function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange: (value: string) => void; onSubmit: () => void }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const renderedHtmlRef = useRef('');
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashTriggerLength, setSlashTriggerLength] = useState(0);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const tools: { command: RichMarkdownCommand; label: string; shortcut: string; icon: React.ReactNode }[] = [
     { command: 'undo', label: 'Undo', shortcut: 'Ctrl/Cmd+Z', icon: <Undo2 size={15}/> },
     { command: 'redo', label: 'Redo', shortcut: 'Ctrl/Cmd+Y', icon: <Redo2 size={15}/> },
@@ -592,6 +558,12 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
     { command: 'indent', label: 'Indent', shortcut: 'Tab', icon: <ListIndentIncrease size={15}/> },
     { command: 'outdent', label: 'Outdent', shortcut: 'Shift+Tab', icon: <ListIndentDecrease size={15}/> }
   ];
+  const slashOptions = useMemo(() => {
+    const query = slashQuery.trim().toLowerCase();
+    if (!query) return slashMarkdownCommands;
+    return slashMarkdownCommands.filter(option => option.label.toLowerCase().includes(query) || option.command.includes(query.replace(/\s+/g, '-')));
+  }, [slashQuery]);
+  const slashPaletteOpen = slashTriggerLength > 0 && slashOptions.length > 0;
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -609,9 +581,45 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
     const html = editor.innerHTML;
     renderedHtmlRef.current = html;
     onChange(turndownService.turndown(html).trim());
+    refreshSlashPalette();
+  }
+
+  function closeSlashPalette() {
+    setSlashQuery('');
+    setSlashTriggerLength(0);
+    setSlashSelectedIndex(0);
+  }
+
+  function refreshSlashPalette() {
+    const trigger = getSlashTriggerBeforeCursor();
+    if (!trigger) {
+      closeSlashPalette();
+      return;
+    }
+    setSlashQuery(trigger.query);
+    setSlashTriggerLength(trigger.length);
+    setSlashSelectedIndex(0);
+  }
+
+  function getSlashTriggerBeforeCursor() {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || !selection.rangeCount || !selection.isCollapsed) return null;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return null;
+    const prefixRange = range.cloneRange();
+    prefixRange.selectNodeContents(editor);
+    prefixRange.setEnd(range.endContainer, range.endOffset);
+    const textBeforeCursor = prefixRange.toString();
+    const lineStart = Math.max(textBeforeCursor.lastIndexOf('\n'), textBeforeCursor.lastIndexOf('\r')) + 1;
+    const lineBeforeCursor = textBeforeCursor.slice(lineStart);
+    const match = lineBeforeCursor.match(/(?:^|\s)\/([a-zA-Z0-9 ]{0,24})$/);
+    if (!match) return null;
+    return { query: match[1], length: match[1].length + 1 };
   }
 
   function runCommand(command: RichMarkdownCommand) {
+    closeSlashPalette();
     editorRef.current?.focus();
     if (command === 'undo') {
       document.execCommand('undo');
@@ -625,6 +633,11 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
     }
     if (command === 'bold' || command === 'italic' || command === 'underline') {
       document.execCommand(command);
+      window.requestAnimationFrame(syncFromEditor);
+      return;
+    }
+    if (command === 'paragraph') {
+      document.execCommand('formatBlock', false, 'p');
       window.requestAnimationFrame(syncFromEditor);
       return;
     }
@@ -657,6 +670,24 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
     });
   }
 
+  function selectTextBeforeCursor(characterCount: number) {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount || !selection.isCollapsed) return false;
+    for (let index = 0; index < characterCount; index += 1) {
+      selection.modify?.('extend', 'backward', 'character');
+    }
+    return !selection.isCollapsed;
+  }
+
+  function applySlashCommand(command: SlashMarkdownCommand) {
+    editorRef.current?.focus();
+    if (selectTextBeforeCursor(slashTriggerLength)) {
+      document.execCommand('delete');
+    }
+    closeSlashPalette();
+    runCommand(command);
+  }
+
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     const modifier = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
@@ -664,6 +695,28 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
       event.preventDefault();
       onSubmit();
       return;
+    }
+    if (slashPaletteOpen && !modifier) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSlashSelectedIndex(index => (index + 1) % slashOptions.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSlashSelectedIndex(index => (index - 1 + slashOptions.length) % slashOptions.length);
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applySlashCommand(slashOptions[Math.min(slashSelectedIndex, slashOptions.length - 1)].command);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSlashPalette();
+        return;
+      }
     }
     if (modifier && key === 'z') {
       event.preventDefault();
@@ -721,6 +774,17 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
         window.requestAnimationFrame(syncFromEditor);
       }}
     />
+    {slashPaletteOpen && <div className="markdown-slash-palette" role="listbox" aria-label="Markdown commands">
+      {slashOptions.map((option, index) => <button
+        type="button"
+        key={option.command}
+        className={index === slashSelectedIndex ? 'active' : ''}
+        role="option"
+        aria-selected={index === slashSelectedIndex}
+        onMouseDown={event => event.preventDefault()}
+        onClick={() => applySlashCommand(option.command)}
+      >{option.label}</button>)}
+    </div>}
   </div>;
 }
 
@@ -999,7 +1063,7 @@ function mergeEntities(primary: Entity[], manual: Entity[]): Entity[] {
 }
 
 function emptyFilterOptions(): NoteFilterOptions {
-  return { tickers: [], themes: [], kpis: [], sourceTypes: [], visibilities: [] };
+  return { tickers: [], themes: [], kpis: [], visibilities: [] };
 }
 
 function today() {

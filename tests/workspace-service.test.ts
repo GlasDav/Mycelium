@@ -5,7 +5,8 @@ import {
   createMemoryWorkspaceRepository,
   createWorkspaceService,
   type ClaimReviewStatus,
-  type RelationReviewStatus
+  type RelationReviewStatus,
+  type WorkspaceExport
 } from '../server/workspace-service';
 
 const users: User[] = [
@@ -57,13 +58,9 @@ test('note creation persists metadata, materializes graph rows, and writes audit
 
   const snapshot = await service.createNote('u1', {
     title: 'new check',
-    body: 'Nvidia Blackwell demand is strong and GPU supply is tight.',
+    body: 'Nvidia Blackwell demand is strong into Q3 and GPU supply is tight.',
     visibility: 'team',
-    sourceType: 'Expert call',
     observedAt: '2026-05-06',
-    appliesToStart: '2026-05-06',
-    appliesToEnd: '2026-08-06',
-    horizon: 'near_term',
     tickers: ['NVDA'],
     manualThemes: ['AI infrastructure'],
     kpis: ['demand']
@@ -74,7 +71,14 @@ test('note creation persists metadata, materializes graph rows, and writes audit
   assert.deepEqual(createdNote.tickers, ['NVDA']);
   assert.deepEqual(createdNote.manualThemes, ['AI infrastructure']);
   assert.deepEqual(createdNote.kpis, ['demand']);
-  assert(snapshot.claims.some(claim => claim.text.includes('Blackwell demand') && claim.themes.includes('AI infrastructure')));
+  assert.equal(createdNote.appliesToStart, undefined);
+  assert.equal(createdNote.appliesToEnd, undefined);
+  assert.equal(createdNote.horizon, undefined);
+  const createdClaim = snapshot.claims.find(claim => claim.text.includes('Blackwell demand'));
+  assert(createdClaim);
+  assert.equal(createdClaim.horizon, 'quarter');
+  assert.equal(createdClaim.appliesToStart, '2026-05-06');
+  assert(createdClaim.themes.includes('AI infrastructure'));
   assert(repository.auditEvents.some(event => event.action === 'note.created'));
   assert(repository.auditEvents.some(event => event.action === 'graph.materialized'));
 });
@@ -143,4 +147,57 @@ test('dismissed and reclassified relations affect active graph outputs', async (
 
   const reclassified = await service.getWorkspace('u3');
   assert(reclassified.relations.some(r => r.id === relation.id && r.type === 'historical_tension'));
+});
+
+test('workspace export is permission-aware and import restores demo review state', async () => {
+  const source = buildService();
+  await source.service.materializeGraph('org1');
+
+  const analystExport = await source.service.exportWorkspace('u1');
+  assert.deepEqual(analystExport.snapshot.visibleNotes.map(note => note.id).sort(), ['n1']);
+  assert(!analystExport.snapshot.visibleNotes.some(note => note.id === 'n2'));
+  assert(!analystExport.snapshot.claims.some(claim => claim.noteId === 'n2'));
+
+  const pmSnapshot = await source.service.getWorkspace('u3');
+  const bearishClaim = pmSnapshot.claims.find(claim => claim.noteId === 'n2');
+  assert(bearishClaim);
+  const relation = pmSnapshot.relations.find(item => item.type === 'contradiction');
+  assert(relation);
+
+  await source.service.updateClaim('u3', bearishClaim.id, {
+    reviewStatus: 'edited' satisfies ClaimReviewStatus,
+    text: 'Nvidia demand is weak after a soft channel patch.',
+    direction: 'negative',
+    reviewNote: 'Normalized for demo restore.'
+  });
+  await source.service.updateRelation('u3', relation.id, {
+    reviewStatus: 'reclassified' satisfies RelationReviewStatus,
+    type: 'historical_tension',
+    reviewNote: 'Same theme, different read.'
+  });
+
+  const exported = await source.service.exportWorkspace('u3');
+  const targetRepository = createMemoryWorkspaceRepository();
+  targetRepository.seed({ organizationId: 'org2', users, notes: [] });
+  const targetService = createWorkspaceService(targetRepository);
+
+  const restored = await targetService.importWorkspace('u3', exported satisfies WorkspaceExport);
+
+  assert.deepEqual(restored.visibleNotes.map(note => note.id).sort(), ['n1', 'n2', 'n3']);
+  assert(restored.visibleNotes.every(note => note.orgId === 'org2'));
+  assert(restored.claims.some(claim => (
+    claim.id === bearishClaim.id
+    && claim.orgId === 'org2'
+    && claim.reviewStatus === 'edited'
+    && claim.text === 'Nvidia demand is weak after a soft channel patch.'
+    && claim.reviewNote === 'Normalized for demo restore.'
+  )));
+  assert(restored.relations.some(item => (
+    item.id === relation.id
+    && item.orgId === 'org2'
+    && item.type === 'historical_tension'
+    && item.reviewStatus === 'reclassified'
+    && item.reviewNote === 'Same theme, different read.'
+  )));
+  assert(targetRepository.auditEvents.some(event => event.action === 'workspace.imported'));
 });

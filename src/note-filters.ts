@@ -1,12 +1,11 @@
 import type { Visibility } from './engine';
 
-export type NoteSort = 'newest' | 'oldest' | 'title' | 'sourceType';
+export type NoteSort = 'newest' | 'oldest' | 'title';
 
 export interface NoteFilterable {
   title: string;
   body: string;
   visibility: Visibility;
-  sourceType: string;
   createdAt: string;
   observedAt?: string;
   tickers?: string[];
@@ -21,7 +20,6 @@ export interface NoteFilters {
   kpi?: string;
   dateFrom?: string;
   dateTo?: string;
-  sourceType?: string;
   visibility?: Visibility | '';
   sort?: NoteSort;
 }
@@ -30,7 +28,6 @@ export interface NoteFilterOptions {
   tickers: string[];
   themes: string[];
   kpis: string[];
-  sourceTypes: string[];
   visibilities: Visibility[];
 }
 
@@ -55,7 +52,6 @@ export function deriveNoteFilterOptions(notes: NoteFilterable[]): NoteFilterOpti
     tickers: sortedUnique(notes.flatMap(note => note.tickers ?? [])),
     themes: sortedUnique(notes.flatMap(note => note.manualThemes ?? [])),
     kpis: sortedUnique(notes.flatMap(note => note.kpis ?? [])),
-    sourceTypes: sortedUnique(notes.map(note => note.sourceType)),
     visibilities: sortedUnique(notes.map(note => note.visibility)) as Visibility[]
   };
 }
@@ -70,7 +66,6 @@ export function filterAndSortNotes<T extends NoteFilterable>(notes: T[], filters
       && matchesTag(note.kpis, filters.kpi)
       && (!filters.dateFrom || noteDate >= filters.dateFrom)
       && (!filters.dateTo || noteDate <= filters.dateTo)
-      && (!filters.sourceType || note.sourceType === filters.sourceType)
       && (!filters.visibility || note.visibility === filters.visibility);
   });
 
@@ -84,7 +79,6 @@ export function noteRecencyDate(note: Pick<NoteFilterable, 'createdAt' | 'observ
 function compareNotes(a: NoteFilterable, b: NoteFilterable, sort: NoteSort): number {
   if (sort === 'oldest') return noteRecencyDate(a).localeCompare(noteRecencyDate(b));
   if (sort === 'title') return a.title.localeCompare(b.title);
-  if (sort === 'sourceType') return a.sourceType.localeCompare(b.sourceType) || b.title.localeCompare(a.title);
   return noteRecencyDate(b).localeCompare(noteRecencyDate(a));
 }
 

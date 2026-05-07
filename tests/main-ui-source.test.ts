@@ -28,8 +28,34 @@ test('sidebar note clicks load the note into the note workbench', () => {
   assert.doesNotMatch(source, /<FilePlus2\/>\s*New note/);
   assert.match(source, /setNoteTitle\(note\.title\)/);
   assert.match(source, /setDraft\(note\.body\)/);
-  assert.match(source, /setSourceType\(note\.sourceType\)/);
   assert.match(source, /setViewMode\('review'\)/);
+});
+
+test('note workbench does not ask for source or claim validity metadata', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const workbenchStart = source.indexOf('<section className="note-workbench">');
+  const sideStart = source.indexOf('<aside className="note-side">', workbenchStart);
+  assert(workbenchStart >= 0 && sideStart > workbenchStart, 'note workbench source is missing');
+  const capture = source.slice(workbenchStart, sideStart);
+
+  assert.doesNotMatch(capture, /<span>Source<\/span>/);
+  assert.doesNotMatch(capture, /<span>Applies from<\/span>/);
+  assert.doesNotMatch(capture, /<span>Applies to<\/span>/);
+  assert.doesNotMatch(capture, /<span>Horizon<\/span>/);
+  assert.match(capture, /<span>Observed<\/span>/);
+  assert.match(capture, /<span>Visibility<\/span>/);
+});
+
+test('notes sidebar filters do not include source metadata controls', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const sidebarStart = source.indexOf('function NotesSidebar');
+  const sidebarEnd = source.indexOf('function FilterSelect', sidebarStart);
+  assert(sidebarStart >= 0 && sidebarEnd > sidebarStart, 'NotesSidebar source is missing');
+  const sidebar = source.slice(sidebarStart, sidebarEnd);
+
+  assert.doesNotMatch(sidebar, /label="Source"/);
+  assert.doesNotMatch(sidebar, /sourceType/);
+  assert.doesNotMatch(sidebar, /<option value="sourceType">source<\/option>/);
 });
 
 test('markdown editor exposes display editing only with undo and redo controls', () => {
@@ -48,6 +74,20 @@ test('markdown editor exposes display editing only with undo and redo controls',
   assert.match(editor, /execCommand\('redo'\)/);
   assert.match(editor, /key === 'z'/);
   assert.match(editor, /key === 'y'/);
+});
+
+test('markdown editor exposes slash command palette keyboard wiring', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const editorStart = source.indexOf('function MarkdownEditor');
+  const editorEnd = source.indexOf('function MarkdownPreview');
+  assert(editorStart >= 0 && editorEnd > editorStart, 'MarkdownEditor source is missing');
+  const editor = source.slice(editorStart, editorEnd);
+
+  assert.match(editor, /slashMarkdownCommands/);
+  assert.match(editor, /markdown-slash-palette/);
+  assert.match(editor, /ArrowDown/);
+  assert.match(editor, /ArrowUp/);
+  assert.match(editor, /Escape/);
 });
 
 test('note workbench has a new note action and no sample prompt buttons', () => {

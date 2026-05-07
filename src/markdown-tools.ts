@@ -2,6 +2,7 @@ export type MarkdownCommand =
   | 'bold'
   | 'italic'
   | 'underline'
+  | 'paragraph'
   | 'heading-1'
   | 'heading-2'
   | 'heading-3'
@@ -19,6 +20,23 @@ export interface MarkdownEdit {
   selectionEnd: number;
 }
 
+export type SlashMarkdownCommand = Extract<MarkdownCommand, 'paragraph' | 'heading-1' | 'heading-2' | 'heading-3' | 'bullet-list' | 'numbered-list' | 'quote'>;
+
+export interface SlashMarkdownCommandOption {
+  command: SlashMarkdownCommand;
+  label: string;
+}
+
+export const slashMarkdownCommands: SlashMarkdownCommandOption[] = [
+  { command: 'paragraph', label: 'Normal paragraph' },
+  { command: 'heading-1', label: 'Heading 1' },
+  { command: 'heading-2', label: 'Heading 2' },
+  { command: 'heading-3', label: 'Heading 3' },
+  { command: 'bullet-list', label: 'Bulleted list' },
+  { command: 'numbered-list', label: 'Numbered list' },
+  { command: 'quote', label: 'Quote' }
+];
+
 export function applyMarkdownCommand(value: string, selectionStart: number, selectionEnd: number, command: MarkdownCommand): MarkdownEdit {
   const start = Math.min(selectionStart, selectionEnd);
   const end = Math.max(selectionStart, selectionEnd);
@@ -28,6 +46,13 @@ export function applyMarkdownCommand(value: string, selectionStart: number, sele
   }
 
   return applyBlockCommand(value, start, end, command);
+}
+
+export function applySlashMarkdownCommand(value: string, triggerStart: number, triggerEnd: number, command: SlashMarkdownCommand): MarkdownEdit {
+  const start = Math.max(0, Math.min(triggerStart, triggerEnd));
+  const end = Math.max(start, Math.max(triggerStart, triggerEnd));
+  const nextValue = `${value.slice(0, start)}${value.slice(end)}`;
+  return applyMarkdownCommand(nextValue, start, start, command);
 }
 
 function isInlineCommand(command: MarkdownCommand) {
@@ -69,6 +94,8 @@ function applyBlockCommand(value: string, start: number, end: number, command: M
 
 function formatLine(line: string, index: number, command: MarkdownCommand) {
   switch (command) {
+    case 'paragraph':
+      return stripBlockFormatting(line);
     case 'heading-1':
       return `# ${stripHeading(line)}`;
     case 'heading-2':
@@ -96,4 +123,8 @@ function stripHeading(line: string) {
 
 function stripListMarker(line: string) {
   return line.replace(/^(\s*)([-*+]|\d+\.)\s+/, '$1');
+}
+
+function stripBlockFormatting(line: string) {
+  return stripListMarker(stripHeading(line.replace(/^>\s?/, '')));
 }

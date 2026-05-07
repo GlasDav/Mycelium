@@ -17,19 +17,21 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] GitHub repo created and pushed.
 - [x] Working local Vite/React/TypeScript MVP built.
 - [x] Initial polished dark editorial UX pass inspired by Notion, Granola, and Obsidian.
-- [x] Minimal note-taking-first UI pass with compact header, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
-- [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, source type, and visibility filters.
+- [x] Minimal note-taking-first UI pass with headerless aligned workbench, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
+- [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, and visibility filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
-- [x] Titled display-mode markdown note editor with formatting toolbar, keyboard shortcuts, undo/redo controls, and markdown archive display.
+- [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
 - [x] True note metadata arrays for stocks/tickers, manual themes, and KPIs persisted through the BFF and Supabase notes table.
+- [x] API-level workspace JSON export/import so demos can be restored through authenticated BFF routes.
 - [x] Deterministic local extraction for companies, tickers, themes, KPIs, and claims.
+- [x] Direct temporal helper tests for horizon inference, applies-to defaults, and relation boundary behavior.
 - [x] Mock permission-aware workspace lenses for Analyst, PM, and Compliance users.
 - [x] Company/theme synthesis views.
 - [x] In-app signals/alerts.
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 34 tests.
+- [x] Validation passing: build + 45 tests.
 - [x] Live agent context doc created.
 - [x] Production-first foundation added:
   - Supabase Auth/Postgres/RLS migration and local config,
@@ -63,7 +65,7 @@ Expected result:
   - persisted claim/relation review behavior.
   - note metadata persistence,
   - note filtering and sorting helpers.
-  - markdown toolbar helpers and sidebar layout/source contracts.
+  - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
 
 ## Priority Ladder
 
@@ -83,17 +85,23 @@ These must remain true after every change:
 Goal: make the app feel like a real product a design partner could use with sample/limited data.
 
 - [ ] Add persistent local storage for notes and review state.
-- [ ] Add export/import for workspace JSON so demos survive reloads.
+- [x] Add export/import for workspace JSON so demos survive reloads.
 - [ ] Improve note capture metadata controls:
   - observed date,
-  - applies-to window,
-  - source type,
   - visibility,
   - team,
   - linked stocks/securities/tickers,
   - linked industries/sectors/themes,
   - company/watchlist tags,
   - source people/meeting participants.
+- [x] Keep claim validity metadata out of note intake:
+  - infer applies-to windows and horizon during extraction,
+  - let analysts review/edit those fields on extracted claims,
+  - avoid source type as a user-facing note metadata field unless a future import/compliance flow needs it.
+- [x] Add Notion-like slash command formatting to the display-mode markdown editor:
+  - open a formatting palette when typing `/`,
+  - support headings, lists, quotes, and text styling commands,
+  - keep keyboard behavior compatible with the existing toolbar and undo/redo flow.
 - [ ] Add explicit stock and industry linking UX:
   - attach notes to one or more tickers/securities,
   - attach notes to one or more industries/sectors/themes,
@@ -125,8 +133,7 @@ Goal: make the map the product’s “aha” moment.
   - relation type,
   - author/team,
   - source person/meeting participant,
-  - freshness,
-  - source type.
+  - freshness.
 - [ ] Add current vs historical lanes.
 - [ ] Add detail drawer for selected relation:
   - both evidence snippets,
@@ -151,7 +158,7 @@ Goal: improve extraction/relation quality while keeping explainability.
   - relation classification,
   - synthesis,
   - alerting.
-- [ ] Add unit tests around temporal helper functions directly.
+- [x] Add unit tests around temporal helper functions directly.
 - [ ] Improve topic/KPI matching beyond shared words.
 - [ ] Add stock/security and industry ontology layer:
   - issuer/company aliases,
@@ -165,7 +172,7 @@ Goal: improve extraction/relation quality while keeping explainability.
   - compare a person’s latest view against their own prior notes,
   - flag sentiment changes, thesis drift, and self-inconsistencies,
   - distinguish “person changed view over time” from “two people disagree.”
-- [ ] Add confidence scoring by extraction quality, source type, source-person identity confidence, and relation evidence strength.
+- [ ] Add confidence scoring by extraction quality, source-person identity confidence, and relation evidence strength.
 - [ ] Add candidate retrieval abstraction for future vector search/RAG.
 - [ ] Add optional LLM extraction interface with deterministic fallback.
 - [ ] Add eval fixtures for known contradiction/reversal/stale examples.
@@ -257,13 +264,14 @@ Suggested tasks:
 
 1. Add local persistence layer.
 2. Add claim/relation review state.
-3. Expand the current note-first capture workbench with real metadata controls for dates/windows.
+3. Keep the note-first capture workbench focused on observed date, visibility, and stock/theme/KPI chips while claim windows and horizon are inferred and reviewed on claims.
 4. Add stock/ticker and industry linking controls.
 5. Add source-person/participant field and person-level history view.
 6. Add relation detail drawer.
 7. Add timeline/as-of filter.
 8. Add tests for persisted review decisions, temporal filters, stock/industry links, and source-person sentiment changes.
-9. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
+9. Add a slash-command formatting palette to the markdown editor. **Done.**
+10. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
 
 ## Product Questions to Resolve
 
@@ -281,8 +289,8 @@ Suggested tasks:
 - Graph storage: relational tables with graph-style queries first, or graph DB early?
 - Vector search: pgvector/OpenSearch later, or stay deterministic for alpha?
 - LLM strategy: model-provider abstraction, self-hosted option, or no-LLM alpha?
-- Temporal model: fixed windows by source type, analyst-specified windows, or model-inferred windows with review?
-- How should stale thresholds differ by sector/source type/KPI?
+- Temporal model: analyst-specified windows, deterministic/model-inferred windows, or inferred windows with claim-level review?
+- How should stale thresholds differ by sector, source-person context, and KPI?
 - What canonical security master / industry taxonomy should the product use first: manual watchlist, GICS, custom fund sectors, or data-provider mapping?
 - Should person-level sentiment history be modeled as its own timeline, or as filtered views over the claim graph?
 

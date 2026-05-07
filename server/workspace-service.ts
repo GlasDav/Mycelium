@@ -91,12 +91,18 @@ export interface WorkspaceSnapshot {
   asOf: string;
 }
 
+export interface WorkspaceExport {
+  kind: 'mycelium.workspace.v1';
+  exportedAt: string;
+  snapshot: WorkspaceSnapshot;
+}
+
 export interface CreateNoteInput {
   title?: string;
   body: string;
   visibility: Visibility;
-  sourceType: string;
-  observedAt: string;
+  sourceType?: string;
+  observedAt?: string;
   appliesToStart?: string;
   appliesToEnd?: string;
   horizon?: Horizon;
@@ -228,6 +234,51 @@ export function createWorkspaceService(
     };
   }
 
+  async function exportWorkspace(viewerId: string): Promise<WorkspaceExport> {
+    return {
+      kind: 'mycelium.workspace.v1',
+      exportedAt: new Date().toISOString(),
+      snapshot: await getWorkspace(viewerId)
+    };
+  }
+
+  async function importWorkspace(viewerId: string, input: WorkspaceExport): Promise<WorkspaceSnapshot> {
+    const viewer = await requireViewer(viewerId);
+    const snapshot = readWorkspaceExport(input).snapshot;
+    const users = await repository.listUsers(viewer.orgId);
+    const usersById = new Map(users.map(user => [user.id, user]));
+    const existingNoteIds = new Set((await repository.listNotes(viewer.orgId)).map(note => note.id));
+    const importedNoteIds = new Set<string>();
+
+    for (const exportedNote of snapshot.visibleNotes) {
+      importedNoteIds.add(exportedNote.id);
+      if (existingNoteIds.has(exportedNote.id)) continue;
+      const author = usersById.get(exportedNote.authorId) ?? viewer;
+      await repository.insertNote({
+        ...exportedNote,
+        orgId: viewer.orgId,
+        authorId: author.id,
+        authorName: author.name,
+        team: author.team,
+        teamId: author.teamId,
+        updatedAt: exportedNote.updatedAt ?? new Date().toISOString(),
+        tickers: exportedNote.tickers ?? [],
+        manualThemes: exportedNote.manualThemes ?? [],
+        kpis: exportedNote.kpis ?? []
+      });
+    }
+
+    await materializeGraph(viewer.orgId, viewer.id);
+    await restoreImportedClaimState(viewer, snapshot, importedNoteIds);
+    await restoreImportedRelationState(viewer, snapshot);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'workspace.imported', 'organization', viewer.orgId, {
+      noteCount: importedNoteIds.size,
+      claimCount: snapshot.claims.length,
+      relationCount: snapshot.relations.length
+    }));
+    return getWorkspace(viewerId);
+  }
+
   async function createNote(viewerId: string, input: CreateNoteInput): Promise<WorkspaceSnapshot> {
     const viewer = await requireViewer(viewerId);
     const now = new Date().toISOString();
@@ -242,13 +293,13 @@ export function createWorkspaceService(
       team: viewer.team,
       teamId: viewer.teamId,
       visibility: input.visibility,
-      sourceType: input.sourceType,
+      sourceType: input.sourceType?.trim() || 'Typed note',
       createdAt: date,
       updatedAt: now,
       observedAt: input.observedAt || date,
-      appliesToStart: input.appliesToStart || input.observedAt || date,
+      appliesToStart: input.appliesToStart,
       appliesToEnd: input.appliesToEnd,
-      horizon: input.horizon || 'near_term',
+      horizon: input.horizon,
       tickers: input.tickers ?? [],
       manualThemes: input.manualThemes ?? [],
       kpis: input.kpis ?? []
@@ -257,7 +308,6 @@ export function createWorkspaceService(
     await repository.insertNote(note);
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.created', 'note', note.id, {
       visibility: note.visibility,
-      sourceType: note.sourceType,
       tickers: note.tickers,
       manualThemes: note.manualThemes,
       kpis: note.kpis
@@ -325,7 +375,72 @@ export function createWorkspaceService(
     return getWorkspace(viewerId);
   }
 
-  return { materializeGraph, getWorkspace, createNote, updateClaim, updateRelation };
+  async function restoreImportedClaimState(
+    viewer: WorkspaceUser,
+    snapshot: WorkspaceSnapshot,
+    importedNoteIds: Set<string>
+  ): Promise<void> {
+    const exportedClaims = new Map(snapshot.claims
+      .filter(claim => importedNoteIds.has(claim.noteId))
+      .map(claim => [claim.id, claim]));
+    if (!exportedClaims.size) return;
+
+    const currentClaims = await repository.listClaims(viewer.orgId);
+    const restoredClaims = currentClaims.map(claim => {
+      const exportedClaim = exportedClaims.get(claim.id);
+      if (!exportedClaim) return claim;
+      return {
+        ...claim,
+        text: exportedClaim.text,
+        subject: exportedClaim.subject,
+        direction: exportedClaim.direction,
+        themes: exportedClaim.themes ?? [],
+        observedAt: exportedClaim.observedAt,
+        appliesToStart: exportedClaim.appliesToStart,
+        appliesToEnd: exportedClaim.appliesToEnd,
+        horizon: exportedClaim.horizon,
+        reviewStatus: exportedClaim.reviewStatus,
+        reviewNote: exportedClaim.reviewNote,
+        reviewerId: exportedClaim.reviewerId,
+        updatedAt: exportedClaim.updatedAt ?? new Date().toISOString()
+      };
+    });
+
+    await repository.replaceClaims(viewer.orgId, restoredClaims);
+    await materializeGraph(viewer.orgId, viewer.id);
+  }
+
+  async function restoreImportedRelationState(viewer: WorkspaceUser, snapshot: WorkspaceSnapshot): Promise<void> {
+    const exportedRelations = new Map(snapshot.relations.map(relation => [relationPairKey(relation.a.id, relation.b.id), relation]));
+    if (!exportedRelations.size) return;
+
+    const currentRelations = await repository.listRelations(viewer.orgId);
+    const restoredRelations = currentRelations.map(relation => {
+      const exportedRelation = exportedRelations.get(relationPairKey(relation.a.id, relation.b.id));
+      if (!exportedRelation) return relation;
+      return {
+        ...relation,
+        id: exportedRelation.id,
+        type: exportedRelation.type,
+        originalType: exportedRelation.originalType,
+        reviewStatus: exportedRelation.reviewStatus,
+        reviewNote: exportedRelation.reviewNote,
+        reviewerId: exportedRelation.reviewerId,
+        updatedAt: exportedRelation.updatedAt ?? new Date().toISOString()
+      };
+    });
+
+    await repository.replaceRelations(viewer.orgId, restoredRelations);
+  }
+
+  return { materializeGraph, getWorkspace, exportWorkspace, importWorkspace, createNote, updateClaim, updateRelation };
+}
+
+function readWorkspaceExport(input: WorkspaceExport): WorkspaceExport {
+  if (!input || input.kind !== 'mycelium.workspace.v1' || !input.snapshot || !Array.isArray(input.snapshot.visibleNotes)) {
+    throw new Error('Invalid workspace export');
+  }
+  return input;
 }
 
 export function createMemoryWorkspaceRepository() {
@@ -456,6 +571,10 @@ function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
     seen.add(value);
     return true;
   });
+}
+
+function relationPairKey(a: string, b: string): string {
+  return [a, b].sort().join('::');
 }
 
 function slug(value: string): string {

@@ -74,12 +74,13 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, undo/redo controls, explicit blank-note action, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
-- Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, plus search, sort, date, stock/ticker, theme, KPI, source type, and visibility filters.
-- True note metadata for stocks/tickers, themes, and KPIs, persisted through the BFF and Supabase.
+- Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, plus search, sort, date, stock/ticker, theme, KPI, and visibility filters.
+- True note metadata for observed date, visibility, stocks/tickers, themes, and KPIs, persisted through the BFF and Supabase. Applies-to windows and horizon are inferred for extracted claims and edited during claim review rather than entered on the note form.
 - Supabase Auth-backed sign-in/sign-up flow with organization/profile/team bootstrap.
 - Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
 - Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, and can serve the built React app as one deployable Node service.
+- Authenticated workspace JSON export/import routes for demo restore workflows.
 - Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview.
 - Claim direction classification with citation snippets, approve/reject/edit review state, and persisted relation review controls.
 - Temporal relationship detection across accessible notes, with dates explaining why an opposing read is a true contradiction vs a trend reversal.
@@ -155,15 +156,15 @@ This runs a production build/typecheck and the full deterministic test suite.
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
 - `src/engine.ts` — deterministic extraction, temporal relation detection, synthesis, and alerts.
-- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, claim/relation review behavior, and extraction provider boundary.
-- `server/app.ts` — Fastify BFF routes for workspace, notes, claim review, relation review, audit events, and auth bootstrap.
+- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, workspace JSON export/import, claim/relation review behavior, and extraction provider boundary.
+- `server/app.ts` — Fastify BFF routes for workspace, workspace export/import, notes, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
 - `supabase/migrations/202605060001_production_foundation.sql` — production-shaped Postgres schema and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, stock/theme/KPI metadata, notes sidebar, live extraction, claim editing, relationship review, alerts, and archive.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, observed/visibility controls, stock/theme/KPI metadata, notes sidebar, slash-command markdown editing, live extraction, claim editing, relationship review, alerts, and archive.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, schema contract, workspace service behavior, note filtering, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, workspace export/import, note filtering, markdown commands, and BFF routes.
 
-- `src/markdown-tools.ts` — pure helpers for markdown toolbar formatting commands.
+- `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
 
 ### Tradeoffs in this MVP
 

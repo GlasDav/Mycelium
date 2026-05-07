@@ -92,3 +92,48 @@ test('BFF creates notes and patches claim/relation reviews', async () => {
   assert.equal(claimUpdate.statusCode, 200);
   assert(claimUpdate.json().claims.some((item: { id: string; reviewStatus: string }) => item.id === claim.id && item.reviewStatus === 'analyst_rejected'));
 });
+
+test('BFF exports and imports workspace JSON with auth required', async () => {
+  const source = buildTestApp();
+
+  const unauthorizedExport = await source.app.inject({ method: 'GET', url: '/api/workspace/export' });
+  assert.equal(unauthorizedExport.statusCode, 401);
+
+  const exported = await source.app.inject({
+    method: 'GET',
+    url: '/api/workspace/export',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(exported.statusCode, 200);
+  const exportBody = exported.json();
+  assert.equal(exportBody.kind, 'mycelium.workspace.v1');
+  assert.deepEqual(exportBody.snapshot.visibleNotes.map((note: { id: string }) => note.id), ['n1']);
+
+  const targetRepository = createMemoryWorkspaceRepository();
+  targetRepository.seed({ organizationId: 'org1', users, notes: [] });
+  const targetService = createWorkspaceService(targetRepository);
+  const targetApp = buildApp({
+    service: targetService,
+    resolveUserId: async request => request.headers.authorization?.replace(/^Bearer\s+/i, '') || undefined,
+    authConfig: { supabaseUrl: 'http://localhost:54321', supabaseAnonKey: 'anon-test-key' }
+  });
+
+  const unauthorizedImport = await targetApp.inject({
+    method: 'POST',
+    url: '/api/workspace/import',
+    payload: exportBody
+  });
+  assert.equal(unauthorizedImport.statusCode, 401);
+
+  const imported = await targetApp.inject({
+    method: 'POST',
+    url: '/api/workspace/import',
+    headers: { authorization: 'Bearer u1' },
+    payload: exportBody
+  });
+  assert.equal(imported.statusCode, 200);
+  const importedBody = imported.json();
+  assert.equal(importedBody.viewer.id, 'u1');
+  assert.deepEqual(importedBody.visibleNotes.map((note: { id: string }) => note.id), ['n1']);
+  assert(importedBody.claims.some((claim: { noteId: string }) => claim.noteId === 'n1'));
+});

@@ -18,8 +18,9 @@ The repo contains a production-shaped MVP foundation:
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
 - Server-side graph materialization for notes, claims, relations, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, undo/redo controls, explicit blank-note action, rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing, relation review, and responsive mobile layout.
-- Tests covering extraction, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions, relation filtering, note metadata persistence, note sidebar filtering helpers, sidebar layout density, and markdown toolbar formatting helpers.
+- Minimal note-taking-first research workspace UI with auth, observed-date/visibility controls, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing, relation review, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- API-level workspace JSON export/import for demo restore through authenticated BFF routes.
+- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions, export/import restore, relation filtering, note metadata persistence, note sidebar filtering helpers, sidebar layout density, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -50,9 +51,9 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, undo/redo controls, blank-note reset action, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing, relationship review, relationship map, and archive modes.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing, relationship review, relationship map, and archive modes.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
-- `src/markdown-tools.ts` owns pure markdown toolbar transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
+- `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
 
 - `src/styles.css` — minimal note-taking-first visual system and responsive layout.
@@ -61,8 +62,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Backend
 
 - `server/index.ts` is the single-service Node entrypoint.
-- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace, notes, claims, relations, and audit events.
-- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, review state, audit events, and the extraction provider contract.
+- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace, workspace export/import, notes, claims, relations, and audit events.
+- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, workspace JSON export/import, review state, audit events, and the extraction provider contract.
 - `server/supabase-repository.ts` adapts the workspace service to Supabase.
 
 ### Supabase
@@ -92,11 +93,11 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Tests
 
 - `tests/schema.test.ts` checks the migration/RLS contract.
-- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, claim edit/reject, relation dismissal/reclassification.
-- `tests/bff.test.ts` checks Fastify API auth and route behavior.
+- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, workspace export/import restore, claim edit/reject, relation dismissal/reclassification.
+- `tests/bff.test.ts` checks Fastify API auth, export/import, and route behavior.
 - `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting.
-- `tests/markdown-tools.test.ts` checks markdown toolbar command transforms.
-- `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar UI contracts.
+- `tests/markdown-tools.test.ts` checks markdown toolbar and slash-command transforms.
+- `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar metadata and layout contracts.
 - `tests/engine.test.ts` — core deterministic behavior.
 
 ### Planning / Product Docs
@@ -184,7 +185,7 @@ Design principles:
 
 - Note-taking is the primary surface: the first viewport should prioritize titled markdown writing or pasting research notes.
 - Intelligence panels should support capture without overwhelming it: the dense notes sidebar handles navigation, while collapsible sidebar filters, live extraction, workspace pulse, and signals support capture/review.
-- Keep the header compact and functional rather than hero-like.
+- Keep shell chrome compact and functional rather than hero-like; the note workbench and live extraction should align with the notes sidebar at the top of the first viewport.
 - Calm, fast capture like Granola.
 - Clear workspace hierarchy like Notion.
 - Connected knowledge/backlink feel like Obsidian.
@@ -197,7 +198,7 @@ As of 2026-05-07:
 
 - `npm run validate` passes.
 - Build passes.
-- 34/34 tests pass.
+- 45/45 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs

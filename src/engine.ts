@@ -252,7 +252,7 @@ function relationTitle(r: Relation): string {
   return `${relationLabel(r.type)} on ${r.a.subject}`;
 }
 
-function inferTemporalWindow(note: Note, sentence: string, asOf: string): Pick<Claim, 'observedAt' | 'appliesToStart' | 'appliesToEnd' | 'horizon'> {
+export function inferTemporalWindow(note: Note, sentence: string, asOf: string): Pick<Claim, 'observedAt' | 'appliesToStart' | 'appliesToEnd' | 'horizon'> {
   const observedAt = note.observedAt ?? note.createdAt;
   const horizon = note.horizon ?? inferHorizon(sentence, note.sourceType);
   const start = note.appliesToStart ?? observedAt;

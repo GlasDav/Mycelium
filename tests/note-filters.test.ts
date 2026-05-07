@@ -70,11 +70,11 @@ test('deriveNoteFilterOptions returns sorted metadata options', () => {
   assert.deepEqual(options.tickers, ['AAPL', 'MSFT', 'NVDA']);
   assert.deepEqual(options.themes, ['AI infrastructure', 'Cloud spend', 'Services']);
   assert.deepEqual(options.kpis, ['Capex', 'Demand', 'Pricing']);
-  assert.deepEqual(options.sourceTypes, ['Channel check', 'Expert call', 'Supplier call']);
+  assert.equal('sourceTypes' in options, false);
   assert.deepEqual(options.visibilities, ['public', 'team']);
 });
 
-test('filterAndSortNotes filters by metadata, dates, visibility, source, and search', () => {
+test('filterAndSortNotes filters by metadata, dates, visibility, and search', () => {
   const filters: NoteFilters = {
     query: 'blackwell',
     ticker: 'NVDA',
@@ -82,7 +82,6 @@ test('filterAndSortNotes filters by metadata, dates, visibility, source, and sea
     kpi: 'Demand',
     dateFrom: '2026-05-05',
     dateTo: '2026-05-07',
-    sourceType: 'Channel check',
     visibility: 'team',
     sort: 'newest'
   };
@@ -90,12 +89,17 @@ test('filterAndSortNotes filters by metadata, dates, visibility, source, and sea
   assert.deepEqual(filterAndSortNotes(notes, filters).map(note => note.id), ['n1']);
 });
 
+test('filterAndSortNotes ignores legacy source filters', () => {
+  const filters = { sourceType: 'Supplier call' } as NoteFilters & { sourceType: string };
+
+  assert.deepEqual(filterAndSortNotes(notes, filters).map(note => note.id), ['n3', 'n1', 'n2']);
+});
+
 test('filterAndSortNotes defaults to newest first using observed date then created date', () => {
   assert.deepEqual(filterAndSortNotes(notes, { sort: 'newest' }).map(note => note.id), ['n3', 'n1', 'n2']);
   assert.deepEqual(filterAndSortNotes(notes, { sort: 'oldest' }).map(note => note.id), ['n2', 'n1', 'n3']);
 });
 
-test('filterAndSortNotes supports title and source sorting', () => {
+test('filterAndSortNotes supports title sorting', () => {
   assert.deepEqual(filterAndSortNotes(notes, { sort: 'title' }).map(note => note.id), ['n2', 'n3', 'n1']);
-  assert.deepEqual(filterAndSortNotes(notes, { sort: 'sourceType' }).map(note => note.id), ['n1', 'n3', 'n2']);
 });

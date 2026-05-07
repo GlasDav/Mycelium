@@ -7,11 +7,14 @@ import type {
   CreateNoteInput,
   UpdateClaimInput,
   UpdateRelationInput,
+  WorkspaceExport,
   WorkspaceSnapshot
 } from './workspace-service';
 
 export interface WorkspaceServiceApi {
   getWorkspace(viewerId: string): Promise<WorkspaceSnapshot>;
+  exportWorkspace(viewerId: string): Promise<WorkspaceExport>;
+  importWorkspace(viewerId: string, input: WorkspaceExport): Promise<WorkspaceSnapshot>;
   createNote(viewerId: string, input: CreateNoteInput): Promise<WorkspaceSnapshot>;
   updateClaim(viewerId: string, claimId: string, input: UpdateClaimInput): Promise<WorkspaceSnapshot>;
   updateRelation(viewerId: string, relationId: string, input: UpdateRelationInput): Promise<WorkspaceSnapshot>;
@@ -40,6 +43,16 @@ export function buildApp(options: BuildAppOptions) {
   app.get('/api/workspace', async request => {
     const viewerId = await requireViewerId(options, request);
     return options.service.getWorkspace(viewerId);
+  });
+
+  app.get('/api/workspace/export', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.exportWorkspace(viewerId);
+  });
+
+  app.post<{ Body: WorkspaceExport }>('/api/workspace/import', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.importWorkspace(viewerId, request.body);
   });
 
   app.post<{ Body: CreateNoteInput }>('/api/notes', async request => {
