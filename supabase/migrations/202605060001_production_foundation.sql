@@ -62,6 +62,9 @@ create table if not exists public.notes (
   applies_to_start date,
   applies_to_end date,
   horizon text check (horizon in ('point_in_time', 'near_term', 'quarter', 'year', 'unknown')),
+  tickers text[] not null default '{}',
+  manual_themes text[] not null default '{}',
+  kpis text[] not null default '{}',
   restricted_tags text[] not null default '{}',
   processing_status text not null default 'pending'
 );
@@ -230,8 +233,8 @@ set search_path = public
 as $$
 declare
   user_domain text;
-  org_id uuid;
-  team_id uuid;
+  target_org_id uuid;
+  target_team_id uuid;
   team_name text;
   display_name text;
   requested_role text;
@@ -248,15 +251,15 @@ begin
   insert into public.organizations (name, domain)
   values (coalesce(new.raw_user_meta_data->>'organization_name', user_domain), user_domain)
   on conflict (domain) do update set name = excluded.name
-  returning id into org_id;
+  returning id into target_org_id;
 
   insert into public.teams (org_id, name, sector_focus)
-  values (org_id, team_name, team_name)
+  values (target_org_id, team_name, team_name)
   on conflict (org_id, name) do update set name = excluded.name
-  returning id into team_id;
+  returning id into target_team_id;
 
   insert into public.profiles (id, org_id, email, name, role)
-  values (new.id, org_id, new.email, display_name, requested_role)
+  values (new.id, target_org_id, new.email, display_name, requested_role)
   on conflict (id) do update
     set email = excluded.email,
         name = excluded.name,
@@ -264,10 +267,10 @@ begin
         updated_at = now();
 
   insert into public.team_memberships (org_id, team_id, user_id, role)
-  values (org_id, team_id, new.id, 'member')
+  values (target_org_id, target_team_id, new.id, 'member')
   on conflict (team_id, user_id) do nothing;
 
-  perform app.seed_demo_notes(org_id, new.id, team_id, team_name, display_name);
+  perform app.seed_demo_notes(target_org_id, new.id, target_team_id, team_name, display_name);
 
   return new;
 end;

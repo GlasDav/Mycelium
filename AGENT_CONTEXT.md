@@ -18,8 +18,8 @@ The repo contains a production-shaped MVP foundation:
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
 - Server-side graph materialization for notes, claims, relations, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, metadata capture, large primary editor, live extraction side panel, workspace pulse, recent notes rail, claim editing, relation review, and responsive mobile layout.
-- Tests covering extraction, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions, and relation filtering.
+- Minimal note-taking-first research workspace UI with auth, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, undo/redo controls, explicit blank-note action, rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing, relation review, and responsive mobile layout.
+- Tests covering extraction, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions, relation filtering, note metadata persistence, note sidebar filtering helpers, sidebar layout density, and markdown toolbar formatting helpers.
 
 Run it:
 
@@ -50,7 +50,9 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, metadata controls, live extraction, workspace pulse, recent notes, subject navigation, synthesis, claim editing, relationship review, relationship map, and archive modes.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, undo/redo controls, blank-note reset action, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing, relationship review, relationship map, and archive modes.
+- `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
+- `src/markdown-tools.ts` owns pure markdown toolbar transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
 
 - `src/styles.css` — minimal note-taking-first visual system and responsive layout.
@@ -66,7 +68,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Supabase
 
 - `supabase/config.toml` configures local Supabase.
-- `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
+- `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes with `tickers`, `manual_themes`, and `kpis` metadata arrays, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
 
 ### Intelligence Engine
 
@@ -92,6 +94,9 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `tests/schema.test.ts` checks the migration/RLS contract.
 - `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, claim edit/reject, relation dismissal/reclassification.
 - `tests/bff.test.ts` checks Fastify API auth and route behavior.
+- `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting.
+- `tests/markdown-tools.test.ts` checks markdown toolbar command transforms.
+- `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar UI contracts.
 - `tests/engine.test.ts` — core deterministic behavior.
 
 ### Planning / Product Docs
@@ -177,8 +182,8 @@ The app has three main modes:
 
 Design principles:
 
-- Note-taking is the primary surface: the first viewport should prioritize writing or pasting research notes.
-- Intelligence panels should support capture without overwhelming it: live extraction, workspace pulse, signals, and recent notes are secondary rails.
+- Note-taking is the primary surface: the first viewport should prioritize titled markdown writing or pasting research notes.
+- Intelligence panels should support capture without overwhelming it: the dense notes sidebar handles navigation, while collapsible sidebar filters, live extraction, workspace pulse, and signals support capture/review.
 - Keep the header compact and functional rather than hero-like.
 - Calm, fast capture like Granola.
 - Clear workspace hierarchy like Notion.
@@ -192,7 +197,7 @@ As of 2026-05-07:
 
 - `npm run validate` passes.
 - Build passes.
-- 14/14 tests pass.
+- 34/34 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs

@@ -74,7 +74,9 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, undo/redo controls, explicit blank-note action, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, plus search, sort, date, stock/ticker, theme, KPI, source type, and visibility filters.
+- True note metadata for stocks/tickers, themes, and KPIs, persisted through the BFF and Supabase.
 - Supabase Auth-backed sign-in/sign-up flow with organization/profile/team bootstrap.
 - Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
 - Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, and can serve the built React app as one deployable Node service.
@@ -92,6 +94,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Vite
 - React
 - TypeScript
+- React Markdown with sanitized markdown/HTML rendering
 - Fastify
 - Supabase Auth/Postgres/RLS/Storage-ready local project
 - Local heuristic intelligence engine (`src/engine.ts`)
@@ -121,7 +124,7 @@ MYCELIUM_ORG_SEED_DOMAIN=example.test
 PORT=5174
 ```
 
-The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies.
+The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes with stock/theme/KPI metadata arrays, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies.
 
 ### Run locally
 
@@ -146,7 +149,7 @@ This serves the built React assets from the Fastify Node service and exposes `/a
 npm run validate
 ```
 
-This runs a production build/typecheck and the deterministic engine tests.
+This runs a production build/typecheck and the full deterministic test suite.
 
 ### Useful files
 
@@ -156,8 +159,11 @@ This runs a production build/typecheck and the deterministic engine tests.
 - `server/app.ts` — Fastify BFF routes for workspace, notes, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
 - `supabase/migrations/202605060001_production_foundation.sql` — production-shaped Postgres schema and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, metadata, live extraction, claim editing, relationship review, alerts, and archive.
-- `tests/*.test.ts` — validation coverage for engine behavior, schema contract, workspace service behavior, and BFF routes.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, stock/theme/KPI metadata, notes sidebar, live extraction, claim editing, relationship review, alerts, and archive.
+- `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
+- `tests/*.test.ts` — validation coverage for engine behavior, schema contract, workspace service behavior, note filtering, and BFF routes.
+
+- `src/markdown-tools.ts` — pure helpers for markdown toolbar formatting commands.
 
 ### Tradeoffs in this MVP
 

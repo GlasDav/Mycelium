@@ -19,6 +19,9 @@ export interface Note {
   appliesToStart?: string;
   appliesToEnd?: string;
   horizon?: Horizon;
+  tickers?: string[];
+  manualThemes?: string[];
+  kpis?: string[];
 }
 export interface Entity { name: string; kind: 'company' | 'ticker' | 'theme' | 'kpi'; ticker?: string; }
 export interface Claim {
@@ -51,8 +54,8 @@ export const companyLexicon: Record<string, { ticker: string; aliases: string[];
   Microsoft: { ticker: 'MSFT', aliases: ['microsoft', 'msft', 'azure', 'copilot'], themes: ['AI infrastructure', 'Enterprise software'] }
 };
 
-const themeLexicon = ['AI infrastructure', 'Semiconductors', 'EV demand', 'Autonomy', 'Consumer hardware', 'Services', 'SMB commerce', 'Payments', 'Enterprise software', 'Cloud spend'];
-const kpiWords = ['revenue', 'margin', 'gross margin', 'demand', 'inventory', 'capex', 'orders', 'churn', 'pricing', 'utilization', 'growth', 'supply'];
+export const themeLexicon = ['AI infrastructure', 'Semiconductors', 'EV demand', 'Autonomy', 'Consumer hardware', 'Services', 'SMB commerce', 'Payments', 'Enterprise software', 'Cloud spend'];
+export const kpiWords = ['revenue', 'margin', 'gross margin', 'demand', 'inventory', 'capex', 'orders', 'churn', 'pricing', 'utilization', 'growth', 'supply'];
 const positive = ['accelerat', 'strong', 'improv', 'beat', 'expanding', 'tight', 'robust', 'upside', 'recover', 'increase', 'higher', 'raised'];
 const negative = ['slow', 'weak', 'declin', 'miss', 'pressure', 'soft', 'excess', 'risk', 'downside', 'cut', 'lower', 'delay'];
 const DAY = 24 * 60 * 60 * 1000;
@@ -99,7 +102,7 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
     const dir = directionFor(sentence);
     if (dir === 'neutral' && !kpiWords.some(k => sentence.toLowerCase().includes(k))) continue;
     for (const company of companies) {
-      const themes = uniqueBy(entities.filter(e => e.kind === 'theme').map(e => e.name), x => x);
+      const themes = uniqueBy([...entities.filter(e => e.kind === 'theme').map(e => e.name), ...(note.manualThemes ?? [])], x => x);
       const temporal = inferTemporalWindow(note, sentence, asOf);
       claims.push({
         id: `${note.id}-${slug(company.name)}-${claims.length}`,

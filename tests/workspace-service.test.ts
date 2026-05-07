@@ -63,11 +63,18 @@ test('note creation persists metadata, materializes graph rows, and writes audit
     observedAt: '2026-05-06',
     appliesToStart: '2026-05-06',
     appliesToEnd: '2026-08-06',
-    horizon: 'near_term'
+    horizon: 'near_term',
+    tickers: ['NVDA'],
+    manualThemes: ['AI infrastructure'],
+    kpis: ['demand']
   });
 
-  assert(snapshot.visibleNotes.some(note => note.title === 'new check'));
-  assert(snapshot.claims.some(claim => claim.text.includes('Blackwell demand')));
+  const createdNote = snapshot.visibleNotes.find(note => note.title === 'new check');
+  assert(createdNote);
+  assert.deepEqual(createdNote.tickers, ['NVDA']);
+  assert.deepEqual(createdNote.manualThemes, ['AI infrastructure']);
+  assert.deepEqual(createdNote.kpis, ['demand']);
+  assert(snapshot.claims.some(claim => claim.text.includes('Blackwell demand') && claim.themes.includes('AI infrastructure')));
   assert(repository.auditEvents.some(event => event.action === 'note.created'));
   assert(repository.auditEvents.some(event => event.action === 'graph.materialized'));
 });

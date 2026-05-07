@@ -12,3 +12,60 @@ test('auth shell overrides the global app shell grid', () => {
   assert.match(body, /grid-template-columns\s*:\s*minmax\(0,\s*1fr\)/);
   assert.match(body, /width\s*:\s*100%/);
 });
+
+test('notes sidebar and metadata controls have stable layout selectors', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+
+  for (const selector of [
+    '.app-main',
+    '.notes-sidebar',
+    '.notes-sidebar.collapsed',
+    '.note-filter-panel',
+    '.note-filter-panel.collapsed',
+    '.sidebar-note-row',
+    '.sidebar-note-title',
+    '.note-title-input',
+    '.markdown-toolbar',
+    '.markdown-preview',
+    '.metadata-chip-input',
+    '.note-card.selected'
+  ]) {
+    assert.match(css, new RegExp(`${selector.replace('.', '\\.')}\\s*\\{`), `${selector} rule is missing`);
+  }
+});
+
+test('sidebar note rows stay one line and vertically dense', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const rowMatch = css.match(/\.sidebar-note-row\s*\{(?<body>[^}]+)\}/);
+  const titleMatch = css.match(/\.sidebar-note-title\s*\{(?<body>[^}]+)\}/);
+  const dateMatch = css.match(/\.sidebar-note-date\s*\{(?<body>[^}]+)\}/);
+
+  assert(rowMatch?.groups?.body, 'sidebar-note-row rule is missing');
+  assert(titleMatch?.groups?.body, 'sidebar-note-title rule is missing');
+  assert(dateMatch?.groups?.body, 'sidebar-note-date rule is missing');
+
+  assert.match(rowMatch.groups.body, /grid-template-columns\s*:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(rowMatch.groups.body, /min-height\s*:\s*(1[6-9]|20)px/);
+  assert.match(titleMatch.groups.body, /white-space\s*:\s*nowrap/);
+  assert.match(titleMatch.groups.body, /overflow\s*:\s*hidden/);
+  assert.match(titleMatch.groups.body, /text-overflow\s*:\s*ellipsis/);
+  assert.match(dateMatch.groups.body, /white-space\s*:\s*nowrap/);
+});
+
+test('sidebar note buttons use compact padding for maximum visible rows', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const buttonMatch = css.match(/\.sidebar-note\s*\{(?<body>[^}]+)\}/);
+
+  assert(buttonMatch?.groups?.body, 'sidebar-note rule is missing');
+  assert.match(buttonMatch.groups.body, /padding\s*:\s*[01]px\s+[456]px/);
+});
+
+test('sidebar notes list does not stretch rows to fill available height', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const listMatch = css.match(/\.notes-list\s*\{(?<body>[^}]+)\}/);
+
+  assert(listMatch?.groups?.body, 'notes-list rule is missing');
+  assert.match(listMatch.groups.body, /display\s*:\s*flex/);
+  assert.match(listMatch.groups.body, /flex-direction\s*:\s*column/);
+  assert.doesNotMatch(listMatch.groups.body, /display\s*:\s*grid/);
+});

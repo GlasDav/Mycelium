@@ -32,4 +32,16 @@ test('production foundation migration defines tenant tables and RLS policies', (
   assert.match(sql, /create policy relations_select/i);
   assert.match(sql, /auth\.uid\(\)/i);
   assert.match(sql, /team_memberships/i);
+  assert.match(sql, /tickers\s+text\[\]\s+not null\s+default\s+'\{\}'/i);
+  assert.match(sql, /manual_themes\s+text\[\]\s+not null\s+default\s+'\{\}'/i);
+  assert.match(sql, /kpis\s+text\[\]\s+not null\s+default\s+'\{\}'/i);
+});
+
+test('auth bootstrap trigger avoids column-name variables that break signup', () => {
+  const sql = readFileSync(migrationPath, 'utf8');
+  const handleNewUser = sql.match(/create or replace function public\.handle_new_user\(\)[\s\S]*?\$\$;/i)?.[0] ?? '';
+
+  assert(handleNewUser, 'handle_new_user trigger function is missing');
+  assert.doesNotMatch(handleNewUser, /\n\s+org_id\s+uuid;/i);
+  assert.doesNotMatch(handleNewUser, /\n\s+team_id\s+uuid;/i);
 });

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { config as loadDotenv } from 'dotenv';
 import type { FastifyRequest } from 'fastify';
 import type { Claim, RelationType, User } from '../src/engine';
 import type {
@@ -16,10 +17,11 @@ export interface SupabaseServerConfig {
   supabaseServiceRoleKey: string;
 }
 
-export function readSupabaseServerConfig(env = process.env): SupabaseServerConfig {
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseAnonKey = env.SUPABASE_ANON_KEY;
-  const supabaseServiceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
+export function readSupabaseServerConfig(env = process.env, envPath = '.env'): SupabaseServerConfig {
+  const fileEnv = loadDotenv({ path: envPath, processEnv: {}, quiet: true }).parsed ?? {};
+  const supabaseUrl = env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
+  const supabaseAnonKey = env.SUPABASE_ANON_KEY ?? fileEnv.SUPABASE_ANON_KEY;
+  const supabaseServiceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY ?? fileEnv.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
     throw new Error('Missing SUPABASE_URL, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY');
   }
@@ -176,7 +178,10 @@ function mapNoteFromRow(row: Record<string, any>): WorkspaceNote {
     observedAt: row.observed_at,
     appliesToStart: row.applies_to_start,
     appliesToEnd: row.applies_to_end,
-    horizon: row.horizon
+    horizon: row.horizon,
+    tickers: row.tickers ?? [],
+    manualThemes: row.manual_themes ?? [],
+    kpis: row.kpis ?? []
   };
 }
 
@@ -198,6 +203,9 @@ function mapNoteToRow(note: WorkspaceNote) {
     applies_to_start: note.appliesToStart,
     applies_to_end: note.appliesToEnd,
     horizon: note.horizon,
+    tickers: note.tickers ?? [],
+    manual_themes: note.manualThemes ?? [],
+    kpis: note.kpis ?? [],
     processing_status: 'processed'
   };
 }

@@ -18,6 +18,10 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Working local Vite/React/TypeScript MVP built.
 - [x] Initial polished dark editorial UX pass inspired by Notion, Granola, and Obsidian.
 - [x] Minimal note-taking-first UI pass with compact header, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
+- [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, source type, and visibility filters.
+- [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
+- [x] Titled display-mode markdown note editor with formatting toolbar, keyboard shortcuts, undo/redo controls, and markdown archive display.
+- [x] True note metadata arrays for stocks/tickers, manual themes, and KPIs persisted through the BFF and Supabase notes table.
 - [x] Deterministic local extraction for companies, tickers, themes, KPIs, and claims.
 - [x] Mock permission-aware workspace lenses for Analyst, PM, and Compliance users.
 - [x] Company/theme synthesis views.
@@ -25,7 +29,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 6 engine tests.
+- [x] Validation passing: build + 34 tests.
 - [x] Live agent context doc created.
 - [x] Production-first foundation added:
   - Supabase Auth/Postgres/RLS migration and local config,
@@ -57,6 +61,9 @@ Expected result:
   - Fastify BFF route auth,
   - server-side graph materialization,
   - persisted claim/relation review behavior.
+  - note metadata persistence,
+  - note filtering and sorting helpers.
+  - markdown toolbar helpers and sidebar layout/source contracts.
 
 ## Priority Ladder
 
@@ -174,7 +181,7 @@ Goal: move from in-browser mock to production-shaped architecture.
   - organizations,
   - users,
   - teams,
-  - notes,
+  - notes with stock/theme/KPI metadata arrays,
   - entities/security/industry/source-person links are deferred to the next schema pass,
   - claims,
   - relations,

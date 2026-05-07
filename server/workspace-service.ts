@@ -100,6 +100,9 @@ export interface CreateNoteInput {
   appliesToStart?: string;
   appliesToEnd?: string;
   horizon?: Horizon;
+  tickers?: string[];
+  manualThemes?: string[];
+  kpis?: string[];
 }
 
 export interface UpdateClaimInput {
@@ -245,13 +248,19 @@ export function createWorkspaceService(
       observedAt: input.observedAt || date,
       appliesToStart: input.appliesToStart || input.observedAt || date,
       appliesToEnd: input.appliesToEnd,
-      horizon: input.horizon || 'near_term'
+      horizon: input.horizon || 'near_term',
+      tickers: input.tickers ?? [],
+      manualThemes: input.manualThemes ?? [],
+      kpis: input.kpis ?? []
     };
 
     await repository.insertNote(note);
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.created', 'note', note.id, {
       visibility: note.visibility,
-      sourceType: note.sourceType
+      sourceType: note.sourceType,
+      tickers: note.tickers,
+      manualThemes: note.manualThemes,
+      kpis: note.kpis
     }));
     await materializeGraph(viewer.orgId, viewer.id);
     return getWorkspace(viewerId);
@@ -335,7 +344,10 @@ export function createMemoryWorkspaceRepository() {
           ...note,
           orgId: input.organizationId,
           authorName: author?.name ?? note.authorId,
-          updatedAt: new Date(`${note.createdAt}T00:00:00.000Z`).toISOString()
+          updatedAt: new Date(`${note.createdAt}T00:00:00.000Z`).toISOString(),
+          tickers: note.tickers ?? [],
+          manualThemes: note.manualThemes ?? [],
+          kpis: note.kpis ?? []
         };
       });
       this.claims = [];
