@@ -100,3 +100,36 @@ test('note workbench has a new note action and no sample prompt buttons', () => 
   assert.doesNotMatch(source, /className="samples"/);
   assert.doesNotMatch(source, /Use sample/);
 });
+
+test('claim review cards capture analyst review notes on every action', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const claimStart = source.indexOf('function ClaimCard');
+  const claimEnd = source.indexOf('function RelationshipMap', claimStart);
+  assert(claimStart >= 0 && claimEnd > claimStart, 'ClaimCard source is missing');
+  const claimCard = source.slice(claimStart, claimEnd);
+
+  assert.match(claimCard, /reviewNote/);
+  assert.match(claimCard, /<span>Review note<\/span>/);
+  assert.match(claimCard, /value=\{reviewNote\}/);
+  assert.match(claimCard, /reviewNote,\s*\n/);
+  assert.match(claimCard, /reviewStatus: 'analyst_confirmed', reviewNote/);
+  assert.match(claimCard, /reviewStatus: 'analyst_rejected', reviewNote/);
+});
+
+test('relation review cards capture analyst notes and map mode exposes a detail drawer', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const relationStart = source.indexOf('function RelationshipMap');
+  const relationEnd = source.indexOf('function Metric', relationStart);
+  assert(relationStart >= 0 && relationEnd > relationStart, 'RelationshipMap source is missing');
+  const relationSource = source.slice(relationStart, relationEnd);
+
+  assert.match(relationSource, /selectedRelationId/);
+  assert.match(relationSource, /relation-detail-drawer/);
+  assert.match(relationSource, /Current type/);
+  assert.match(relationSource, /Original type/);
+  assert.match(relationSource, /Overlap days/);
+  assert.match(relationSource, /Review note/);
+  assert.match(relationSource, /reviewStatus: 'confirmed', reviewNote/);
+  assert.match(relationSource, /reviewStatus: 'dismissed', reviewNote/);
+  assert.match(relationSource, /reviewStatus: 'reclassified', type, reviewNote/);
+});

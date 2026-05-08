@@ -946,6 +946,7 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
   const [appliesToStart, setAppliesToStart] = useState(claim.appliesToStart);
   const [appliesToEnd, setAppliesToEnd] = useState(claim.appliesToEnd ?? '');
   const [horizon, setHorizon] = useState<Horizon>(claim.horizon);
+  const [reviewNote, setReviewNote] = useState(workspaceClaim.reviewNote ?? '');
 
   useEffect(() => {
     setText(claim.text);
@@ -956,7 +957,8 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
     setAppliesToStart(claim.appliesToStart);
     setAppliesToEnd(claim.appliesToEnd ?? '');
     setHorizon(claim.horizon);
-  }, [claim.id, claim.text, claim.subject, claim.direction, claim.observedAt, claim.appliesToStart, claim.appliesToEnd, claim.horizon, claim.themes]);
+    setReviewNote(workspaceClaim.reviewNote ?? '');
+  }, [claim.id, claim.text, claim.subject, claim.direction, claim.observedAt, claim.appliesToStart, claim.appliesToEnd, claim.horizon, claim.themes, workspaceClaim.reviewNote]);
 
   function save(reviewStatus: ClaimReviewStatus) {
     onUpdate?.({
@@ -968,7 +970,8 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
       observedAt,
       appliesToStart,
       appliesToEnd: appliesToEnd || undefined,
-      horizon
+      horizon,
+      reviewNote,
     });
   }
 
@@ -986,16 +989,26 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
         <label><span>Applies to</span><input type="date" value={appliesToEnd} onChange={e => setAppliesToEnd(e.target.value)} /></label>
         <label><span>Horizon</span><select value={horizon} onChange={e => setHorizon(e.target.value as Horizon)}><option value="point_in_time">point in time</option><option value="near_term">near term</option><option value="quarter">quarter</option><option value="year">year</option><option value="unknown">unknown</option></select></label>
       </div>
+      <label><span>Review note</span><textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} /></label>
       <div className="review-actions">
         <button onClick={() => save('edited')}><Save size={14}/> Save edit</button>
-        <button onClick={() => onUpdate({ reviewStatus: 'analyst_confirmed' })}><Check size={14}/> Approve</button>
-        <button onClick={() => onUpdate({ reviewStatus: 'analyst_rejected' })}><Ban size={14}/> Reject</button>
+        <button onClick={() => onUpdate({ reviewStatus: 'analyst_confirmed', reviewNote })}><Check size={14}/> Approve</button>
+        <button onClick={() => onUpdate({ reviewStatus: 'analyst_rejected', reviewNote })}><Ban size={14}/> Reject</button>
       </div>
     </div>}
   </article>;
 }
 
 function RelationshipMap({ relations, selected, asOf, onSelect, onUpdate }: { relations: WorkspaceRelation[]; selected: string; asOf: string; onSelect: (subject: string) => void; onUpdate: (id: string, input: UpdateRelationInput) => void }) {
+  const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? '');
+  const selectedRelation = relations.find(relation => relation.id === selectedRelationId) ?? relations[0];
+
+  useEffect(() => {
+    if (relations.length && !relations.some(relation => relation.id === selectedRelationId)) {
+      setSelectedRelationId(relations[0].id);
+    }
+  }, [relations, selectedRelationId]);
+
   return <article className="panel graph-panel">
     <div className="panel-title"><GitBranch/> Temporal claim graph · as of {asOf}</div>
     <div className="timeline-affordance"><span>historical</span><i/><b>{asOf}</b><span>current view</span></div>
@@ -1003,32 +1016,70 @@ function RelationshipMap({ relations, selected, asOf, onSelect, onUpdate }: { re
     <div className="graph-canvas" aria-label="Relationship graph">
       <div className="node primary"><CircleDot/> {selected}</div>
       {relations.slice(0, 8).map((r, i) => <React.Fragment key={r.id}>
-        <button className={`node satellite n${i} ${r.type}`} onClick={() => onSelect(r.a.subject)}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
+        <button className={`node satellite n${i} ${r.type}`} onClick={() => {
+          setSelectedRelationId(r.id);
+          onSelect(r.a.subject);
+        }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
         <i className={`edge e${i} ${r.type}`} />
       </React.Fragment>)}
     </div>
     <div className="relation-list">
-      {relations.slice(0, 5).map(r => <RelationCard key={r.id} relation={r} onUpdate={input => onUpdate(r.id, input)} />)}
+      {relations.slice(0, 5).map(r => <RelationCard key={r.id} relation={r} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
     </div>
+    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} />}
   </article>;
 }
 
-function RelationCard({ relation, onUpdate }: { relation: WorkspaceRelation; onUpdate: (input: UpdateRelationInput) => void }) {
+function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: WorkspaceRelation; selected: boolean; onSelect: () => void; onUpdate: (input: UpdateRelationInput) => void }) {
   const [type, setType] = useState<RelationType>(relation.type);
-  useEffect(() => setType(relation.type), [relation.id, relation.type]);
+  const [reviewNote, setReviewNote] = useState(relation.reviewNote ?? '');
 
-  return <article className={relation.type}>
+  useEffect(() => {
+    setType(relation.type);
+    setReviewNote(relation.reviewNote ?? '');
+  }, [relation.id, relation.type, relation.reviewNote]);
+
+  return <article className={`${relation.type} ${selected ? 'selected' : ''}`}>
     <b>{relationLabel(relation.type)} · {Math.round(relation.score * 100)}% · {relation.reviewStatus}</b>
     <p><span>{relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</span> {relation.a.text}</p>
     <p><span>{relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</span> {relation.b.text}</p>
     <small>{relation.reason} Snippets are shown so analysts can see why this is or is not a contradiction.</small>
+    <label className="relation-review-note"><span>Review note</span><textarea value={reviewNote} onChange={event => setReviewNote(event.target.value)} /></label>
     <div className="relation-actions">
-      <button onClick={() => onUpdate({ reviewStatus: 'confirmed' })}><Check size={14}/> Confirm</button>
-      <button onClick={() => onUpdate({ reviewStatus: 'dismissed' })}><Ban size={14}/> Dismiss</button>
+      <button onClick={onSelect}><Eye size={14}/> Details</button>
+      <button onClick={() => onUpdate({ reviewStatus: 'confirmed', reviewNote })}><Check size={14}/> Confirm</button>
+      <button onClick={() => onUpdate({ reviewStatus: 'dismissed', reviewNote })}><Ban size={14}/> Dismiss</button>
       <select value={type} onChange={event => setType(event.target.value as RelationType)}>{relationTypes.map(item => <option key={item} value={item}>{relationLabel(item)}</option>)}</select>
-      <button onClick={() => onUpdate({ reviewStatus: 'reclassified', type })}><Edit3 size={14}/> Reclassify</button>
+      <button onClick={() => onUpdate({ reviewStatus: 'reclassified', type, reviewNote })}><Edit3 size={14}/> Reclassify</button>
     </div>
   </article>;
+}
+
+function RelationDetailDrawer({ relation }: { relation: WorkspaceRelation }) {
+  return <aside className="relation-detail-drawer" aria-label="Relation detail">
+    <div className="panel-title"><PanelLeft/> Relation detail</div>
+    <div className="relation-detail-grid">
+      <span>Current type<b>{relationLabel(relation.type)}</b></span>
+      <span>Original type<b>{relationLabel(relation.originalType)}</b></span>
+      <span>Overlap days<b>{relation.overlapDays}</b></span>
+      <span>Score<b>{Math.round(relation.score * 100)}%</b></span>
+      <span>Review state<b>{relation.reviewStatus}</b></span>
+      <span>Review note<b>{relation.reviewNote || 'None'}</b></span>
+    </div>
+    <div className="relation-detail-claims">
+      <div className="relation-detail-claim">
+        <b>{relation.a.subject} · {relation.a.direction}</b>
+        <small>observed {relation.a.observedAt} · applies {relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</small>
+        <p>{relation.a.text}</p>
+      </div>
+      <div className="relation-detail-claim">
+        <b>{relation.b.subject} · {relation.b.direction}</b>
+        <small>observed {relation.b.observedAt} · applies {relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</small>
+        <p>{relation.b.text}</p>
+      </div>
+    </div>
+    <p>{relation.reason}</p>
+  </aside>;
 }
 
 function Metric({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: number; sub: string }) {

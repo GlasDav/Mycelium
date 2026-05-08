@@ -28,7 +28,10 @@ test('notes sidebar and metadata controls have stable layout selectors', () => {
     '.markdown-toolbar',
     '.markdown-preview',
     '.metadata-chip-input',
-    '.note-card.selected'
+    '.note-card.selected',
+    '.relation-detail-drawer',
+    '.relation-detail-grid',
+    '.relation-detail-claims'
   ]) {
     assert.match(css, new RegExp(`${selector.replace('.', '\\.')}\\s*\\{`), `${selector} rule is missing`);
   }

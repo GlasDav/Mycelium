@@ -82,11 +82,11 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, and can serve the built React app as one deployable Node service.
 - Authenticated workspace JSON export/import routes for demo restore workflows.
 - Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview.
-- Claim direction classification with citation snippets, approve/reject/edit review state, and persisted relation review controls.
+- Claim direction classification with citation snippets, approve/reject/edit review state, analyst review notes, and persisted relation review controls.
 - Temporal relationship detection across accessible notes, with dates explaining why an opposing read is a true contradiction vs a trend reversal.
 - Server-side permission filtering for Analyst, PM, and Compliance roles.
 - Synthesized company/theme views with backlinks, current-vs-historical stance summaries, and supporting/skeptical claim evidence.
-- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, and grey stale evidence.
+- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, grey stale evidence, and a selected-relation detail drawer.
 - In-app alerts for contradictions, tensions, reversals, corroboration clusters, stale evidence, and research-density changes.
 - Permission-aware note archive and seed demo data so the app is useful immediately.
 
@@ -118,12 +118,14 @@ npm run supabase:start
 Create a local `.env` with the values printed by Supabase:
 
 ```bash
-SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_URL=http://127.0.0.1:55321
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 MYCELIUM_ORG_SEED_DOMAIN=example.test
 PORT=5174
 ```
+
+The local Supabase config uses `55321`-series host ports instead of the default `5432x` range to avoid Windows/Docker reserved-port conflicts.
 
 The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes with stock/theme/KPI metadata arrays, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies.
 
@@ -160,7 +162,7 @@ This runs a production build/typecheck and the full deterministic test suite.
 - `server/app.ts` — Fastify BFF routes for workspace, workspace export/import, notes, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
 - `supabase/migrations/202605060001_production_foundation.sql` — production-shaped Postgres schema and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, observed/visibility controls, stock/theme/KPI metadata, notes sidebar, slash-command markdown editing, live extraction, claim editing, relationship review, alerts, and archive.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, observed/visibility controls, stock/theme/KPI metadata, notes sidebar, slash-command markdown editing, live extraction, claim editing, relationship review, relation detail drawer, alerts, and archive.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
 - `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, workspace export/import, note filtering, markdown commands, and BFF routes.
 

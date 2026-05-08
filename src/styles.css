@@ -1532,6 +1532,11 @@ textarea::placeholder {
   padding: 11px;
 }
 
+.relation-list article.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .relation-list article.contradiction {
   border-left: 4px solid var(--rose);
 }
@@ -1578,6 +1583,87 @@ textarea::placeholder {
   display: block;
   margin-top: 8px;
   color: var(--muted);
+}
+
+.relation-review-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.relation-review-note span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.relation-detail-drawer {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  padding: 13px;
+}
+
+.relation-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.relation-detail-grid span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.relation-detail-grid b {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.relation-detail-claims {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.relation-detail-claim {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.relation-detail-claim b,
+.relation-detail-claim small {
+  display: block;
+}
+
+.relation-detail-claim small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.relation-detail-claim p,
+.relation-detail-drawer > p {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  line-height: 1.4;
 }
 
 .notes > article {
@@ -1775,7 +1861,8 @@ textarea::placeholder {
 
 .auth-grid label,
 .metadata-grid label,
-.claim-editor label {
+.claim-editor label,
+.relation-review-note {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1783,7 +1870,8 @@ textarea::placeholder {
 
 .auth-grid span,
 .metadata-grid span,
-.claim-editor span {
+.claim-editor span,
+.relation-review-note span {
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
@@ -1797,6 +1885,7 @@ textarea::placeholder {
 .claim-editor input,
 .claim-editor select,
 .claim-editor textarea,
+.relation-review-note textarea,
 .relation-actions select {
   width: 100%;
   min-width: 0;
@@ -1808,7 +1897,8 @@ textarea::placeholder {
   font: inherit;
 }
 
-.claim-editor textarea {
+.claim-editor textarea,
+.relation-review-note textarea {
   min-height: 78px;
   resize: vertical;
 }

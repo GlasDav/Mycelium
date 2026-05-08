@@ -1,6 +1,6 @@
 # Mycelium — Agent Context
 
-_Last updated: 2026-05-07_
+_Last updated: 2026-05-08_
 
 This is the live orientation file for agents working on Mycelium. Read this before changing product, UX, engine, roadmap, or docs.
 
@@ -18,9 +18,9 @@ The repo contains a production-shaped MVP foundation:
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
 - Server-side graph materialization for notes, claims, relations, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, observed-date/visibility controls, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing, relation review, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- Minimal note-taking-first research workspace UI with auth, observed-date/visibility controls, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing with analyst review notes, relation review with analyst notes, relationship detail drawer, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes.
-- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions, export/import restore, relation filtering, note metadata persistence, note sidebar filtering helpers, sidebar layout density, and markdown toolbar/slash-command formatting helpers.
+- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions and review notes, export/import restore, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, sidebar layout density, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -51,7 +51,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing, relationship review, relationship map, and archive modes.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing with review notes, relationship review with review notes, relationship map detail drawer, and archive modes.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
@@ -69,6 +69,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Supabase
 
 - `supabase/config.toml` configures local Supabase.
+- Local Supabase ports intentionally use `55321`-series host ports (`55321` API, `55322` DB, `55323` Studio, `55324` Mailpit, `55327` analytics) because Windows/Docker environments can reserve the default `5432x` range.
 - `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes with `tickers`, `manual_themes`, and `kpis` metadata arrays, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
 
 ### Intelligence Engine
@@ -194,11 +195,11 @@ Design principles:
 
 ## Current Validation Status
 
-As of 2026-05-07:
+As of 2026-05-08:
 
 - `npm run validate` passes.
 - Build passes.
-- 45/45 tests pass.
+- 47/47 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs

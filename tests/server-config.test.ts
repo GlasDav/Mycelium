@@ -9,7 +9,7 @@ test('server config loads Supabase keys from the documented env file', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mycelium-env-'));
   const envPath = join(dir, '.env');
   writeFileSync(envPath, [
-    'SUPABASE_URL=http://127.0.0.1:54321',
+    'SUPABASE_URL=http://127.0.0.1:55321',
     'SUPABASE_ANON_KEY=anon-from-file',
     'SUPABASE_SERVICE_ROLE_KEY=service-from-file',
     'PORT=5174'
@@ -18,7 +18,7 @@ test('server config loads Supabase keys from the documented env file', () => {
   try {
     const config = readSupabaseServerConfig({}, envPath);
     assert.deepEqual(config, {
-      supabaseUrl: 'http://127.0.0.1:54321',
+      supabaseUrl: 'http://127.0.0.1:55321',
       supabaseAnonKey: 'anon-from-file',
       supabaseServiceRoleKey: 'service-from-file'
     });

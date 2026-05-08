@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-07_
+_Last updated: 2026-05-08_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -31,7 +31,12 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 45 tests.
+- [x] Validation passing: build + 47 tests.
+- [x] Review spine completed:
+  - claim review cards persist analyst review notes on save, approve, and reject,
+  - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
+  - relationship map exposes a selected-relation detail drawer with claim snippets, date windows, overlap, score, reviewer state, and explanation.
+- [x] Local Supabase development ports moved to the `5532x` range to avoid Windows/Docker reserved `5432x` port conflicts.
 - [x] Live agent context doc created.
 - [x] Production-first foundation added:
   - Supabase Auth/Postgres/RLS migration and local config,
@@ -107,18 +112,18 @@ Goal: make the app feel like a real product a design partner could use with samp
   - attach notes to one or more industries/sectors/themes,
   - support manual correction when entity extraction is wrong,
   - show linked stocks/industries in archive, synthesis, and map filters.
-- [ ] Add claim edit/review controls:
+- [x] Add claim edit/review controls:
   - edit subject,
   - edit direction,
   - edit applies-to window,
   - mark false positive,
   - approve/reject extracted claim.
-- [ ] Add relation review controls:
+- [x] Add relation review controls:
   - confirm relation,
   - dismiss relation,
   - reclassify relation type,
   - leave analyst note.
-- [ ] Persist dismissed/confirmed relation decisions.
+- [x] Persist dismissed/confirmed relation decisions.
 - [ ] Add richer empty states and first-run demo walkthrough.
 
 ### P2 — Relationship Map v2
@@ -135,7 +140,7 @@ Goal: make the map the product’s “aha” moment.
   - source person/meeting participant,
   - freshness.
 - [ ] Add current vs historical lanes.
-- [ ] Add detail drawer for selected relation:
+- [x] Add detail drawer for selected relation:
   - both evidence snippets,
   - date windows,
   - overlap days,
@@ -263,11 +268,11 @@ Goal: connect internal claims to external corroboration/contradiction.
 Suggested tasks:
 
 1. Add local persistence layer.
-2. Add claim/relation review state.
+2. Add claim/relation review state. **Done.**
 3. Keep the note-first capture workbench focused on observed date, visibility, and stock/theme/KPI chips while claim windows and horizon are inferred and reviewed on claims.
 4. Add stock/ticker and industry linking controls.
 5. Add source-person/participant field and person-level history view.
-6. Add relation detail drawer.
+6. Add relation detail drawer. **Done.**
 7. Add timeline/as-of filter.
 8. Add tests for persisted review decisions, temporal filters, stock/industry links, and source-person sentiment changes.
 9. Add a slash-command formatting palette to the markdown editor. **Done.**

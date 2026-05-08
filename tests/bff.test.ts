@@ -33,7 +33,7 @@ function buildTestApp() {
   const app = buildApp({
     service,
     resolveUserId: async request => request.headers.authorization?.replace(/^Bearer\s+/i, '') || undefined,
-    authConfig: { supabaseUrl: 'http://localhost:54321', supabaseAnonKey: 'anon-test-key' }
+    authConfig: { supabaseUrl: 'http://localhost:55321', supabaseAnonKey: 'anon-test-key' }
   });
   return { app, repository };
 }
@@ -79,18 +79,30 @@ test('BFF creates notes and patches claim/relation reviews', async () => {
     method: 'PATCH',
     url: `/api/relations/${encodeURIComponent(relation.id)}`,
     headers: { authorization: 'Bearer u1' },
-    payload: { reviewStatus: 'dismissed' }
+    payload: {
+      reviewStatus: 'reclassified',
+      type: 'historical_tension',
+      reviewNote: 'BFF relation review note.'
+    }
   });
   assert.equal(relationUpdate.statusCode, 200);
+  assert(relationUpdate.json().relations.some((item: { id: string; reviewNote: string; type: string }) => {
+    return item.id === relation.id && item.type === 'historical_tension' && item.reviewNote === 'BFF relation review note.';
+  }));
 
   const claimUpdate = await app.inject({
     method: 'PATCH',
     url: `/api/claims/${encodeURIComponent(claim.id)}`,
     headers: { authorization: 'Bearer u1' },
-    payload: { reviewStatus: 'analyst_rejected' }
+    payload: {
+      reviewStatus: 'analyst_rejected',
+      reviewNote: 'BFF claim review note.'
+    }
   });
   assert.equal(claimUpdate.statusCode, 200);
-  assert(claimUpdate.json().claims.some((item: { id: string; reviewStatus: string }) => item.id === claim.id && item.reviewStatus === 'analyst_rejected'));
+  assert(claimUpdate.json().claims.some((item: { id: string; reviewStatus: string; reviewNote: string }) => {
+    return item.id === claim.id && item.reviewStatus === 'analyst_rejected' && item.reviewNote === 'BFF claim review note.';
+  }));
 });
 
 test('BFF exports and imports workspace JSON with auth required', async () => {
@@ -115,7 +127,7 @@ test('BFF exports and imports workspace JSON with auth required', async () => {
   const targetApp = buildApp({
     service: targetService,
     resolveUserId: async request => request.headers.authorization?.replace(/^Bearer\s+/i, '') || undefined,
-    authConfig: { supabaseUrl: 'http://localhost:54321', supabaseAnonKey: 'anon-test-key' }
+    authConfig: { supabaseUrl: 'http://localhost:55321', supabaseAnonKey: 'anon-test-key' }
   });
 
   const unauthorizedImport = await targetApp.inject({
