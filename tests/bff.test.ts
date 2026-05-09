@@ -26,9 +26,9 @@ const notes: Note[] = [
   }
 ];
 
-function buildTestApp() {
+function buildTestApp(inputNotes: Note[] = notes) {
   const repository = createMemoryWorkspaceRepository();
-  repository.seed({ organizationId: 'org1', users, notes });
+  repository.seed({ organizationId: 'org1', users, notes: inputNotes });
   const service = createWorkspaceService(repository);
   const app = buildApp({
     service,
@@ -49,6 +49,54 @@ test('BFF requires auth and returns the permission-filtered workspace', async ()
   const body = response.json();
   assert.equal(body.viewer.id, 'u1');
   assert.equal(body.visibleNotes.length, 1);
+});
+
+test('BFF returns historical workspace snapshots from the asOf query', async () => {
+  const { app } = buildTestApp([
+    ...notes,
+    {
+      ...notes[0],
+      id: 'n2',
+      title: 'future bear',
+      body: 'Nvidia demand is weak as GPU supply slows.',
+      createdAt: '2026-06-01',
+      observedAt: '2026-06-01',
+      appliesToStart: '2026-06-01',
+      appliesToEnd: '2026-09-01'
+    }
+  ]);
+
+  const early = await app.inject({
+    method: 'GET',
+    url: '/api/workspace?asOf=2026-05-15',
+    headers: { authorization: 'Bearer u2' }
+  });
+  assert.equal(early.statusCode, 200);
+  assert.equal(early.json().asOf, '2026-05-15');
+  assert(!early.json().claims.some((claim: { noteId: string }) => claim.noteId === 'n2'));
+  assert.equal(early.json().relations.length, 0);
+
+  const later = await app.inject({
+    method: 'GET',
+    url: '/api/workspace?asOf=2026-06-15',
+    headers: { authorization: 'Bearer u2' }
+  });
+  assert.equal(later.statusCode, 200);
+  assert(later.json().claims.some((claim: { noteId: string }) => claim.noteId === 'n2'));
+  assert(later.json().relations.some((relation: { type: string }) => relation.type === 'contradiction'));
+});
+
+test('BFF rejects invalid workspace asOf query dates', async () => {
+  const { app } = buildTestApp();
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/workspace?asOf=not-a-date',
+    headers: { authorization: 'Bearer u1' }
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.json().error, /asOf/);
 });
 
 test('BFF serves scoped dashboard aggregates with role-gated org access', async () => {

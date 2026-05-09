@@ -53,6 +53,166 @@ test('workspace snapshots enforce permissions before graph computation', async (
   assert(pm.relations.some(r => r.type === 'contradiction'));
 });
 
+test('workspace as-of snapshots exclude future claims and preserve permissions', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'hist-bull', title: 'known bull', body: 'Nvidia demand is strong and GPU supply is tight.' },
+      {
+        ...base,
+        id: 'future-bear',
+        title: 'future bear',
+        team: 'Consumer',
+        authorId: 'u2',
+        createdAt: '2026-06-01',
+        observedAt: '2026-06-01',
+        appliesToStart: '2026-06-01',
+        appliesToEnd: '2026-09-01',
+        body: 'Nvidia demand is weak as GPU supply slows.'
+      }
+    ]
+  });
+  await service.materializeGraph('org1');
+
+  const earlyPm = await service.getWorkspace('u3', { asOf: '2026-05-15' });
+  assert.equal(earlyPm.asOf, '2026-05-15');
+  assert(earlyPm.claims.some(claim => claim.noteId === 'hist-bull'));
+  assert(!earlyPm.claims.some(claim => claim.noteId === 'future-bear'));
+  assert.equal(earlyPm.relations.length, 0);
+
+  const laterPm = await service.getWorkspace('u3', { asOf: '2026-06-15' });
+  assert(laterPm.claims.some(claim => claim.noteId === 'future-bear'));
+  assert(laterPm.relations.some(relation => relation.type === 'contradiction'));
+
+  const laterAnalyst = await service.getWorkspace('u1', { asOf: '2026-06-15' });
+  assert(!laterAnalyst.visibleNotes.some(note => note.id === 'future-bear'));
+  assert(!laterAnalyst.claims.some(claim => claim.noteId === 'future-bear'));
+  assert.equal(laterAnalyst.relations.length, 0);
+});
+
+test('workspace as-of relation snapshots overlay persisted review state by stable relation id', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'overlay-bull', title: 'overlay bull', body: 'Nvidia demand is strong and GPU supply is tight.' },
+      {
+        ...base,
+        id: 'overlay-bear',
+        title: 'overlay bear',
+        createdAt: '2026-06-01',
+        observedAt: '2026-06-01',
+        appliesToStart: '2026-06-01',
+        appliesToEnd: '2026-09-01',
+        body: 'Nvidia demand is weak as GPU supply slows.'
+      }
+    ]
+  });
+  await service.materializeGraph('org1');
+  const current = await service.getWorkspace('u3');
+  const relation = current.relations.find(item => item.type === 'contradiction');
+  assert(relation);
+
+  await service.updateRelation('u3', relation.id, {
+    reviewStatus: 'dismissed' satisfies RelationReviewStatus,
+    reviewNote: 'Dismissed in current graph.'
+  });
+  const dismissed = await service.getWorkspace('u3', { asOf: '2026-06-15' });
+  assert(!dismissed.relations.some(item => item.id === relation.id));
+
+  await service.updateRelation('u3', relation.id, {
+    reviewStatus: 'reclassified' satisfies RelationReviewStatus,
+    type: 'historical_tension',
+    reviewNote: 'Analyst selected historical tension.'
+  });
+  const reclassified = await service.getWorkspace('u3', { asOf: '2026-06-15' });
+  assert(reclassified.relations.some(item => (
+    item.id === relation.id
+    && item.type === 'historical_tension'
+    && item.originalType === 'contradiction'
+    && item.reviewNote === 'Analyst selected historical tension.'
+  )));
+});
+
+test('workspace relation review overlays tolerate legacy unsorted relation ids', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'legacy-bull', title: 'legacy bull', body: 'Nvidia demand is strong and GPU supply is tight.' },
+      {
+        ...base,
+        id: 'legacy-bear',
+        title: 'legacy bear',
+        createdAt: '2026-06-01',
+        observedAt: '2026-06-01',
+        appliesToStart: '2026-06-01',
+        appliesToEnd: '2026-09-01',
+        body: 'Nvidia demand is weak as GPU supply slows.'
+      }
+    ]
+  });
+  await service.materializeGraph('org1');
+  const current = await service.getWorkspace('u3');
+  const relation = current.relations.find(item => item.type === 'contradiction');
+  assert(relation);
+  const legacyId = `rel-${relation.b.id}-${relation.a.id}`;
+  assert.notEqual(legacyId, relation.id);
+  repository.relations = repository.relations.map(item => item.id === relation.id ? {
+    ...item,
+    id: legacyId,
+    type: 'historical_tension',
+    reviewStatus: 'reclassified',
+    reviewNote: 'Legacy review id.'
+  } : item);
+
+  const overlaid = await service.getWorkspace('u3', { asOf: '2026-06-15' });
+  assert(overlaid.relations.some(item => (
+    item.id === relation.id
+    && item.type === 'historical_tension'
+    && item.reviewNote === 'Legacy review id.'
+  )));
+
+  await service.updateRelation('u3', relation.id, {
+    reviewStatus: 'dismissed',
+    reviewNote: 'Dismiss through stable id.'
+  });
+  assert(repository.relations.some(item => item.id === relation.id && item.reviewStatus === 'dismissed'));
+});
+
+test('workspace snapshots recompute current freshness after claim temporal edits', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'freshness-edit', title: 'freshness edit', body: 'Nvidia demand is strong and GPU supply is tight.' }
+    ]
+  });
+  await service.materializeGraph('org1');
+  const current = await service.getWorkspace('u3');
+  const claim = current.claims.find(item => item.noteId === 'freshness-edit');
+  assert(claim);
+
+  const updated = await service.updateClaim('u3', claim.id, {
+    reviewStatus: 'edited',
+    appliesToStart: '2025-01-01',
+    appliesToEnd: '2025-01-31',
+    horizon: 'near_term'
+  });
+  const edited = updated.claims.find(item => item.id === claim.id);
+
+  assert.equal(edited?.freshness, 'stale');
+});
+
 test('dashboard aggregates respect timeframe and role-gated scope availability', async () => {
   const repository = createMemoryWorkspaceRepository();
   const service = createWorkspaceService(repository);

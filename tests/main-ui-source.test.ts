@@ -216,6 +216,66 @@ test('relation review cards capture analyst notes and map mode exposes a detail 
   assert.match(relationSource, /sourcePersonContext/);
 });
 
+test('relationship map exposes timeline, density, lanes, and author/team controls', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const relationStart = source.indexOf('function RelationshipMap');
+  const relationEnd = source.indexOf('function Metric', relationStart);
+  assert(relationStart >= 0 && relationEnd > relationStart, 'RelationshipMap source is missing');
+  const relationSource = source.slice(relationStart, relationEnd);
+
+  assert.match(source, /mapAsOf/);
+  assert.match(source, /mapWorkspace/);
+  assert.match(source, /mapLoading/);
+  assert.match(source, /mapError/);
+  assert.match(source, /loadWorkspace\(session,\s*\{\s*asOf: mapAsOf/);
+  assert.match(relationSource, /timeline-control/);
+  assert.match(relationSource, /map-density-control/);
+  assert.match(relationSource, /label="Author"/);
+  assert.match(relationSource, /label="Team"/);
+  assert.match(relationSource, /className="map-lane current"/);
+  assert.match(relationSource, /className="map-lane historical"/);
+});
+
+test('map filters include author and team fields with as-of active count', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const mapFiltersStart = source.indexOf('interface MapFilters');
+  const mapFiltersEnd = source.indexOf('const markdownSanitizeSchema', mapFiltersStart);
+  const countStart = source.indexOf('function activeMapFilterCount');
+  const countEnd = source.indexOf('function MarkdownEditor', countStart);
+  assert(mapFiltersStart >= 0 && mapFiltersEnd > mapFiltersStart, 'MapFilters source is missing');
+  assert(countStart >= 0 && countEnd > countStart, 'activeMapFilterCount source is missing');
+  const mapFiltersSource = source.slice(mapFiltersStart, mapFiltersEnd);
+  const countSource = source.slice(countStart, countEnd);
+
+  assert.match(mapFiltersSource, /authorId\?: string/);
+  assert.match(mapFiltersSource, /team\?: string/);
+  assert.match(countSource, /mapAsOf/);
+  assert.match(countSource, /latestAsOf/);
+  assert.match(countSource, /mapAsOf !== latestAsOf/);
+});
+
+test('map mutations refresh historical snapshots and density budgets both lanes', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const claimStart = source.indexOf('async function patchClaim');
+  const relationStart = source.indexOf('async function patchRelation');
+  const previewStart = source.indexOf('function previewNote', relationStart);
+  const mapStart = source.indexOf('function RelationshipMap');
+  const mapEnd = source.indexOf('function RelationCard', mapStart);
+  assert(claimStart >= 0 && relationStart > claimStart && previewStart > relationStart, 'mutation handlers are missing');
+  assert(mapStart >= 0 && mapEnd > mapStart, 'RelationshipMap source is missing');
+  const claimSource = source.slice(claimStart, relationStart);
+  const relationSource = source.slice(relationStart, previewStart);
+  const mapSource = source.slice(mapStart, mapEnd);
+
+  assert.match(source, /refreshMapWorkspace/);
+  assert.match(claimSource, /refreshMapWorkspace\(next\)/);
+  assert.match(relationSource, /refreshMapWorkspace\(next\)/);
+  assert.match(mapSource, /historicalRelations\.slice\(0,\s*densityLimits\.graph\)/);
+  assert.match(mapSource, /historicalRelations\.slice\(0,\s*densityLimits\.list\)/);
+  assert.doesNotMatch(mapSource, /densityLimits\.graph - currentGraphRelations\.length/);
+  assert.doesNotMatch(mapSource, /densityLimits\.list - currentListRelations\.length/);
+});
+
 test('notes mode shows only current-note intelligence and dashboard owns broad widgets', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const appReturnStart = source.indexOf('return <main');
@@ -263,6 +323,30 @@ test('dashboard mode renders scoped research intelligence controls', () => {
   assert.doesNotMatch(source, /<span>fresh claims<\/span>/);
   assert.match(appReturn, /dashboardScope/);
   assert.doesNotMatch(appReturn, /<DemoGuide/);
+});
+
+test('dashboard widget empty states are compact and iconless', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const dashboardStart = source.indexOf('function DashboardPage');
+  const dashboardEnd = source.indexOf('function NoteRelationsPanel', dashboardStart);
+  const personMemoryStart = source.indexOf('function PersonMemoryPanel');
+  const personMemoryEnd = source.indexOf('function Metric', personMemoryStart);
+  const emptyStateStart = source.indexOf('function EmptyState');
+  const emptyStateEnd = source.indexOf('function emptyStateActions', emptyStateStart);
+
+  assert(dashboardStart >= 0 && dashboardEnd > dashboardStart, 'Dashboard source is missing');
+  assert(personMemoryStart >= 0 && personMemoryEnd > personMemoryStart, 'PersonMemoryPanel source is missing');
+  assert(emptyStateStart >= 0 && emptyStateEnd > emptyStateStart, 'EmptyState source is missing');
+
+  const dashboardSource = source.slice(dashboardStart, dashboardEnd);
+  const personMemorySource = source.slice(personMemoryStart, personMemoryEnd);
+  const emptyStateSource = source.slice(emptyStateStart, emptyStateEnd);
+
+  assert.match(emptyStateSource, /showIcon\s*=\s*true/);
+  assert.match(emptyStateSource, /showIcon\s*&&\s*<Sparkles/);
+  assert.match(dashboardSource, /<EmptyState title="No alerts"[^>]+showIcon=\{false\}/);
+  assert.match(dashboardSource, /<EmptyState title=\{`No \$\{title\.toLowerCase\(\)\} yet`\}[^>]+showIcon=\{false\}/);
+  assert.match(personMemorySource, /<EmptyState title=\{emptyState\.title\}[^>]+showIcon=\{false\}/);
 });
 
 test('empty states distinguish no-data states from filtered no-result states with actions', () => {

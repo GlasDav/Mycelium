@@ -15,11 +15,12 @@ import type {
   UpdateRelationInput,
   UpsertNoteDraftInput,
   WorkspaceExport,
+  WorkspaceOptions,
   WorkspaceSnapshot
 } from './workspace-service';
 
 export interface WorkspaceServiceApi {
-  getWorkspace(viewerId: string): Promise<WorkspaceSnapshot>;
+  getWorkspace(viewerId: string, options?: WorkspaceOptions): Promise<WorkspaceSnapshot>;
   getDashboard(viewerId: string, options: { scope?: DashboardScope; range?: DashboardRange; teamId?: string }): Promise<DashboardSnapshot>;
   exportWorkspace(viewerId: string): Promise<WorkspaceExport>;
   importWorkspace(viewerId: string, input: WorkspaceExport): Promise<WorkspaceSnapshot>;
@@ -53,9 +54,9 @@ export function buildApp(options: BuildAppOptions) {
     supabaseAnonKey: options.authConfig.supabaseAnonKey
   }));
 
-  app.get('/api/workspace', async request => {
+  app.get<{ Querystring: { asOf?: string } }>('/api/workspace', async request => {
     const viewerId = await requireViewerId(options, request);
-    return options.service.getWorkspace(viewerId);
+    return options.service.getWorkspace(viewerId, workspaceOptionsFromQuery(request.query));
   });
 
   app.get<{ Querystring: { scope?: DashboardScope; range?: DashboardRange; teamId?: string } }>('/api/dashboard', async request => {
@@ -146,6 +147,22 @@ async function requireViewerId(options: BuildAppOptions, request: FastifyRequest
     throw error;
   }
   return viewerId;
+}
+
+function workspaceOptionsFromQuery(query: { asOf?: string }): WorkspaceOptions {
+  if (!query.asOf) return {};
+  if (!isValidDateOnly(query.asOf)) {
+    const error = new Error('Invalid asOf date. Use YYYY-MM-DD.') as Error & { statusCode: number };
+    error.statusCode = 400;
+    throw error;
+  }
+  return { asOf: query.asOf };
+}
+
+function isValidDateOnly(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 export function defaultStaticRoot() {

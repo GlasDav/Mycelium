@@ -41,11 +41,15 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 88 tests.
+- [x] Validation passing: build + 101 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
   - relationship map exposes a selected-relation detail drawer with claim snippets, date windows, overlap, score, reviewer state, and explanation.
+- [x] Relationship Map v2 timeline slice added:
+  - `GET /api/workspace?asOf=YYYY-MM-DD` returns permission-aware historical graph projections,
+  - claims use known-by-date semantics and recompute freshness for the selected as-of date,
+  - map UI adds as-of control, current/historical lanes, author/team filters, and low/medium/high density controls.
 - [x] Local Supabase development ports moved to the `5532x` range to avoid Windows/Docker reserved `5432x` port conflicts.
 - [x] Live agent context doc created.
 - [x] Production-first foundation added:
@@ -101,6 +105,7 @@ Expected result:
   - persisted note edits, server drafts, note history, and claim/relation review behavior.
   - normalized note/claim metadata persistence,
   - source-person relation context and memory summaries.
+  - historical workspace as-of projections and map timeline contracts.
   - note filtering and sorting helpers.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
@@ -164,16 +169,16 @@ Goal: make the app feel like a real product a design partner could use with samp
 
 Goal: make the map the product’s “aha” moment.
 
-- [ ] Add true timeline/as-of control.
-- [ ] Let users filter map by:
+- [x] Add true timeline/as-of control.
+- [x] Let users filter map by:
   - company, **done through subject rail,**
   - stock/ticker/security, **done,**
   - industry/sector/theme, **done,**
   - relation type, **done,**
-  - author/team,
+  - author/team, **done,**
   - source person/meeting participant, **done,**
   - freshness, **done.**
-- [ ] Add current vs historical lanes.
+- [x] Add current vs historical lanes.
 - [x] Add detail drawer for selected relation:
   - both evidence snippets,
   - date windows,
@@ -181,7 +186,7 @@ Goal: make the map the product’s “aha” moment.
   - confidence,
   - reviewer state,
   - explanation.
-- [ ] Add graph density controls so the map stays readable.
+- [x] Add graph density controls so the map stays readable.
 - [ ] Consider a lightweight graph visualization library only if it improves clarity without bloating the product.
 
 ### P3 — Better Intelligence Layer
@@ -310,7 +315,7 @@ Suggested tasks:
 5. Add source-person/participant field and person-level history view. **Done.**
 6. Add relation detail drawer. **Done.**
 7. Split clean current-note Notes from scoped research Dashboard. **Done.**
-8. Add timeline/as-of filter.
+8. Add timeline/as-of filter. **Done.**
 9. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, source-person sentiment changes, current-note Notes scope, and dashboard aggregation. **Done for normalized metadata/source-person v1 plus dashboard/current-note scope.**
 10. Add a slash-command formatting palette to the markdown editor. **Done.**
 11. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.

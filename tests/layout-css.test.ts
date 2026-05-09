@@ -36,6 +36,11 @@ test('notes sidebar and metadata controls have stable layout selectors', () => {
     '.relation-detail-drawer',
     '.relation-detail-grid',
     '.relation-detail-claims',
+    '.timeline-control',
+    '.map-density-control',
+    '.map-lane.current',
+    '.map-lane.historical',
+    '.window-status-chip',
     '.note-intelligence',
     '.dashboard-scope-toggle',
     '.dashboard-range-toggle',
@@ -128,14 +133,17 @@ test('dashboard insight and widget grids keep cards aligned and evenly sized', (
   const insightMatch = css.match(/\.dashboard-insight-grid\s*\{(?<body>[^}]+)\}/);
   const widgetGridMatch = css.match(/\.dashboard-widget-grid\s*\{(?<body>[^}]+)\}/);
   const widgetCardMatch = css.match(/\.dashboard-widget-card\s*\{(?<body>[^}]+)\}/);
+  const widgetEmptyMatch = css.match(/\.dashboard-widget-card \.empty\s*\{(?<body>[^}]+)\}/);
   const freshnessCardMatch = css.match(/\.freshness-card\s*\{(?<body>[^}]+)\}/);
 
   assert(insightMatch?.groups?.body, 'dashboard-insight-grid rule is missing');
   assert(widgetGridMatch?.groups?.body, 'dashboard-widget-grid rule is missing');
   assert(widgetCardMatch?.groups?.body, 'dashboard-widget-card rule is missing');
+  assert(widgetEmptyMatch?.groups?.body, 'dashboard-widget-card empty rule is missing');
   assert(freshnessCardMatch?.groups?.body, 'freshness-card rule is missing');
   assert.match(insightMatch.groups.body, /align-items\s*:\s*stretch/);
   assert.match(widgetGridMatch.groups.body, /grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(widgetCardMatch.groups.body, /min-height\s*:\s*(18[0-9]|19[0-9]|2[0-9]{2})px/);
+  assert.match(widgetEmptyMatch.groups.body, /overflow\s*:\s*hidden/);
   assert.match(freshnessCardMatch.groups.body, /justify-items\s*:\s*center/);
 });

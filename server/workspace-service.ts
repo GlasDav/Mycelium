@@ -1,8 +1,11 @@
 import {
   canAccess,
+  claimObservedBy,
   detectRelations,
   extractClaims,
+  freshnessAsOf,
   generateAlerts,
+  projectClaimAsOf,
   synthesize,
   type Alert,
   type Claim,
@@ -233,6 +236,10 @@ export interface DashboardOptions {
   teamId?: string;
 }
 
+export interface WorkspaceOptions {
+  asOf?: string;
+}
+
 export interface WorkspaceSnapshot {
   viewer: WorkspaceUser;
   visibleNotes: WorkspaceNote[];
@@ -381,7 +388,7 @@ export function createWorkspaceService(
       const claims = await extractionProvider.extractClaims(note, { asOf });
       for (const claim of claims) {
         const existing = existingClaims.get(claim.id);
-        extracted.push(mergeClaim(orgId, note, claim, existing));
+        extracted.push(mergeClaim(orgId, note, claim, existing, asOf));
       }
     }
 
@@ -389,7 +396,7 @@ export function createWorkspaceService(
 
     const activeClaims = extracted.filter(claim => claim.reviewStatus !== 'analyst_rejected');
     const generatedRelations = detectRelations(activeClaims);
-    const materializedRelations = generatedRelations.map(relation => mergeRelation(orgId, relation, previousRelations.get(relation.id)));
+    const materializedRelations = generatedRelations.map(relation => mergeRelation(orgId, relation, findStoredRelation(previousRelations, relation)));
 
     await repository.replaceRelations(orgId, materializedRelations);
     await repository.addAuditEvent(createAuditEvent(orgId, actorId, 'graph.materialized', 'organization', orgId, {
@@ -399,7 +406,7 @@ export function createWorkspaceService(
     }));
   }
 
-  async function getWorkspace(viewerId: string): Promise<WorkspaceSnapshot> {
+  async function getWorkspace(viewerId: string, options: WorkspaceOptions = {}): Promise<WorkspaceSnapshot> {
     const viewer = await requireViewer(viewerId);
     const orgNotes = await repository.listNotes(viewer.orgId);
     const orgClaims = await repository.listClaims(viewer.orgId);
@@ -407,18 +414,24 @@ export function createWorkspaceService(
       await materializeGraph(viewer.orgId);
     }
 
-    const notes = (await repository.listNotes(viewer.orgId)).filter(note => canAccess(viewer, note));
-    const visibleClaims = (await repository.listClaims(viewer.orgId)).filter(claim => canAccess(viewer, claim));
-    const claimsById = new Map(visibleClaims.map(claim => [claim.id, claim]));
+    const storedNotes = await repository.listNotes(viewer.orgId);
+    const storedClaims = await repository.listClaims(viewer.orgId);
+    const storedRelations = await repository.listRelations(viewer.orgId);
+    const snapshotAsOf = options.asOf ?? maxDate(storedClaims
+      .filter(claim => canAccess(viewer, claim) && claim.reviewStatus !== 'analyst_rejected')
+      .map(claim => claim.observedAt));
+    const notes = storedNotes
+      .filter(note => canAccess(viewer, note))
+      .filter(note => !options.asOf || noteObservedBy(note, snapshotAsOf));
+    const visibleClaims = storedClaims
+      .filter(claim => canAccess(viewer, claim))
+      .filter(claim => !options.asOf || claimObservedBy(claim, snapshotAsOf))
+      .map(claim => projectClaimAsOf(claim, snapshotAsOf));
     const activeClaims = visibleClaims.filter(claim => claim.reviewStatus !== 'analyst_rejected');
-    const activeClaimIds = new Set(activeClaims.map(claim => claim.id));
-    const relations = (await repository.listRelations(viewer.orgId)).filter(relation => {
-      return relation.reviewStatus !== 'dismissed'
-        && activeClaimIds.has(relation.a.id)
-        && activeClaimIds.has(relation.b.id)
-        && claimsById.has(relation.a.id)
-        && claimsById.has(relation.b.id);
-    });
+    const relationReviewState = new Map(storedRelations.map(relation => [relation.id, relation]));
+    const relations = detectRelations(activeClaims, snapshotAsOf)
+      .map(relation => overlayRelationReview(viewer.orgId, relation, findStoredRelation(relationReviewState, relation)))
+      .filter(relation => relation.reviewStatus !== 'dismissed');
     const alerts = generateAlerts(relations, activeClaims);
     const companies = uniqueBy(activeClaims.map(claim => claim.subject), item => item).map(subject => synthesize(activeClaims, relations, subject));
     const themes = uniqueBy(activeClaims.flatMap(claim => claim.themes), item => item).map(theme => synthesize(activeClaims, relations, theme));
@@ -437,7 +450,7 @@ export function createWorkspaceService(
       themes,
       people,
       auditEvents,
-      asOf: maxDate(activeClaims.map(claim => claim.observedAt))
+      asOf: snapshotAsOf
     };
   }
 
@@ -762,7 +775,11 @@ export function createWorkspaceService(
 
   async function updateRelation(viewerId: string, relationId: string, input: UpdateRelationInput): Promise<WorkspaceSnapshot> {
     const viewer = await requireViewer(viewerId);
-    const relation = (await repository.listRelations(viewer.orgId)).find(item => item.id === relationId);
+    let relation = (await repository.listRelations(viewer.orgId)).find(item => item.id === relationId);
+    if (!relation) {
+      await materializeGraph(viewer.orgId, viewer.id);
+      relation = (await repository.listRelations(viewer.orgId)).find(item => item.id === relationId);
+    }
     if (!relation || !canAccess(viewer, relation.a) || !canAccess(viewer, relation.b)) {
       throw new Error(`Relation ${relationId} is not accessible`);
     }
@@ -1297,7 +1314,7 @@ export function createMemoryWorkspaceRepository() {
   return new MemoryWorkspaceRepository();
 }
 
-function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing?: WorkspaceClaim): WorkspaceClaim {
+function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing: WorkspaceClaim | undefined, asOf: string): WorkspaceClaim {
   const preserved = Boolean(existing && existing.reviewStatus !== 'machine');
   const base = preserved && existing ? existing : claim;
   const metadata = preserved && existing
@@ -1316,6 +1333,7 @@ function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing?:
     appliesToStart: base.appliesToStart,
     appliesToEnd: base.appliesToEnd,
     horizon: base.horizon,
+    freshness: freshnessAsOf(base, asOf),
     ...metadata,
     reviewStatus: existing?.reviewStatus ?? 'machine',
     reviewNote: existing?.reviewNote,
@@ -1332,6 +1350,36 @@ function mergeRelation(orgId: string, relation: Relation, existing?: WorkspaceRe
     orgId,
     type,
     originalType: existing?.originalType ?? relation.type,
+    reviewStatus,
+    reviewNote: existing?.reviewNote,
+    reviewerId: existing?.reviewerId,
+    updatedAt: existing?.updatedAt ?? new Date().toISOString()
+  };
+}
+
+function findStoredRelation(relations: Map<string, WorkspaceRelation>, relation: Relation): WorkspaceRelation | undefined {
+  for (const id of relationIdCandidates(relation)) {
+    const existing = relations.get(id);
+    if (existing) return existing;
+  }
+  return undefined;
+}
+
+function relationIdCandidates(relation: Relation): string[] {
+  return uniqueBy([
+    relation.id,
+    `rel-${relation.a.id}-${relation.b.id}`,
+    `rel-${relation.b.id}-${relation.a.id}`
+  ], item => item);
+}
+
+function overlayRelationReview(orgId: string, relation: Relation, existing?: WorkspaceRelation): WorkspaceRelation {
+  const reviewStatus = existing?.reviewStatus ?? 'open';
+  return {
+    ...relation,
+    orgId,
+    type: reviewStatus === 'reclassified' ? existing?.type ?? relation.type : relation.type,
+    originalType: relation.type,
     reviewStatus,
     reviewNote: existing?.reviewNote,
     reviewerId: existing?.reviewerId,
@@ -1363,6 +1411,10 @@ function maxDate(dates: (string | undefined)[]): string {
   const valid = dates.filter(Boolean) as string[];
   if (!valid.length) return new Date().toISOString().slice(0, 10);
   return valid.sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+}
+
+function noteObservedBy(note: Pick<WorkspaceNote, 'createdAt' | 'observedAt'>, asOf: string): boolean {
+  return Date.parse(note.observedAt ?? note.createdAt) <= Date.parse(asOf);
 }
 
 function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {

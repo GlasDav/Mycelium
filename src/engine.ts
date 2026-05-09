@@ -14,6 +14,7 @@ export type Horizon = 'point_in_time' | 'near_term' | 'quarter' | 'year' | 'unkn
 export type Freshness = 'fresh' | 'aging' | 'stale';
 export type RelationType = 'contradiction' | 'update_or_trend_reversal' | 'historical_tension' | 'open_tension' | 'corroboration' | 'agreement' | 'stale_evidence';
 export type SourcePersonContext = 'same_source_person' | 'different_source_people' | 'unknown';
+export type ClaimWindowStatus = 'future' | 'active' | 'expired';
 
 export interface User { id: string; name: string; role: Role; team: string; }
 export interface Note {
@@ -193,9 +194,8 @@ export function buildClaims(notes: Note[], user: User): Claim[] {
   return notes.filter(n => canAccess(user, n)).flatMap(note => extractClaims(note, asOf));
 }
 
-export function detectRelations(claims: Claim[]): Relation[] {
+export function detectRelations(claims: Claim[], asOf = maxDate(claims.map(c => c.observedAt))): Relation[] {
   const relations: Relation[] = [];
-  const asOf = maxDate(claims.map(c => c.observedAt));
   for (let i = 0; i < claims.length; i++) {
     for (let j = i + 1; j < claims.length; j++) {
       const a = claims[i], b = claims[j];
@@ -222,7 +222,7 @@ export function classifyTemporalRelation(a: Claim, b: Claim, sharedWords = overl
   const older = Date.parse(a.observedAt) <= Date.parse(b.observedAt) ? a : b;
   const newer = older === a ? b : a;
   const observationGap = Math.abs(daysBetween(a.observedAt, b.observedAt));
-  const id = `rel-${a.id}-${b.id}`;
+  const id = relationIdForClaims(a, b);
   const baseScore = 0.6 + Math.min(0.24, sharedWords / 24);
   const sourcePersonContext = classifySourcePersonContext(a, b);
 
@@ -254,6 +254,31 @@ export function classifyTemporalRelation(a: Claim, b: Claim, sharedWords = overl
     return { id, type: 'agreement', a, b, overlapDays, sourcePersonContext, reason: `Aligned claims reinforce the same direction, but date windows are separated (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
   }
   return null;
+}
+
+export function claimObservedBy(claim: Claim, asOf: string): boolean {
+  return Date.parse(claim.observedAt) <= Date.parse(asOf);
+}
+
+export function effectiveClaimEnd(claim: Pick<Claim, 'appliesToStart' | 'appliesToEnd' | 'horizon'>): string {
+  return claim.appliesToEnd ?? addDays(claim.appliesToStart, horizonDays(claim.horizon));
+}
+
+export function freshnessAsOf(claim: Pick<Claim, 'appliesToStart' | 'appliesToEnd' | 'horizon'>, asOf: string): Freshness {
+  return freshnessFor(effectiveClaimEnd(claim), asOf);
+}
+
+export function projectClaimAsOf<T extends Claim>(claim: T, asOf: string): T {
+  return {
+    ...claim,
+    freshness: freshnessAsOf(claim, asOf)
+  };
+}
+
+export function claimWindowStatus(claim: Pick<Claim, 'appliesToStart' | 'appliesToEnd' | 'horizon'>, asOf: string): ClaimWindowStatus {
+  if (Date.parse(asOf) < Date.parse(claim.appliesToStart)) return 'future';
+  if (Date.parse(asOf) <= Date.parse(effectiveClaimEnd(claim))) return 'active';
+  return 'expired';
 }
 
 export function synthesize(claims: Claim[], relations: Relation[], subject: string) {
@@ -483,6 +508,9 @@ function overlapKeywords(a: string, b: string): number {
   const aw = new Set(a.toLowerCase().match(/[a-z0-9]+/g)?.filter(w => w.length > 3 && !stop.has(w)) ?? []);
   const bw = new Set(b.toLowerCase().match(/[a-z0-9]+/g)?.filter(w => w.length > 3 && !stop.has(w)) ?? []);
   return [...aw].filter(w => bw.has(w)).length;
+}
+function relationIdForClaims(a: Claim, b: Claim): string {
+  return `rel-${[a.id, b.id].sort().join('::')}`;
 }
 function sortedUnique(values: string[]): string[] {
   return uniqueBy(values.map(value => value.trim()).filter(Boolean), value => value.toLowerCase()).sort((a, b) => a.localeCompare(b));

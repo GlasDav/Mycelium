@@ -76,6 +76,7 @@ import {
 } from './api';
 import {
   companyLexicon,
+  claimWindowStatus,
   detectEntities,
   extractClaims,
   kpiWords,
@@ -194,7 +195,18 @@ interface MapFilters {
   relationType?: RelationType | '';
   freshness?: '' | 'fresh' | 'aging' | 'stale';
   sourcePerson?: string;
+  authorId?: string;
+  team?: string;
 }
+type MapDensity = 'low' | 'medium' | 'high';
+type WindowLane = 'current' | 'historical';
+type UiWindowStatus = 'current' | 'upcoming' | 'ended';
+type SelectOption = string | { value: string; label: string };
+const mapDensityLimits: Record<MapDensity, { graph: number; list: number }> = {
+  low: { graph: 4, list: 3 },
+  medium: { graph: 8, list: 5 },
+  high: { graph: 12, list: 8 }
+};
 const markdownSanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), 'u', 'span'],
@@ -224,6 +236,11 @@ function App() {
   const [authClient, setAuthClient] = useState<SupabaseClient | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
+  const [mapWorkspace, setMapWorkspace] = useState<WorkspaceSnapshot | null>(null);
+  const [mapAsOf, setMapAsOf] = useState('');
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState('');
+  const [mapDensity, setMapDensity] = useState<MapDensity>('medium');
   const [authError, setAuthError] = useState('');
   const [appError, setAppError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -254,6 +271,7 @@ function App() {
   const [noteHistory, setNoteHistory] = useState<NoteRevision[]>([]);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const clearedDraftSignatureRef = useRef('');
+  const previousWorkspaceAsOfRef = useRef('');
 
   useEffect(() => {
     let active = true;
@@ -280,6 +298,9 @@ function App() {
             if (next) await restoreNoteDraft(nextSession, next);
           } else {
             setWorkspace(null);
+            setMapWorkspace(null);
+            setMapAsOf('');
+            setMapError('');
             setDashboard(null);
           }
         });
@@ -331,10 +352,67 @@ function App() {
     }
   }
 
+  async function refreshMapWorkspace(nextWorkspace: WorkspaceSnapshot, targetAsOf = mapAsOf) {
+    if (!session || !targetAsOf || targetAsOf === nextWorkspace.asOf) {
+      setMapWorkspace(null);
+      setMapError('');
+      setMapLoading(false);
+      return;
+    }
+    setMapLoading(true);
+    try {
+      setMapWorkspace(await loadWorkspace(session, { asOf: targetAsOf }));
+      setMapError('');
+    } catch (error) {
+      setMapWorkspace(null);
+      setMapError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMapLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!session) return;
     void refreshDashboard(session);
   }, [session, dashboardScope, dashboardRange, dashboardTeamId]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    const previousAsOf = previousWorkspaceAsOfRef.current;
+    previousWorkspaceAsOfRef.current = workspace.asOf;
+    setMapAsOf(current => {
+      if (!current || current === previousAsOf || current > workspace.asOf) return workspace.asOf;
+      return current;
+    });
+  }, [workspace?.asOf]);
+
+  useEffect(() => {
+    if (!session || !workspace || !mapAsOf) return;
+    let active = true;
+    if (mapAsOf === workspace.asOf) {
+      setMapWorkspace(null);
+      setMapError('');
+      setMapLoading(false);
+      return;
+    }
+    setMapLoading(true);
+    setMapError('');
+    loadWorkspace(session, { asOf: mapAsOf })
+      .then(next => {
+        if (active) setMapWorkspace(next);
+      })
+      .catch(error => {
+        if (!active) return;
+        setMapWorkspace(null);
+        setMapError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (active) setMapLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session, workspace?.asOf, mapAsOf]);
 
   function currentMetadataArrays(): MetadataArrays {
     return {
@@ -383,6 +461,8 @@ function App() {
 
   function clearMapFilters() {
     setMapFilters({});
+    if (workspace?.asOf) setMapAsOf(workspace.asOf);
+    setMapError('');
   }
 
   async function restoreNoteDraft(nextSession: Session, nextWorkspace: WorkspaceSnapshot) {
@@ -450,6 +530,7 @@ function App() {
       };
       const next = await createNote(session, input);
       setWorkspace(next);
+      await refreshMapWorkspace(next);
       const firstClaim = extractClaims(previewNote())[0];
       if (firstClaim) setSelected(firstClaim.subject);
       setNoteTitle('');
@@ -483,6 +564,7 @@ function App() {
       };
       const next = await updateNote(session, selectedNoteId, input);
       setWorkspace(next);
+      await refreshMapWorkspace(next);
       clearedDraftSignatureRef.current = draftSignature({
         selectedNoteId,
         title: noteTitle,
@@ -515,7 +597,9 @@ function App() {
   async function patchClaim(id: string, input: FrontendUpdateClaimInput) {
     if (!session) return;
     try {
-      setWorkspace(await updateClaim(session, id, input));
+      const next = await updateClaim(session, id, input);
+      setWorkspace(next);
+      await refreshMapWorkspace(next);
       void refreshDashboard(session);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
@@ -525,9 +609,12 @@ function App() {
   async function patchRelation(id: string, input: UpdateRelationInput) {
     if (!session) return;
     try {
-      setWorkspace(await updateRelation(session, id, input));
+      const next = await updateRelation(session, id, input);
+      setWorkspace(next);
+      await refreshMapWorkspace(next);
       void refreshDashboard(session);
     } catch (error) {
+      setMapLoading(false);
       setAppError(error instanceof Error ? error.message : String(error));
     }
   }
@@ -571,6 +658,9 @@ function App() {
   async function signOut() {
     await authClient?.auth.signOut();
     setWorkspace(null);
+    setMapWorkspace(null);
+    setMapAsOf('');
+    setMapError('');
     setDashboard(null);
   }
 
@@ -607,14 +697,15 @@ function App() {
   }
 
   const graph = workspace as FrontendWorkspaceSnapshot | null;
+  const mapGraph = (mapAsOf && workspace && mapAsOf !== workspace.asOf && mapWorkspace ? mapWorkspace : workspace) as FrontendWorkspaceSnapshot | null;
   const user = graph?.viewer;
   const selectedNote = selectedNoteId ? graph?.visibleNotes.find(note => note.id === selectedNoteId) : undefined;
   const canEditSelectedNote = !selectedNoteId || selectedNote?.authorId === user?.id;
   const workbenchActionLabel = selectedNoteId ? 'Save note' : 'Add note';
   const subjects = graph ? [...graph.companies, ...graph.themes] : [];
   const selectedSynth = subjects.find(s => s.subject === selected) ?? graph?.companies[0] ?? graph?.themes[0];
-  const subjectRelations = graph?.relations.filter(r => !selectedSynth || relationMatchesSubject(r, selectedSynth.subject)) ?? [];
-  const mapRelations = graph ? (subjectRelations.length ? subjectRelations : graph.relations) : [];
+  const subjectRelations = mapGraph?.relations.filter(r => !selectedSynth || relationMatchesSubject(r, selectedSynth.subject)) ?? [];
+  const mapRelations = mapGraph ? (subjectRelations.length ? subjectRelations : mapGraph.relations) : [];
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
   const previewEntities = mergeEntities(detectEntities(draft), [
@@ -627,7 +718,7 @@ function App() {
     ...sourcePeople.map(name => ({ name, kind: 'source_person' as const }))
   ]);
   const noteFilterOptions = graph ? extendNoteFilterOptions(deriveNoteFilterOptions(graph.visibleNotes), graph.visibleNotes) : emptyFilterOptions();
-  const mapFilterOptions = graph ? deriveMapFilterOptions(graph) : emptyMapFilterOptions();
+  const mapFilterOptions = mapGraph ? deriveMapFilterOptions(mapGraph) : emptyMapFilterOptions();
   const filteredNotes = graph ? filterFrontendNotes(graph.visibleNotes, noteFilters) : [];
   const currentNoteClaims = selectedNoteId && graph ? graph.claims.filter(claim => claim.noteId === selectedNoteId) : [];
   const currentNoteRelations = selectedNoteId && graph ? graph.relations.filter(relation => relationTouchesSelectedNote(relation, selectedNoteId)) : [];
@@ -801,7 +892,27 @@ function App() {
           </aside>
 
           <section className="center-stage">
-            <RelationshipMap relations={mapRelations} notes={graph.visibleNotes} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} filters={mapFilters} options={mapFilterOptions} onFilterChange={patch => setMapFilters(current => ({ ...current, ...patch }))} onClearFilters={clearMapFilters} onStartCapture={focusCapture} onSelect={setSelected} onUpdate={patchRelation} />
+            <RelationshipMap
+              relations={mapRelations}
+              notes={mapGraph?.visibleNotes ?? graph.visibleNotes}
+              selected={selectedSynth?.subject ?? selected}
+              asOf={(mapGraph?.asOf ?? mapAsOf) || graph.asOf}
+              latestAsOf={graph.asOf}
+              mapAsOf={mapAsOf || graph.asOf}
+              loading={mapLoading}
+              error={mapError}
+              density={mapDensity}
+              filters={mapFilters}
+              options={mapFilterOptions}
+              onAsOfChange={value => setMapAsOf(value > graph.asOf ? graph.asOf : value)}
+              onCurrentAsOf={() => setMapAsOf(graph.asOf)}
+              onDensityChange={setMapDensity}
+              onFilterChange={patch => setMapFilters(current => ({ ...current, ...patch }))}
+              onClearFilters={clearMapFilters}
+              onStartCapture={focusCapture}
+              onSelect={setSelected}
+              onUpdate={patchRelation}
+            />
           </section>
         </section>
       </MapPage>}
@@ -921,7 +1032,7 @@ function DashboardPage({
         <div className="panel-title"><AlertTriangle/> Signals</div>
         {dashboard.signals.length ? dashboard.signals.map(signal => <button key={signal.id} className={`alert ${signal.severity}`} onClick={() => signal.company && onSelectCompany(signal.company)}>
           <span>{signal.severity}</span><h3>{signal.title}</h3><p>{signal.body}</p>
-        </button>) : <EmptyState title="No alerts" body="The selected dashboard scope is quiet for this timeframe." />}
+        </button>) : <EmptyState title="No alerts" body="The selected dashboard scope is quiet for this timeframe." showIcon={false} />}
       </article>
 
       <PersonMemoryPanel people={people} onSelectPerson={onSelectPerson} onStartCapture={onStartCapture} />
@@ -943,7 +1054,7 @@ function DashboardTopList({ title, icon, items, onSelect }: { title: string; ico
         <i><b style={{ ['--share' as string]: `${item.share}%` }} /></i>
         <strong>{item.value}</strong>
       </button>)}
-    </div> : <EmptyState title={`No ${title.toLowerCase()} yet`} body="Add and review notes in this scope to populate this dashboard panel." />}
+    </div> : <EmptyState title={`No ${title.toLowerCase()} yet`} body="Add and review notes in this scope to populate this dashboard panel." showIcon={false} />}
   </article>;
 }
 
@@ -1099,8 +1210,12 @@ function NotesSidebar({
   </aside>;
 }
 
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
-  return <label><span>{label}</span><select value={value} onChange={event => onChange(event.target.value)}><option value="">all</option>{options.map(option => <option key={option} value={option}>{option}</option>)}</select></label>;
+function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: SelectOption[]; onChange: (value: string) => void }) {
+  return <label><span>{label}</span><select value={value} onChange={event => onChange(event.target.value)}><option value="">all</option>{options.map(option => {
+    const optionValue = typeof option === 'string' ? option : option.value;
+    const optionLabel = typeof option === 'string' ? option : option.label;
+    return <option key={optionValue} value={optionValue}>{optionLabel}</option>;
+  })}</select></label>;
 }
 
 function activeFilterCount(filters: NoteFilters) {
@@ -1118,14 +1233,17 @@ function activeFilterCount(filters: NoteFilters) {
   ].filter(Boolean).length;
 }
 
-function activeMapFilterCount(filters: MapFilters) {
-  return [
+function activeMapFilterCount(filters: MapFilters, mapAsOf?: string, latestAsOf?: string) {
+  const fieldCount = [
     filters.security,
     filters.industryOrTheme,
     filters.relationType,
     filters.freshness,
-    filters.sourcePerson
+    filters.sourcePerson,
+    filters.authorId,
+    filters.team
   ].filter(Boolean).length;
+  return fieldCount + (mapAsOf && latestAsOf && mapAsOf !== latestAsOf ? 1 : 0);
 }
 
 function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange: (value: string) => void; onSubmit: () => void }) {
@@ -1614,8 +1732,16 @@ function RelationshipMap({
   notes,
   selected,
   asOf,
+  latestAsOf,
+  mapAsOf,
+  loading,
+  error,
+  density,
   filters,
   options,
+  onAsOfChange,
+  onCurrentAsOf,
+  onDensityChange,
   onFilterChange,
   onClearFilters,
   onStartCapture,
@@ -1626,8 +1752,16 @@ function RelationshipMap({
   notes: FrontendWorkspaceNote[];
   selected: string;
   asOf: string;
+  latestAsOf: string;
+  mapAsOf: string;
+  loading: boolean;
+  error: string;
+  density: MapDensity;
   filters: MapFilters;
   options: ReturnType<typeof emptyMapFilterOptions>;
+  onAsOfChange: (value: string) => void;
+  onCurrentAsOf: () => void;
+  onDensityChange: (value: MapDensity) => void;
   onFilterChange: (patch: Partial<MapFilters>) => void;
   onClearFilters: () => void;
   onStartCapture: () => void;
@@ -1636,8 +1770,15 @@ function RelationshipMap({
 }) {
   const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? '');
   const filteredRelations = filterMapRelations(relations, filters, notes);
+  const densityLimits = mapDensityLimits[density];
+  const currentRelations = filteredRelations.filter(relation => laneForRelation(relation, asOf) === 'current');
+  const historicalRelations = filteredRelations.filter(relation => laneForRelation(relation, asOf) === 'historical');
+  const currentGraphRelations = currentRelations.slice(0, densityLimits.graph);
+  const historicalGraphRelations = historicalRelations.slice(0, densityLimits.graph);
+  const currentListRelations = currentRelations.slice(0, densityLimits.list);
+  const historicalListRelations = historicalRelations.slice(0, densityLimits.list);
   const selectedRelation = filteredRelations.find(relation => relation.id === selectedRelationId) ?? filteredRelations[0];
-  const relationEmptyState = emptyStateForRelations({ hasRelations: relations.length > 0, hasActiveFilters: activeMapFilterCount(filters) > 0 });
+  const relationEmptyState = emptyStateForRelations({ hasRelations: relations.length > 0, hasActiveFilters: activeMapFilterCount(filters, mapAsOf, latestAsOf) > 0 });
 
   useEffect(() => {
     if (filteredRelations.length && !filteredRelations.some(relation => relation.id === selectedRelationId)) {
@@ -1647,35 +1788,70 @@ function RelationshipMap({
 
   return <article className="panel graph-panel">
     <div className="panel-title"><GitBranch/> Temporal claim graph - as of {asOf}</div>
+    <div className="timeline-control">
+      <label><span>As of</span><input type="date" value={mapAsOf} max={latestAsOf} onChange={event => onAsOfChange(event.target.value)} /></label>
+      <button type="button" onClick={onCurrentAsOf} disabled={mapAsOf === latestAsOf || loading}>Current</button>
+      <strong>Displayed {asOf}</strong>
+      {loading && <span className="map-loading-state">Loading map...</span>}
+      {error && <span className="map-error-state">{error}</span>}
+    </div>
     <div className="map-filter-bar">
       <FilterSelect label="Security" value={filters.security ?? ''} options={options.securities} onChange={value => onFilterChange({ security: value })} />
       <FilterSelect label="Industry / Theme" value={filters.industryOrTheme ?? ''} options={options.industriesAndThemes} onChange={value => onFilterChange({ industryOrTheme: value })} />
+      <FilterSelect label="Author" value={filters.authorId ?? ''} options={options.authors} onChange={value => onFilterChange({ authorId: value })} />
+      <FilterSelect label="Team" value={filters.team ?? ''} options={options.teams} onChange={value => onFilterChange({ team: value })} />
       <FilterSelect label="Relation" value={filters.relationType ?? ''} options={relationTypes} onChange={value => onFilterChange({ relationType: value as RelationType | '' })} />
       <FilterSelect label="Freshness" value={filters.freshness ?? ''} options={options.freshness} onChange={value => onFilterChange({ freshness: value as MapFilters['freshness'] })} />
       <FilterSelect label="Participant" value={filters.sourcePerson ?? ''} options={options.sourcePeople} onChange={value => onFilterChange({ sourcePerson: value })} />
     </div>
-    <div className="timeline-affordance"><span>historical</span><i/><b>{asOf}</b><span>current view</span></div>
-    <div className="relation-legend"><span className="contradiction">red true contradiction</span><span className="open_tension">amber tension</span><span className="update_or_trend_reversal">blue trend reversal</span><span className="corroboration">green corroboration</span><span className="stale_evidence">grey stale evidence</span></div>
-    {filteredRelations.length ? <div className="graph-canvas" aria-label="Relationship graph">
-      <div className="node primary"><CircleDot/> {selected}</div>
-      {filteredRelations.slice(0, 8).map((r, i) => <React.Fragment key={r.id}>
-        <button className={`node satellite n${i} ${r.type}`} onClick={() => {
-          setSelectedRelationId(r.id);
-          onSelect(r.a.subject);
-        }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
-        <i className={`edge e${i} ${r.type}`} />
-      </React.Fragment>)}
-    </div> : <EmptyState title={relationEmptyState.title} body={relationEmptyState.body} actions={emptyStateActions(relationEmptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
-    <div className="relation-list">
-      {filteredRelations.slice(0, 5).map(r => <RelationCard key={r.id} relation={r} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
+    <div className="map-density-control" role="group" aria-label="Map density">
+      <span>Density</span>
+      {(['low', 'medium', 'high'] as MapDensity[]).map(value => <button key={value} type="button" className={density === value ? 'active' : ''} onClick={() => onDensityChange(value)}>{value}</button>)}
+      <small>{densityLimits.graph} graph / {densityLimits.list} list</small>
     </div>
-    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} />}
+    <div className="relation-legend"><span className="contradiction">red true contradiction</span><span className="open_tension">amber tension</span><span className="update_or_trend_reversal">blue trend reversal</span><span className="corroboration">green corroboration</span><span className="stale_evidence">grey stale evidence</span></div>
+    {filteredRelations.length ? <div className="map-lanes">
+      <section className="map-lane current">
+        <div className="map-lane-head"><h3>Current / upcoming</h3><span>{currentRelations.length} relations</span></div>
+        {currentGraphRelations.length ? <div className="graph-canvas" aria-label="Current relationship graph">
+          <div className="node primary"><CircleDot/> {selected}</div>
+          {currentGraphRelations.map((r, i) => <React.Fragment key={r.id}>
+            <button className={`node satellite n${i} ${r.type}`} onClick={() => {
+              setSelectedRelationId(r.id);
+              onSelect(r.a.subject);
+            }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
+            <i className={`edge e${i} ${r.type}`} />
+          </React.Fragment>)}
+        </div> : <p className="map-lane-empty">No current or upcoming endpoints at this as-of date.</p>}
+        <div className="relation-list">
+          {currentListRelations.map(r => <RelationCard key={r.id} relation={r} asOf={asOf} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
+        </div>
+      </section>
+      <section className="map-lane historical">
+        <div className="map-lane-head"><h3>Historical / ended</h3><span>{historicalRelations.length} relations</span></div>
+        {historicalGraphRelations.length ? <div className="graph-canvas" aria-label="Historical relationship graph">
+          <div className="node primary"><CircleDot/> {selected}</div>
+          {historicalGraphRelations.map((r, i) => <React.Fragment key={r.id}>
+            <button className={`node satellite n${i} ${r.type}`} onClick={() => {
+              setSelectedRelationId(r.id);
+              onSelect(r.a.subject);
+            }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
+            <i className={`edge e${i} ${r.type}`} />
+          </React.Fragment>)}
+        </div> : <p className="map-lane-empty">No fully historical or ended relations at this as-of date.</p>}
+        <div className="relation-list">
+          {historicalListRelations.map(r => <RelationCard key={r.id} relation={r} asOf={asOf} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
+        </div>
+      </section>
+    </div> : <EmptyState title={relationEmptyState.title} body={relationEmptyState.body} actions={emptyStateActions(relationEmptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
+    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} asOf={asOf} />}
   </article>;
 }
 
-function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: FrontendWorkspaceRelation; selected: boolean; onSelect: () => void; onUpdate: (input: UpdateRelationInput) => void }) {
+function RelationCard({ relation, asOf = today(), selected, onSelect, onUpdate }: { relation: FrontendWorkspaceRelation; asOf?: string; selected: boolean; onSelect: () => void; onUpdate: (input: UpdateRelationInput) => void }) {
   const [type, setType] = useState<RelationType>(relation.type);
   const [reviewNote, setReviewNote] = useState(relation.reviewNote ?? '');
+  const statuses = relationWindowStatuses(relation, asOf);
 
   useEffect(() => {
     setType(relation.type);
@@ -1684,8 +1860,8 @@ function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: Fr
 
   return <article className={`${relation.type} ${selected ? 'selected' : ''}`}>
     <b>{relationLabel(relation.type)} · {Math.round(relation.score * 100)}% · {relation.reviewStatus}</b>
-    <p><span>{relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</span> {relation.a.text}</p>
-    <p><span>{relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</span> {relation.b.text}</p>
+    <p><span>{relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</span><span className={`window-status-chip ${statuses.a}`}>{statusLabel(statuses.a)}</span> {relation.a.text}</p>
+    <p><span>{relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</span><span className={`window-status-chip ${statuses.b}`}>{statusLabel(statuses.b)}</span> {relation.b.text}</p>
     <small>{relation.reason} Source-person context: {relation.sourcePersonContext ?? 'unknown'}. Snippets are shown so analysts can see why this is or is not a contradiction.</small>
     <label className="relation-review-note"><span>Review note</span><textarea value={reviewNote} onChange={event => setReviewNote(event.target.value)} /></label>
     <div className="relation-actions">
@@ -1698,7 +1874,8 @@ function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: Fr
   </article>;
 }
 
-function RelationDetailDrawer({ relation }: { relation: FrontendWorkspaceRelation }) {
+function RelationDetailDrawer({ relation, asOf = today() }: { relation: FrontendWorkspaceRelation; asOf?: string }) {
+  const statuses = relationWindowStatuses(relation, asOf);
   return <aside className="relation-detail-drawer" aria-label="Relation detail">
     <div className="panel-title"><PanelLeft/> Relation detail</div>
     <div className="relation-detail-grid">
@@ -1709,21 +1886,50 @@ function RelationDetailDrawer({ relation }: { relation: FrontendWorkspaceRelatio
       <span>Review state<b>{relation.reviewStatus}</b></span>
       <span>People context<b>{relation.sourcePersonContext ?? 'unknown'}</b></span>
       <span>Review note<b>{relation.reviewNote || 'None'}</b></span>
+      <span>Endpoint A window<b><i className={`window-status-chip ${statuses.a}`}>{statusLabel(statuses.a)}</i></b></span>
+      <span>Endpoint B window<b><i className={`window-status-chip ${statuses.b}`}>{statusLabel(statuses.b)}</i></b></span>
     </div>
     <div className="relation-detail-claims">
       <div className="relation-detail-claim">
         <b>{relation.a.subject} · {relation.a.direction}</b>
-        <small>observed {relation.a.observedAt} · applies {relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</small>
+        <small>observed {relation.a.observedAt} · applies {relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'} · {statusLabel(statuses.a)}</small>
         <p>{relation.a.text}</p>
       </div>
       <div className="relation-detail-claim">
         <b>{relation.b.subject} · {relation.b.direction}</b>
-        <small>observed {relation.b.observedAt} · applies {relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</small>
+        <small>observed {relation.b.observedAt} · applies {relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'} · {statusLabel(statuses.b)}</small>
         <p>{relation.b.text}</p>
       </div>
     </div>
     <p>{relation.reason}</p>
   </aside>;
+}
+
+function relationWindowStatuses(relation: FrontendWorkspaceRelation, asOf: string): { a: UiWindowStatus; b: UiWindowStatus } {
+  return {
+    a: uiWindowStatus(relation.a, asOf),
+    b: uiWindowStatus(relation.b, asOf)
+  };
+}
+
+function uiWindowStatus(claim: Claim, asOf: string): UiWindowStatus {
+  const status = claimWindowStatus(claim, asOf);
+  if (status === 'future') return 'upcoming';
+  if (status === 'expired') return 'ended';
+  return 'current';
+}
+
+function laneForRelation(relation: FrontendWorkspaceRelation, asOf: string): WindowLane {
+  const statuses = relationWindowStatuses(relation, asOf);
+  return isCurrentWindowStatus(statuses.a) || isCurrentWindowStatus(statuses.b) ? 'current' : 'historical';
+}
+
+function isCurrentWindowStatus(status: UiWindowStatus): boolean {
+  return status === 'current' || status === 'upcoming';
+}
+
+function statusLabel(status: UiWindowStatus): string {
+  return status;
 }
 
 function PersonMemoryPanel({ people, onSelectPerson, onStartCapture }: { people: PersonMemorySummary[]; onSelectPerson: (name: string) => void; onStartCapture: () => void }) {
@@ -1737,7 +1943,7 @@ function PersonMemoryPanel({ people, onSelectPerson, onStartCapture }: { people:
         <b>{person.positiveCount ?? 0}+ / {person.negativeCount ?? 0}- / {person.neutralCount ?? 0} neutral</b>
         <em>{(person.subjects ?? []).slice(0, 3).join(', ') || 'No subjects yet'} Â· {person.contradictionCount ?? 0} contradictions Â· {person.trendReversalCount ?? 0} reversals</em>
       </button>)}
-    </div> : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture })} />}
+    </div> : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture })} showIcon={false} />}
   </article>;
 }
 
@@ -1750,9 +1956,9 @@ type EmptyStateButtonAction = {
   onClick: () => void;
 };
 
-function EmptyState({ title, body, actions = [] }: { title: string; body: string; actions?: EmptyStateButtonAction[] }) {
-  return <div className="empty">
-    <Sparkles size={18}/>
+function EmptyState({ title, body, actions = [], showIcon = true }: { title: string; body: string; actions?: EmptyStateButtonAction[]; showIcon?: boolean }) {
+  return <div className={showIcon ? 'empty' : 'empty no-icon'}>
+    {showIcon && <Sparkles size={18}/>}
     <b>{title}</b>
     <p>{body}</p>
     {actions.length > 0 && <div className="empty-actions">
@@ -1800,6 +2006,8 @@ function emptyMapFilterOptions() {
     securities: [] as string[],
     industriesAndThemes: [] as string[],
     sourcePeople: [] as string[],
+    authors: [] as SelectOption[],
+    teams: [] as string[],
     freshness: ['fresh', 'aging', 'stale']
   };
 }
@@ -1879,8 +2087,26 @@ function deriveMapFilterOptions(graph: FrontendWorkspaceSnapshot): ReturnType<ty
     securities: sortedUnique([...claimMetadata, ...noteMetadata].flatMap(metadata => metadata.tickers)),
     industriesAndThemes: sortedUnique([...claimMetadata, ...noteMetadata].flatMap(metadata => [...metadata.industries, ...metadata.manualThemes])),
     sourcePeople: sortedUnique([...claimMetadata, ...noteMetadata].flatMap(metadata => metadata.sourcePeople)),
+    authors: authorOptions(graph),
+    teams: sortedUnique([
+      ...graph.claims.map(claim => claim.team),
+      ...graph.visibleNotes.map(note => note.team)
+    ].filter((team): team is string => Boolean(team))),
     freshness: empty.freshness
   };
+}
+
+function authorOptions(graph: FrontendWorkspaceSnapshot): SelectOption[] {
+  const authors = new Map<string, string>();
+  for (const note of graph.visibleNotes) {
+    authors.set(note.authorId, note.authorName || note.authorId);
+  }
+  for (const claim of graph.claims) {
+    authors.set(claim.authorId, claim.authorName || claim.authorId);
+  }
+  return [...authors.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([value, label]) => ({ value, label }));
 }
 
 function filterMapRelations(relations: FrontendWorkspaceRelation[], filters: MapFilters, notes: FrontendWorkspaceNote[]): FrontendWorkspaceRelation[] {
@@ -1891,7 +2117,9 @@ function filterMapRelations(relations: FrontendWorkspaceRelation[], filters: Map
       && (!filters.industryOrTheme || matchesTag([...a.industries, ...a.manualThemes, ...b.industries, ...b.manualThemes], filters.industryOrTheme))
       && (!filters.relationType || relation.type === filters.relationType)
       && (!filters.freshness || relation.a.freshness === filters.freshness || relation.b.freshness === filters.freshness)
-      && (!filters.sourcePerson || matchesTag([...a.sourcePeople, ...b.sourcePeople], filters.sourcePerson));
+      && (!filters.sourcePerson || matchesTag([...a.sourcePeople, ...b.sourcePeople], filters.sourcePerson))
+      && (!filters.authorId || relation.a.authorId === filters.authorId || relation.b.authorId === filters.authorId)
+      && (!filters.team || relation.a.team === filters.team || relation.b.team === filters.team);
   });
 }
 

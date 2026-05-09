@@ -12,6 +12,7 @@ import type {
   UpdateNoteInput,
   UpdateRelationInput,
   UpsertNoteDraftInput,
+  WorkspaceOptions,
   WorkspaceSnapshot
 } from '../server/workspace-service';
 import type { RelationType } from './engine';
@@ -35,8 +36,11 @@ export function createAuthClient(config: AuthBootstrap): SupabaseClient {
   });
 }
 
-export async function loadWorkspace(session: Session): Promise<WorkspaceSnapshot> {
-  const response = await fetch('/api/workspace', { headers: authHeaders(session) });
+export async function loadWorkspace(session: Session, input: WorkspaceOptions = {}): Promise<WorkspaceSnapshot> {
+  const params = new URLSearchParams();
+  if (input.asOf) params.set('asOf', input.asOf);
+  const query = params.toString();
+  const response = await fetch(`/api/workspace${query ? `?${query}` : ''}`, { headers: authHeaders(session) });
   return readJson(response);
 }
 

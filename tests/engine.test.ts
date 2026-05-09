@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPersonMemory, canAccess, classifyTemporalRelation, detectEntities, detectRelations, extractClaims, inferTemporalWindow, runPipeline, type Claim, type Note, type User } from '../src/engine';
+import {
+  buildPersonMemory,
+  canAccess,
+  claimObservedBy,
+  claimWindowStatus,
+  classifyTemporalRelation,
+  detectEntities,
+  detectRelations,
+  effectiveClaimEnd,
+  extractClaims,
+  freshnessAsOf,
+  inferTemporalWindow,
+  projectClaimAsOf,
+  runPipeline,
+  type Claim,
+  type Note,
+  type User
+} from '../src/engine';
 import { linkedEntity } from '../src/entity-links';
 
 const analyst: User = { id: 'a', name: 'Analyst', role: 'Analyst', team: 'Semis' };
@@ -150,6 +167,108 @@ test('temporal relation helper separates overlapping contradictions from stale s
   const staleEvidence = classifyTemporalRelation(staleBull, freshBull, 4, '2026-05-01');
   assert.equal(staleEvidence?.type, 'stale_evidence');
   assert.equal(staleEvidence?.overlapDays, 0);
+});
+
+test('claim as-of helpers use known-by dates and preserve known future forecasts', () => {
+  const futureObserved = claim({
+    id: 'future-observed',
+    noteId: 'future-note',
+    observedAt: '2026-06-01',
+    appliesToStart: '2026-06-01',
+    appliesToEnd: '2026-09-01'
+  });
+  const knownForecast = claim({
+    id: 'known-forecast',
+    noteId: 'forecast-note',
+    observedAt: '2026-05-01',
+    appliesToStart: '2026-07-01',
+    appliesToEnd: '2026-10-01'
+  });
+  const openEndedQuarter = claim({
+    id: 'open-quarter',
+    noteId: 'open-quarter-note',
+    observedAt: '2026-01-01',
+    appliesToStart: '2026-01-01',
+    appliesToEnd: undefined,
+    horizon: 'quarter'
+  });
+
+  assert.equal(claimObservedBy(futureObserved, '2026-05-15'), false);
+  assert.equal(claimObservedBy(knownForecast, '2026-05-15'), true);
+  assert.equal(claimWindowStatus(knownForecast, '2026-05-15'), 'future');
+  assert.equal(projectClaimAsOf(knownForecast, '2026-05-15').freshness, 'fresh');
+  assert.equal(effectiveClaimEnd(openEndedQuarter), '2026-05-01');
+});
+
+test('claim freshness projects differently at earlier and later as-of dates', () => {
+  const oldClaim = claim({
+    id: 'old-freshness',
+    noteId: 'old-freshness-note',
+    observedAt: '2026-01-01',
+    appliesToStart: '2026-01-01',
+    appliesToEnd: '2026-02-01',
+    freshness: 'fresh'
+  });
+
+  assert.equal(freshnessAsOf(oldClaim, '2026-02-15'), 'fresh');
+  assert.equal(freshnessAsOf(oldClaim, '2026-05-15'), 'aging');
+  assert.equal(freshnessAsOf(oldClaim, '2026-09-01'), 'stale');
+  assert.equal(projectClaimAsOf(oldClaim, '2026-09-01').freshness, 'stale');
+});
+
+test('relations appear only after both endpoint claims have been observed', () => {
+  const bull = claim({
+    id: 'bull-known',
+    noteId: 'bull-known-note',
+    direction: 'positive',
+    observedAt: '2026-05-01',
+    appliesToStart: '2026-05-01',
+    appliesToEnd: '2026-08-01'
+  });
+  const bear = claim({
+    id: 'bear-future',
+    noteId: 'bear-future-note',
+    direction: 'negative',
+    text: 'Nvidia demand is weak as GPU supply slows.',
+    observedAt: '2026-06-01',
+    appliesToStart: '2026-06-01',
+    appliesToEnd: '2026-09-01'
+  });
+
+  const earlyClaims = [bull, bear]
+    .filter(item => claimObservedBy(item, '2026-05-15'))
+    .map(item => projectClaimAsOf(item, '2026-05-15'));
+  const laterClaims = [bull, bear]
+    .filter(item => claimObservedBy(item, '2026-06-15'))
+    .map(item => projectClaimAsOf(item, '2026-06-15'));
+
+  assert.equal(detectRelations(earlyClaims, '2026-05-15').length, 0);
+  assert(detectRelations(laterClaims, '2026-06-15').some(relation => relation.type === 'contradiction'));
+});
+
+test('detectRelations uses supplied as-of date when classifying stale evidence', () => {
+  const oldBull = claim({
+    id: 'old-bull-asof',
+    noteId: 'old-bull-asof-note',
+    direction: 'positive',
+    observedAt: '2026-01-01',
+    appliesToStart: '2026-01-01',
+    appliesToEnd: '2026-02-01',
+    freshness: 'fresh'
+  });
+  const newBull = claim({
+    id: 'new-bull-asof',
+    noteId: 'new-bull-asof-note',
+    direction: 'positive',
+    observedAt: '2026-05-01',
+    appliesToStart: '2026-05-01',
+    appliesToEnd: '2026-08-01',
+    freshness: 'fresh'
+  });
+
+  const relation = detectRelations([oldBull, newBull], '2026-09-01')[0];
+
+  assert.equal(relation.type, 'stale_evidence');
 });
 
 test('relations expose source-person context without changing temporal relation types', () => {

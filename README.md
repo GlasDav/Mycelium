@@ -83,14 +83,14 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Server-backed recoverable workbench drafts, explicit saved-note editing, author-only note update enforcement, and read-only note revision history.
 - Supabase Auth-backed sign-in/sign-up flow with organization/profile/team bootstrap.
 - Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
-- Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, exposes scoped dashboard aggregates through `/api/dashboard`, and can serve the built React app as one deployable Node service.
+- Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, exposes scoped dashboard aggregates through `/api/dashboard`, returns historical graph projections through `/api/workspace?asOf=YYYY-MM-DD`, and can serve the built React app as one deployable Node service.
 - Authenticated workspace JSON export/import routes for demo restore workflows, including dismissed relation review decisions.
 - Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview and addable metadata suggestions.
 - Claim direction classification with citation snippets, approve/reject/edit review state, analyst review notes, participant correction, and persisted relation review controls.
 - Temporal relationship detection across accessible notes, with dates and source-person context explaining why an opposing read is a true contradiction vs a trend reversal.
 - Server-side permission filtering for Analyst, PM, and Compliance roles.
 - Scoped dashboard views with workspace/team/org toggles, 30-day/90-day/all-time ranges, metric cards, relation mix, freshness, review backlog, signals, top companies/themes/KPIs/securities/watchlists/source people, and source-person coverage.
-- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, grey stale evidence, map metadata filters, and a selected-relation detail drawer.
+- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, grey stale evidence, server-backed as-of timeline, current/historical lanes, author/team/metadata filters, density controls, and a selected-relation detail drawer.
 - In-app alerts for contradictions, tensions, reversals, corroboration clusters, stale evidence, and research-density changes.
 - Permission-aware note archive and seed demo data so the app is useful immediately.
 
@@ -168,10 +168,10 @@ This runs a production build/typecheck and the full deterministic test suite.
 - `server/app.ts` — Fastify BFF routes for workspace, scoped dashboard aggregates, workspace export/import, notes, note draft recovery, note history, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
 - `supabase/migrations/202605060001_production_foundation.sql` and `supabase/migrations/202605090001_note_persistence_spine.sql` — production-shaped Postgres schema, persistence spine tables, and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/visibility controls, stock/theme/KPI metadata, action-backed empty states, notes sidebar, page-level notes/dashboard/map/archive navigation, slash-command markdown editing, live extraction, current-note claim/relation review, dashboard metrics/charts/signals/source-person coverage, relationship map review/detail drawer, and archive.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/visibility controls, stock/theme/KPI metadata, action-backed empty states, notes sidebar, page-level notes/dashboard/map/archive navigation, slash-command markdown editing, live extraction, current-note claim/relation review, dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline/lanes/filters/density/review/detail drawer, and archive.
 - `src/demo-guide.ts` and `src/empty-states.ts` — pure frontend guidance helpers for walkthrough content/storage and empty-state copy/action contracts.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, page layout, markdown commands, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal/as-of helpers, schema contract, workspace service behavior, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, map timeline/layout contracts, page layout, markdown commands, and BFF routes.
 
 - `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
 
