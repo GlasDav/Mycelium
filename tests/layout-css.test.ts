@@ -72,3 +72,30 @@ test('sidebar notes list does not stretch rows to fill available height', () => 
   assert.match(listMatch.groups.body, /flex-direction\s*:\s*column/);
   assert.doesNotMatch(listMatch.groups.body, /display\s*:\s*grid/);
 });
+
+test('workspace pages have separate layout selectors', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+
+  for (const selector of [
+    '.page-shell',
+    '.page-layout',
+    '.review-layout',
+    '.workspace.map-workspace',
+    '.workspace.archive-workspace',
+    '.archive-count'
+  ]) {
+    assert.match(css, new RegExp(`${selector.replace('.', '\\.')}\\s*\\{`), `${selector} rule is missing`);
+  }
+});
+
+test('archive workspace overrides the shared workspace grid with full-width layout', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const workspaceIndex = css.indexOf('.workspace {');
+  const archiveIndex = css.indexOf('.workspace.archive-workspace {');
+  const archiveMatch = css.match(/\.workspace\.archive-workspace\s*\{(?<body>[^}]+)\}/);
+
+  assert(workspaceIndex >= 0, 'shared workspace rule is missing');
+  assert(archiveIndex > workspaceIndex, 'archive workspace override must come after the shared workspace rule');
+  assert(archiveMatch?.groups?.body, 'archive workspace rule is missing');
+  assert.match(archiveMatch.groups.body, /display\s*:\s*block/);
+});

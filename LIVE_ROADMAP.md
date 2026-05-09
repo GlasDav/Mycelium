@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-08_
+_Last updated: 2026-05-09_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -21,6 +21,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, and visibility filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
 - [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
+- [x] Left-rail page navigation now renders separate review, relationship map, and full-width archive pages instead of crowding every surface into the front page.
 - [x] True note metadata arrays for stocks/tickers, manual themes, and KPIs persisted through the BFF and Supabase notes table.
 - [x] API-level workspace JSON export/import so demos can be restored through authenticated BFF routes.
 - [x] Deterministic local extraction for companies, tickers, themes, KPIs, and claims.
@@ -31,7 +32,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 47 tests.
+- [x] Validation passing: build + 50 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -70,6 +71,7 @@ Expected result:
   - persisted claim/relation review behavior.
   - note metadata persistence,
   - note filtering and sorting helpers.
+  - page-level review/map/archive layout and full-width archive behavior.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
 
 ## Priority Ladder

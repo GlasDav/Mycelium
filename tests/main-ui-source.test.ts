@@ -101,6 +101,20 @@ test('note workbench has a new note action and no sample prompt buttons', () => 
   assert.doesNotMatch(source, /Use sample/);
 });
 
+test('left rail modes render separate page bodies instead of in-page tabs', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(appReturn, /className=\{`shell page-shell \$\{viewMode\}-page`\}/);
+  assert.match(appReturn, /viewMode === 'review' && <ReviewPage/);
+  assert.match(appReturn, /viewMode === 'map' && <MapPage/);
+  assert.match(appReturn, /viewMode === 'archive' && <ArchivePage/);
+  assert.doesNotMatch(appReturn, /className="mode-tabs"/);
+});
+
 test('claim review cards capture analyst review notes on every action', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const claimStart = source.indexOf('function ClaimCard');

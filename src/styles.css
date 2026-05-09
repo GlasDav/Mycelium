@@ -354,6 +354,26 @@ button {
   gap: 12px;
 }
 
+.page-shell {
+  align-content: start;
+}
+
+.page-layout {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.review-layout {
+  align-content: start;
+}
+
+.archive-count {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -462,7 +482,6 @@ textarea:focus {
 .note-meta span,
 .samples button,
 .chip,
-.mode-tabs button,
 .stance-strip span,
 .relation-legend span,
 .claim small,
@@ -942,6 +961,14 @@ textarea::placeholder {
   align-items: start;
 }
 
+.workspace.map-workspace {
+  grid-template-columns: 270px minmax(0, 1fr);
+}
+
+.workspace.archive-workspace {
+  display: block;
+}
+
 .subject-rail,
 .right-stack {
   position: sticky;
@@ -994,28 +1021,6 @@ textarea::placeholder {
 
 .center-stage {
   min-width: 0;
-}
-
-.mode-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.mode-tabs button {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  color: var(--muted);
-  padding: 9px 11px;
-  font-weight: 720;
-  text-transform: uppercase;
-}
-
-.mode-tabs button.active {
-  border-color: var(--rail);
-  background: var(--rail);
-  color: #ffffff;
 }
 
 .synthesis-head {
@@ -1763,10 +1768,6 @@ textarea::placeholder {
 
   .rail-footer {
     writing-mode: horizontal-tb;
-  }
-
-  .mode-tabs {
-    flex-wrap: wrap;
   }
 
   .primary-note {

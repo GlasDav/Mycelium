@@ -335,9 +335,10 @@ function App() {
       }}
     />
 
-    <section className="shell">
+    <section className={`shell page-shell ${viewMode}-page`}>
       {appError && <div className="inline-error">{appError}</div>}
 
+      {viewMode === 'review' && <ReviewPage>
       <section className="note-workbench">
         <article className="capture panel primary-note">
           <div className="note-panel-head">
@@ -386,7 +387,7 @@ function App() {
         </aside>
       </section>
 
-      <section className="workspace">
+      <section className="workspace review-workspace">
         <aside className="subject-rail panel">
           <div className="panel-title"><Search/> Companies & themes</div>
           {subjects.length ? subjects.map(s => <button className={selected === s.subject ? 'active' : ''} key={s.subject} onClick={() => setSelected(s.subject)}>
@@ -397,13 +398,7 @@ function App() {
         </aside>
 
         <section className="center-stage">
-          <div className="mode-tabs" role="tablist" aria-label="Workspace mode">
-            <button className={viewMode === 'review' ? 'active' : ''} onClick={() => setViewMode('review')}>Claim review</button>
-            <button className={viewMode === 'map' ? 'active' : ''} onClick={() => setViewMode('map')}>Relationship map</button>
-            <button className={viewMode === 'archive' ? 'active' : ''} onClick={() => setViewMode('archive')}>Note archive</button>
-          </div>
-
-          {selectedSynth && viewMode === 'review' && <article className="panel synthesis">
+          {selectedSynth && <article className="panel synthesis">
             <div className="panel-title"><PanelLeft/> Synthesized view</div>
             <div className="synthesis-head">
               <div><h2>{selectedSynth.subject}</h2><p>{selectedSynth.summary}</p></div>
@@ -423,16 +418,6 @@ function App() {
             </div>
           </article>}
 
-          {viewMode === 'map' && <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} onSelect={setSelected} onUpdate={patchRelation} />}
-
-          {viewMode === 'archive' && <article className="panel notes">
-            <div className="panel-title"><LockKeyhole/> Permission-aware note archive</div>
-            {graph.visibleNotes.map(n => <article key={n.id} className={`note-card ${selectedNoteId === n.id ? 'selected' : ''}`}>
-              <div><h3>{n.title}</h3><small>{n.team} · {n.visibility} · {n.createdAt}</small></div>
-              <NoteMetadataChips note={n} />
-              <MarkdownPreview source={n.body} />
-            </article>)}
-          </article>}
         </section>
 
         <aside className="right-stack">
@@ -448,8 +433,52 @@ function App() {
           </article>
         </aside>
       </section>
+      </ReviewPage>}
+
+      {viewMode === 'map' && <MapPage>
+        <section className="workspace map-workspace">
+          <aside className="subject-rail panel">
+            <div className="panel-title"><Search/> Companies & themes</div>
+            {subjects.length ? subjects.map(s => <button className={selected === s.subject ? 'active' : ''} key={s.subject} onClick={() => setSelected(s.subject)}>
+              <span>{s.subject}</span>
+              <small>{s.total} claims · {s.stance}</small>
+              <i style={{ ['--mix' as string]: `${Math.min(100, (s.positives / Math.max(1, s.total)) * 100)}%` }} />
+            </button>) : <EmptyState title="No graph yet" body="Add a note to create the first company view." />}
+          </aside>
+
+          <section className="center-stage">
+            <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} onSelect={setSelected} onUpdate={patchRelation} />
+          </section>
+        </section>
+      </MapPage>}
+
+      {viewMode === 'archive' && <ArchivePage notes={filteredNotes} totalNotes={graph.visibleNotes.length} selectedNoteId={selectedNoteId} />}
     </section>
   </main>;
+}
+
+function ReviewPage({ children }: { children: React.ReactNode }) {
+  return <div className="page-layout review-layout">{children}</div>;
+}
+
+function MapPage({ children }: { children: React.ReactNode }) {
+  return <div className="page-layout map-layout">{children}</div>;
+}
+
+function ArchivePage({ notes, totalNotes, selectedNoteId }: { notes: WorkspaceNote[]; totalNotes: number; selectedNoteId: string }) {
+  return <div className="page-layout archive-layout">
+    <section className="workspace archive-workspace">
+      <article className="panel notes">
+        <div className="panel-title"><LockKeyhole/> Permission-aware note archive</div>
+        <p className="archive-count">{notes.length} of {totalNotes} visible notes</p>
+        {notes.length ? notes.map(n => <article key={n.id} className={`note-card ${selectedNoteId === n.id ? 'selected' : ''}`}>
+          <div><h3>{n.title}</h3><small>{n.team} · {n.visibility} · {n.createdAt}</small></div>
+          <NoteMetadataChips note={n} />
+          <MarkdownPreview source={n.body} />
+        </article>) : <EmptyState title="No notes match" body="Adjust the sidebar filters to broaden the archive." />}
+      </article>
+    </section>
+  </div>;
 }
 
 function NotesSidebar({
