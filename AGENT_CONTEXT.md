@@ -17,10 +17,10 @@ The repo contains a production-shaped MVP foundation:
 - Supabase Auth/Postgres/RLS project files and raw migrations.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
-- Server-side graph materialization for notes, claims, relations, note drafts, note revision history, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, observed-date/visibility controls, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, left-rail page navigation for review/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing with analyst review notes, relation review with analyst notes, relationship detail drawer, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- Server-side graph materialization for notes, claims, relations, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
+- Minimal note-taking-first research workspace UI with auth, observed-date/visibility/read-only-team controls, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, left-rail page navigation for review/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, workspace pulse, claim editing with analyst review notes and participant correction, relation review with analyst notes, relationship detail drawer, source-person memory panel, map metadata filters, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
-- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, sidebar layout density, page navigation, archive width, and markdown toolbar/slash-command formatting helpers.
+- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, normalized entity links, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, sidebar layout density, page navigation, archive width, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -41,7 +41,7 @@ npm run validate
 The durable asset is not a chat interface or generic RAG layer. It is the **temporal claim graph**:
 
 - Claims extracted from notes.
-- Claims connected to companies, themes, KPIs, authors, notes, permissions, and validity windows.
+- Claims connected to companies, securities, industries, themes, KPIs, watchlists, source people, authors, notes, permissions, and validity windows.
 - Relations classified by time/context, not naive text disagreement.
 - Synthesis generated from graph state with source provenance.
 
@@ -51,7 +51,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, server-backed draft restore, read-only history drawer, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing with review notes, relationship review with review notes, relationship map detail drawer, and separate review/map/archive page bodies.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, workspace pulse, subject navigation, synthesis, source-person memory, claim editing with review notes and participant correction, relationship review with review notes, relationship map filters/detail drawer, and separate review/map/archive page bodies.
+- `src/entity-links.ts` owns shared normalized entity/link metadata helpers, legacy array compatibility, key normalization, and derived metadata arrays.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
@@ -63,8 +64,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 - `server/index.ts` is the single-service Node entrypoint.
 - `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace, workspace export/import, notes, note drafts, note history, claims, relations, and audit events.
-- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, workspace JSON export/import, note editing/history, server drafts, review state, audit events, and the extraction provider contract.
-- `server/supabase-repository.ts` adapts the workspace service to Supabase.
+- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, workspace JSON export/import, normalized linked metadata compatibility, note editing/history, server drafts, source-person memory summaries, review state, audit events, and the extraction provider contract.
+- `server/supabase-repository.ts` adapts the workspace service to Supabase, including normalized research entity and note/claim entity link persistence.
 
 ### Supabase
 
@@ -72,6 +73,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - Local Supabase ports intentionally use `55321`-series host ports (`55321` API, `55322` DB, `55323` Studio, `55324` Mailpit, `55327` analytics) because Windows/Docker environments can reserve the default `5432x` range.
 - `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes with `tickers`, `manual_themes`, and `kpis` metadata arrays, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
 - `supabase/migrations/202605090001_note_persistence_spine.sql` adds server-backed workbench drafts, note revision history, and author-only note update RLS.
+- `supabase/migrations/202605090002_normalized_research_entities.sql` adds `research_entities`, note/claim entity link tables, draft/revision linked-entity JSON, access-following RLS policies, and supporting indexes.
 
 ### Intelligence Engine
 
@@ -84,6 +86,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
   - `classifyTemporalRelation`
   - `synthesize`
   - `generateAlerts`
+  - `buildPersonMemory`
   - `runPipeline`
 
 ### Data
@@ -94,12 +97,12 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Tests
 
-- `tests/schema.test.ts` checks the migration/RLS contract.
-- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, workspace export/import restore, note update/history/drafts, claim edit/reject, relation dismissal/reclassification.
-- `tests/bff.test.ts` checks Fastify API auth, note update/history/draft routes, export/import, and route behavior.
-- `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting.
+- `tests/schema.test.ts` checks the migration/RLS contract, including normalized entity/link tables.
+- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, workspace export/import restore, note update/history/drafts, normalized entity links, source-person memory summaries, claim edit/reject, relation dismissal/reclassification.
+- `tests/bff.test.ts` checks Fastify API auth, note update/history/draft routes, normalized metadata round trips, export/import, and route behavior.
+- `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting across securities, industries/themes, KPIs, watchlists, participants, visibility, and dates.
 - `tests/markdown-tools.test.ts` checks markdown toolbar and slash-command transforms.
-- `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar metadata, page navigation, archive width, and layout contracts.
+- `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar metadata, source-person memory UI, map filters, page navigation, archive width, and layout contracts.
 - `tests/engine.test.ts` — core deterministic behavior.
 
 ### Planning / Product Docs
@@ -128,6 +131,8 @@ Each claim should carry:
 - `horizon` — `point_in_time`, `near_term`, `quarter`, `year`, or `unknown`.
 - `freshness` — `fresh`, `aging`, or `stale`.
 - provenance: `noteId`, `authorId`, `team`, `visibility`, evidence snippet.
+
+Current implementation note: securities, industries, themes, KPIs, watchlists, and source people now flow through normalized `LinkedEntity` metadata and Supabase note/claim entity link rows. Legacy `tickers`, `manualThemes`, and `kpis` arrays remain derived compatibility fields.
 
 ### Relation Types
 
@@ -158,22 +163,22 @@ A contradiction should fire strongly only when the claims overlap in:
 
 ### Stock / Industry Linking
 
-Notes should be explicitly linkable to stocks/securities and industries/sectors, even when entity extraction is imperfect. Treat these as first-class graph nodes, not just text tags. The product should support many-to-many links:
+Notes are explicitly linkable to stocks/securities and industries/sectors, even when entity extraction is imperfect. These use first-class normalized graph nodes and link rows rather than only text tags. The product supports many-to-many links:
 
 - one note can mention multiple stocks and industries;
 - one claim can attach to a specific security, issuer, KPI, and industry;
-- synthesis and map filters should work by company, ticker/security, industry/sector, theme, watchlist, and portfolio relevance.
+- synthesis and map filters work by company, ticker/security, industry/sector, theme, watchlist, participant, relation type, and freshness. Portfolio relevance remains a later watchlist/portfolio integration.
 
 ### Source-Person Memory
 
-Notes should be aware of prior notes by or about the same people. This matters for expert calls, company meetings, management comments, and internal analyst work. Track person-level history so Mycelium can show:
+Notes and claims now carry source-person/participant links, and workspace snapshots include derived person-memory summaries over accessible claims. This matters for expert calls, company meetings, management comments, and internal analyst work. Track person-level history so Mycelium can show:
 
 - sentiment changes by the same person over time;
 - self-inconsistencies where a person contradicts their earlier view within overlapping windows;
 - credible trend reversals where the same person updates their view after conditions changed;
 - disagreement between different people separately from a person changing their own mind.
 
-Identity confidence matters: ambiguous transcript speakers or common names should stay reviewable rather than silently merged.
+Identity confidence still matters: the current implementation uses explicit/manual source-person links and simple normalized keys. Fuzzy identity resolution, aliases beyond the stored alias array, and confidence scoring are deferred.
 
 ## Current UX Shape
 
@@ -202,7 +207,7 @@ As of 2026-05-09:
 
 - `npm run validate` passes.
 - Build passes.
-- 62/62 tests pass.
+- 71/71 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
@@ -214,6 +219,7 @@ As of 2026-05-09:
 - No external news/filings ingestion yet.
 - Relationship topic matching is still coarse: shared company + themes/keyword overlap.
 - The map is an affordance, not a full interactive graph canvas yet.
+- Normalized research entities use deterministic/manual keys for now; no security-master provider, industry hierarchy, fuzzy person identity resolution, or identity-confidence workflow is present yet.
 
 ## Next Best Work
 
@@ -222,12 +228,13 @@ See `LIVE_ROADMAP.md`. The highest-leverage next phase is to turn the demo into 
 1. Add persistence and server-enforced permissions.
 2. Improve temporal claim extraction and analyst review controls.
 3. Build a richer relationship map with timeline/as-of controls.
-4. Add explicit stock/ticker/security and industry/sector linking to notes, claims, synthesis, and map filters.
-5. Add source-person memory so prior notes by the same expert/company contact/analyst can surface sentiment changes and inconsistencies.
+4. Add a true timeline/as-of control and current-vs-historical lanes for the relationship map.
+5. Add richer empty states and a first-run demo walkthrough for the durable alpha.
 6. Add import paths for real notes, transcripts, files, and audio.
 7. Design transcription as a first-class capture path with timestamped transcript chunks, speaker diarization, correction workflow, and compliance/consent controls.
-8. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
-9. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
+8. Add security-master, industry hierarchy, watchlist/portfolio membership, and source-person identity confidence once real pilot data clarifies the right taxonomy.
+9. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
+10. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
 
 ## Agent Operating Notes
 

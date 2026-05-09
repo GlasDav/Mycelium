@@ -104,10 +104,74 @@ import type {
   WorkspaceRelation,
   WorkspaceSnapshot
 } from '../server/workspace-service';
+import {
+  legacyArraysToLinkedEntities,
+  metadataArraysFromLinkedEntities,
+  mergeLinkedEntities,
+  type EntityRole,
+  type LinkedEntity,
+  type MetadataArrays
+} from './entity-links';
 import './styles.css';
 
 const relationTypes: RelationType[] = ['contradiction', 'update_or_trend_reversal', 'historical_tension', 'open_tension', 'corroboration', 'agreement', 'stale_evidence'];
 type RichMarkdownCommand = MarkdownCommand | 'undo' | 'redo';
+type SourcePersonContext = 'same_source_person' | 'different_source_people' | 'unknown';
+type PreviewEntityKind = Entity['kind'] | 'industry' | 'watchlist' | 'source_person';
+type PreviewEntity = { name: string; kind: PreviewEntityKind; ticker?: string };
+type FrontendMetadata = Partial<MetadataArrays> & { linkedEntities?: LinkedEntity[] };
+type FrontendWorkspaceNote = WorkspaceNote & FrontendMetadata;
+type FrontendWorkspaceClaim = WorkspaceClaim & FrontendMetadata;
+type FrontendWorkspaceRelation = Omit<WorkspaceRelation, 'a' | 'b'> & {
+  a: FrontendWorkspaceClaim;
+  b: FrontendWorkspaceClaim;
+  sourcePersonContext?: SourcePersonContext;
+};
+interface PersonMemorySummary {
+  name: string;
+  claimCount: number;
+  latestObservedAt?: string;
+  latestDirection?: Direction;
+  positiveCount?: number;
+  negativeCount?: number;
+  neutralCount?: number;
+  contradictionCount?: number;
+  trendReversalCount?: number;
+  subjects?: string[];
+  latestClaims?: FrontendWorkspaceClaim[];
+}
+interface FrontendWorkspaceSnapshot extends Omit<WorkspaceSnapshot, 'visibleNotes' | 'claims' | 'relations' | 'people'> {
+  visibleNotes: FrontendWorkspaceNote[];
+  claims: FrontendWorkspaceClaim[];
+  relations: FrontendWorkspaceRelation[];
+  people: PersonMemorySummary[];
+}
+type FrontendNoteDraft = NoteDraft & FrontendMetadata;
+type FrontendNotePayload = {
+  title?: string;
+  body: string;
+  visibility: Note['visibility'];
+  observedAt?: string;
+} & MetadataArrays & { linkedEntities: LinkedEntity[] };
+type FrontendDraftPayload = Partial<FrontendNotePayload> & { selectedNoteId?: string };
+type FrontendUpdateClaimInput = UpdateClaimInput & FrontendMetadata;
+type FrontendNoteFilters = NoteFilters & {
+  industry?: string;
+  watchlist?: string;
+  sourcePerson?: string;
+};
+interface FrontendNoteFilterOptions extends NoteFilterOptions {
+  industries: string[];
+  watchlists: string[];
+  sourcePeople: string[];
+}
+interface MapFilters {
+  security?: string;
+  industryOrTheme?: string;
+  relationType?: RelationType | '';
+  freshness?: '' | 'fresh' | 'aging' | 'stale';
+  sourcePerson?: string;
+}
 const markdownSanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), 'u', 'span'],
@@ -149,10 +213,15 @@ function App() {
   const [tickers, setTickers] = useState<string[]>([]);
   const [manualThemes, setManualThemes] = useState<string[]>([]);
   const [kpis, setKpis] = useState<string[]>([]);
+  const [industries, setIndustries] = useState<string[]>([]);
+  const [companyTags, setCompanyTags] = useState<string[]>([]);
+  const [watchlistTags, setWatchlistTags] = useState<string[]>([]);
+  const [sourcePeople, setSourcePeople] = useState<string[]>([]);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [noteFiltersCollapsed, setNoteFiltersCollapsed] = useState(true);
   const [selectedNoteId, setSelectedNoteId] = useState('');
-  const [noteFilters, setNoteFilters] = useState<NoteFilters>({ sort: 'newest' });
+  const [noteFilters, setNoteFilters] = useState<FrontendNoteFilters>({ sort: 'newest' });
+  const [mapFilters, setMapFilters] = useState<MapFilters>({});
   const [noteHistory, setNoteHistory] = useState<NoteRevision[]>([]);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const clearedDraftSignatureRef = useRef('');
@@ -211,9 +280,46 @@ function App() {
     return next;
   }
 
+  function currentMetadataArrays(): MetadataArrays {
+    return {
+      tickers,
+      manualThemes,
+      kpis,
+      industries,
+      companyTags,
+      watchlistTags,
+      sourcePeople
+    };
+  }
+
+  function currentLinkedEntities(): LinkedEntity[] {
+    return legacyArraysToLinkedEntities(currentMetadataArrays());
+  }
+
+  function applyWorkbenchMetadata(source: FrontendMetadata) {
+    const metadata = metadataArraysFromSource(source);
+    setTickers(metadata.tickers);
+    setManualThemes(metadata.manualThemes);
+    setKpis(metadata.kpis);
+    setIndustries(metadata.industries);
+    setCompanyTags(metadata.companyTags);
+    setWatchlistTags(metadata.watchlistTags);
+    setSourcePeople(metadata.sourcePeople);
+  }
+
+  function resetWorkbenchMetadata() {
+    setTickers([]);
+    setManualThemes([]);
+    setKpis([]);
+    setIndustries([]);
+    setCompanyTags([]);
+    setWatchlistTags([]);
+    setSourcePeople([]);
+  }
+
   async function restoreNoteDraft(nextSession: Session, nextWorkspace: WorkspaceSnapshot) {
     try {
-      const savedDraft = await loadNoteDraft(nextSession);
+      const savedDraft = await loadNoteDraft(nextSession) as FrontendNoteDraft | null;
       if (!savedDraft || !hasDraftContent(savedDraft)) return;
       const linkedNote = savedDraft.selectedNoteId
         ? nextWorkspace.visibleNotes.find(note => note.id === savedDraft.selectedNoteId)
@@ -223,9 +329,7 @@ function App() {
       setDraft(savedDraft.body);
       setVisibility(savedDraft.visibility);
       setObservedAt(savedDraft.observedAt ?? today());
-      setTickers(savedDraft.tickers ?? []);
-      setManualThemes(savedDraft.manualThemes ?? []);
-      setKpis(savedDraft.kpis ?? []);
+      applyWorkbenchMetadata(savedDraft);
       clearedDraftSignatureRef.current = draftSignature(savedDraft);
       setViewMode('review');
     } catch (error) {
@@ -235,15 +339,14 @@ function App() {
 
   useEffect(() => {
     if (!session || !workspace) return;
-    const draftInput = {
+    const draftInput: FrontendDraftPayload = {
       selectedNoteId: selectedNoteId || undefined,
       title: noteTitle,
       body: draft,
       visibility,
       observedAt,
-      tickers,
-      manualThemes,
-      kpis
+      ...currentMetadataArrays(),
+      linkedEntities: currentLinkedEntities()
     };
     if (!hasDraftContent(draftInput)) return;
     const signature = draftSignature(draftInput);
@@ -256,7 +359,7 @@ function App() {
     }, 700);
 
     return () => window.clearTimeout(handle);
-  }, [session, workspace, selectedNoteId, noteTitle, draft, visibility, observedAt, tickers, manualThemes, kpis]);
+  }, [session, workspace, selectedNoteId, noteTitle, draft, visibility, observedAt, tickers, manualThemes, kpis, industries, companyTags, watchlistTags, sourcePeople]);
 
   async function saveWorkbenchNote() {
     if (selectedNoteId) {
@@ -269,23 +372,21 @@ function App() {
   async function addNote() {
     if (!session || !draft.trim()) return;
     try {
-      const next = await createNote(session, {
+      const input: FrontendNotePayload = {
         title: noteTitle.trim() || undefined,
         body: draft,
         visibility,
         observedAt,
-        tickers,
-        manualThemes,
-        kpis
-      });
+        ...currentMetadataArrays(),
+        linkedEntities: currentLinkedEntities()
+      };
+      const next = await createNote(session, input);
       setWorkspace(next);
       const firstClaim = extractClaims(previewNote())[0];
       if (firstClaim) setSelected(firstClaim.subject);
       setNoteTitle('');
       setDraft('');
-      setTickers([]);
-      setManualThemes([]);
-      setKpis([]);
+      resetWorkbenchMetadata();
       setSelectedNoteId('');
       setViewMode('review');
       clearedDraftSignatureRef.current = '';
@@ -303,15 +404,15 @@ function App() {
       return;
     }
     try {
-      const next = await updateNote(session, selectedNoteId, {
+      const input: Partial<FrontendNotePayload> = {
         title: noteTitle.trim() || undefined,
         body: draft,
         visibility,
         observedAt,
-        tickers,
-        manualThemes,
-        kpis
-      });
+        ...currentMetadataArrays(),
+        linkedEntities: currentLinkedEntities()
+      };
+      const next = await updateNote(session, selectedNoteId, input);
       setWorkspace(next);
       clearedDraftSignatureRef.current = draftSignature({
         selectedNoteId,
@@ -319,9 +420,8 @@ function App() {
         body: draft,
         visibility,
         observedAt,
-        tickers,
-        manualThemes,
-        kpis
+        ...currentMetadataArrays(),
+        linkedEntities: currentLinkedEntities()
       });
       await deleteNoteDraft(session);
       const history = await loadNoteHistory(session, selectedNoteId);
@@ -342,7 +442,7 @@ function App() {
     }
   }
 
-  async function patchClaim(id: string, input: UpdateClaimInput) {
+  async function patchClaim(id: string, input: FrontendUpdateClaimInput) {
     if (!session) return;
     try {
       setWorkspace(await updateClaim(session, id, input));
@@ -372,9 +472,8 @@ function App() {
       sourceType: DEFAULT_NOTE_SOURCE_TYPE,
       createdAt: observedAt || today(),
       observedAt,
-      tickers,
-      manualThemes,
-      kpis
+      ...currentMetadataArrays(),
+      linkedEntities: currentLinkedEntities()
     };
   }
 
@@ -385,9 +484,7 @@ function App() {
     setDraft('');
     setVisibility('team');
     setObservedAt(date);
-    setTickers([]);
-    setManualThemes([]);
-    setKpis([]);
+    resetWorkbenchMetadata();
     setNoteHistory([]);
     setHistoryDrawerOpen(false);
     clearedDraftSignatureRef.current = '';
@@ -404,23 +501,61 @@ function App() {
     setWorkspace(null);
   }
 
-  const graph = workspace;
+  function addPreviewEntity(entity: PreviewEntity) {
+    if (entity.kind === 'company') {
+      setCompanyTags(values => addTag(values, entity.name));
+      const ticker = entity.ticker;
+      if (ticker) setTickers(values => addTag(values, ticker, value => value.toUpperCase()));
+      setSelected(entity.name);
+      return;
+    }
+    if (entity.kind === 'ticker') {
+      setTickers(values => addTag(values, entity.name, value => value.toUpperCase()));
+      setSelected(tickerToCompany(entity.name));
+      return;
+    }
+    if (entity.kind === 'industry') {
+      setIndustries(values => addTag(values, entity.name));
+      return;
+    }
+    if (entity.kind === 'theme') {
+      setManualThemes(values => addTag(values, entity.name));
+      return;
+    }
+    if (entity.kind === 'kpi') {
+      setKpis(values => addTag(values, entity.name));
+      return;
+    }
+    if (entity.kind === 'watchlist') {
+      setWatchlistTags(values => addTag(values, entity.name));
+      return;
+    }
+    setSourcePeople(values => addTag(values, entity.name));
+  }
+
+  const graph = workspace as FrontendWorkspaceSnapshot | null;
   const user = graph?.viewer;
   const selectedNote = selectedNoteId ? graph?.visibleNotes.find(note => note.id === selectedNoteId) : undefined;
   const canEditSelectedNote = !selectedNoteId || selectedNote?.authorId === user?.id;
   const workbenchActionLabel = selectedNoteId ? 'Save note' : 'Add note';
   const subjects = graph ? [...graph.companies, ...graph.themes] : [];
   const selectedSynth = subjects.find(s => s.subject === selected) ?? graph?.companies[0] ?? graph?.themes[0];
-  const visibleRelations = graph?.relations.filter(r => !selectedSynth || r.a.subject === selectedSynth.subject || r.a.themes.includes(selectedSynth.subject)) ?? [];
+  const subjectRelations = graph?.relations.filter(r => !selectedSynth || relationMatchesSubject(r, selectedSynth.subject)) ?? [];
+  const visibleRelations = graph ? filterMapRelations(subjectRelations.length ? subjectRelations : graph.relations, mapFilters, graph.visibleNotes) : [];
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
   const previewEntities = mergeEntities(detectEntities(draft), [
+    ...companyTags.map(name => ({ name, kind: 'company' as const })),
     ...tickers.map(name => ({ name, kind: 'ticker' as const })),
+    ...industries.map(name => ({ name, kind: 'industry' as const })),
     ...manualThemes.map(name => ({ name, kind: 'theme' as const })),
-    ...kpis.map(name => ({ name, kind: 'kpi' as const }))
+    ...kpis.map(name => ({ name, kind: 'kpi' as const })),
+    ...watchlistTags.map(name => ({ name, kind: 'watchlist' as const })),
+    ...sourcePeople.map(name => ({ name, kind: 'source_person' as const }))
   ]);
-  const noteFilterOptions = graph ? deriveNoteFilterOptions(graph.visibleNotes) : emptyFilterOptions();
-  const filteredNotes = graph ? filterAndSortNotes(graph.visibleNotes, noteFilters) : [];
+  const noteFilterOptions = graph ? extendNoteFilterOptions(deriveNoteFilterOptions(graph.visibleNotes), graph.visibleNotes) : emptyFilterOptions();
+  const mapFilterOptions = graph ? deriveMapFilterOptions(graph) : emptyMapFilterOptions();
+  const filteredNotes = graph ? filterFrontendNotes(graph.visibleNotes, noteFilters) : [];
   const contradictions = graph?.relations.filter(r => r.type === 'contradiction').length ?? 0;
   const reversals = graph?.relations.filter(r => r.type === 'update_or_trend_reversal').length ?? 0;
   const tensions = graph?.relations.filter(r => r.type === 'historical_tension' || r.type === 'open_tension').length ?? 0;
@@ -461,18 +596,15 @@ function App() {
           body: note.body,
           visibility: note.visibility,
           observedAt: note.observedAt ?? note.createdAt,
-          tickers: note.tickers ?? [],
-          manualThemes: note.manualThemes ?? [],
-          kpis: note.kpis ?? []
+          ...metadataArraysFromSource(note),
+          linkedEntities: (note as FrontendWorkspaceNote).linkedEntities ?? []
         });
         setSelectedNoteId(note.id);
         setNoteTitle(note.title);
         setDraft(note.body);
         setVisibility(note.visibility);
         setObservedAt(note.observedAt ?? note.createdAt);
-        setTickers(note.tickers ?? []);
-        setManualThemes(note.manualThemes ?? []);
-        setKpis(note.kpis ?? []);
+        applyWorkbenchMetadata(note as FrontendWorkspaceNote);
         setNoteHistory([]);
         setHistoryDrawerOpen(false);
         clearedDraftSignatureRef.current = '';
@@ -502,11 +634,15 @@ function App() {
           <div className="metadata-grid">
             <label><span>Observed</span><input type="date" value={observedAt} onChange={e => setObservedAt(e.target.value)} /></label>
             <label><span>Visibility</span><select value={visibility} onChange={e => setVisibility(e.target.value as Note['visibility'])}><option value="public">public</option><option value="team">team</option><option value="private">private</option></select></label>
+            <label><span>Team</span><input value={user.team} readOnly /></label>
           </div>
           <div className="metadata-linking">
-            <MetadataChipInput label="Stocks" values={tickers} options={knownTickers()} onChange={setTickers} transform={value => value.toUpperCase()} placeholder="Add ticker" />
+            <MetadataChipInput label="Securities/Tickers" values={tickers} options={knownTickers()} onChange={setTickers} transform={value => value.toUpperCase()} placeholder="Add ticker" />
+            <MetadataChipInput label="Industries/Sectors" values={industries} options={industryOptions(noteFilterOptions)} onChange={setIndustries} placeholder="Add industry" />
             <MetadataChipInput label="Themes" values={manualThemes} options={themeLexicon} onChange={setManualThemes} placeholder="Add theme" />
             <MetadataChipInput label="KPIs" values={kpis} options={kpiWords} onChange={setKpis} placeholder="Add KPI" />
+            <MetadataChipInput label="Watchlists" values={watchlistTags} options={noteFilterOptions.watchlists} onChange={setWatchlistTags} placeholder="Add watchlist" />
+            <MetadataChipInput label="Participants" values={sourcePeople} options={noteFilterOptions.sourcePeople} onChange={setSourcePeople} placeholder="Add person" />
           </div>
           <div className="capture-actions">
             <button onClick={saveWorkbenchNote} disabled={!draft.trim() || !canEditSelectedNote}>{workbenchActionLabel} <span><Command size={13}/> Enter</span></button>
@@ -518,7 +654,7 @@ function App() {
           <article className="panel live-preview">
             <div className="panel-title"><Eye/> Live extraction</div>
             {previewEntities.length ? <div className="entity-cloud">
-              {previewEntities.slice(0, 12).map(e => <button className={`chip ${e.kind}`} key={`${e.kind}-${e.name}`} onClick={() => setSelected(e.kind === 'ticker' ? tickerToCompany(e.name) : e.name)}>{e.kind}<b>{e.name}</b></button>)}
+              {previewEntities.slice(0, 12).map(e => <button type="button" className={`chip ${chipKind(e.kind)}`} key={`${e.kind}-${e.name}`} onClick={() => addPreviewEntity(e)}><Plus size={12}/>{suggestionLabel(e.kind)}<b>{e.name}</b></button>)}
             </div> : <EmptyState title="No entities yet" body="Mention a company, ticker, KPI, or theme and the graph starts forming here." />}
             <div className="preview-claims">
               {previewClaims.map(c => <ClaimCard key={c.id} claim={c} compact />)}
@@ -564,7 +700,7 @@ function App() {
             </div>
             <h3>Review queue</h3>
             <div className="claim-list">
-              {reviewQueue.filter(c => c.subject === selectedSynth.subject || c.themes.includes(selectedSynth.subject)).map(c => <ClaimCard key={c.id} claim={c} onUpdate={input => patchClaim(c.id, input)} />)}
+              {reviewQueue.filter(c => c.subject === selectedSynth.subject || c.themes.includes(selectedSynth.subject)).map(c => <ClaimCard key={c.id} claim={c} participantOptions={noteFilterOptions.sourcePeople} onUpdate={input => patchClaim(c.id, input)} />)}
             </div>
           </article>}
 
@@ -581,6 +717,10 @@ function App() {
             <div className="panel-title"><ShieldCheck/> Trust boundary</div>
             <p>Every count, synthesis, and alert is assembled by the server from rows the current user can access. Hidden notes stay out of graph computation.</p>
           </article>
+          <PersonMemoryPanel people={graph.people ?? []} onSelectPerson={name => {
+            setNoteFilters(current => ({ ...current, sourcePerson: name }));
+            setMapFilters(current => ({ ...current, sourcePerson: name }));
+          }} />
         </aside>
       </section>
       </ReviewPage>}
@@ -597,7 +737,7 @@ function App() {
           </aside>
 
           <section className="center-stage">
-            <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} onSelect={setSelected} onUpdate={patchRelation} />
+            <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} notes={graph.visibleNotes} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} filters={mapFilters} options={mapFilterOptions} onFilterChange={patch => setMapFilters(current => ({ ...current, ...patch }))} onSelect={setSelected} onUpdate={patchRelation} />
           </section>
         </section>
       </MapPage>}
@@ -637,7 +777,7 @@ function NoteHistoryDrawer({ history, onClose }: { history: NoteRevision[]; onCl
   </aside>;
 }
 
-function ArchivePage({ notes, totalNotes, selectedNoteId }: { notes: WorkspaceNote[]; totalNotes: number; selectedNoteId: string }) {
+function ArchivePage({ notes, totalNotes, selectedNoteId }: { notes: FrontendWorkspaceNote[]; totalNotes: number; selectedNoteId: string }) {
   return <div className="page-layout archive-layout">
     <section className="workspace archive-workspace">
       <article className="panel notes">
@@ -667,16 +807,16 @@ function NotesSidebar({
   onSelectNote
 }: {
   collapsed: boolean;
-  filters: NoteFilters;
-  notes: WorkspaceNote[];
-  options: NoteFilterOptions;
+  filters: FrontendNoteFilters;
+  notes: FrontendWorkspaceNote[];
+  options: FrontendNoteFilterOptions;
   filtersCollapsed: boolean;
   selectedNoteId: string;
   totalNotes: number;
   onToggle: () => void;
   onToggleFilters: () => void;
-  onFilterChange: (patch: Partial<NoteFilters>) => void;
-  onSelectNote: (note: WorkspaceNote) => void;
+  onFilterChange: (patch: Partial<FrontendNoteFilters>) => void;
+  onSelectNote: (note: FrontendWorkspaceNote) => void;
 }) {
   if (collapsed) {
     return <aside className="notes-sidebar collapsed" aria-label="Notes sidebar">
@@ -699,8 +839,11 @@ function NotesSidebar({
         <label className="note-search"><span><Search size={13}/> Search</span><input value={filters.query ?? ''} onChange={event => onFilterChange({ query: event.target.value })} placeholder="Title or body" /></label>
         <div className="note-filter-grid">
           <FilterSelect label="Stock" value={filters.ticker ?? ''} options={options.tickers} onChange={value => onFilterChange({ ticker: value })} />
+          <FilterSelect label="Industry" value={filters.industry ?? ''} options={options.industries} onChange={value => onFilterChange({ industry: value })} />
           <FilterSelect label="Theme" value={filters.theme ?? ''} options={options.themes} onChange={value => onFilterChange({ theme: value })} />
           <FilterSelect label="KPI" value={filters.kpi ?? ''} options={options.kpis} onChange={value => onFilterChange({ kpi: value })} />
+          <FilterSelect label="Watchlist" value={filters.watchlist ?? ''} options={options.watchlists} onChange={value => onFilterChange({ watchlist: value })} />
+          <FilterSelect label="Participant" value={filters.sourcePerson ?? ''} options={options.sourcePeople} onChange={value => onFilterChange({ sourcePerson: value })} />
           <FilterSelect label="Visibility" value={filters.visibility ?? ''} options={options.visibilities} onChange={value => onFilterChange({ visibility: value as NoteFilters['visibility'] })} />
           <label><span>Sort</span><select value={filters.sort ?? 'newest'} onChange={event => onFilterChange({ sort: event.target.value as NoteSort })}><option value="newest">newest</option><option value="oldest">oldest</option><option value="title">title</option></select></label>
         </div>
@@ -708,7 +851,7 @@ function NotesSidebar({
           <label><span>From</span><input type="date" value={filters.dateFrom ?? ''} onChange={event => onFilterChange({ dateFrom: event.target.value })} /></label>
           <label><span>To</span><input type="date" value={filters.dateTo ?? ''} onChange={event => onFilterChange({ dateTo: event.target.value })} /></label>
         </div>
-        <button className="clear-note-filters" onClick={() => onFilterChange({ query: '', ticker: '', theme: '', kpi: '', dateFrom: '', dateTo: '', visibility: '', sort: 'newest' })}><ListFilter size={14}/> Clear filters</button>
+        <button className="clear-note-filters" onClick={() => onFilterChange({ query: '', ticker: '', industry: '', theme: '', kpi: '', watchlist: '', sourcePerson: '', dateFrom: '', dateTo: '', visibility: '', sort: 'newest' })}><ListFilter size={14}/> Clear filters</button>
       </div>}
     </div>
 
@@ -728,8 +871,11 @@ function activeFilterCount(filters: NoteFilters) {
   return [
     filters.query,
     filters.ticker,
+    filters.industry,
     filters.theme,
     filters.kpi,
+    filters.watchlist,
+    filters.sourcePerson,
     filters.dateFrom,
     filters.dateTo,
     filters.visibility
@@ -1061,11 +1207,16 @@ function MetadataChipInput({
   </div>;
 }
 
-function NoteMetadataChips({ note, compact = false }: { note: Pick<WorkspaceNote, 'tickers' | 'manualThemes' | 'kpis'>; compact?: boolean }) {
+function NoteMetadataChips({ note, compact = false }: { note: FrontendMetadata; compact?: boolean }) {
+  const metadata = metadataArraysFromSource(note);
   const items = [
-    ...(note.tickers ?? []).map(value => ({ value, kind: 'ticker' })),
-    ...(note.manualThemes ?? []).map(value => ({ value, kind: 'theme' })),
-    ...(note.kpis ?? []).map(value => ({ value, kind: 'kpi' }))
+    ...metadata.companyTags.map(value => ({ value, kind: 'company' })),
+    ...metadata.tickers.map(value => ({ value, kind: 'ticker' })),
+    ...metadata.industries.map(value => ({ value, kind: 'industry' })),
+    ...metadata.manualThemes.map(value => ({ value, kind: 'theme' })),
+    ...metadata.kpis.map(value => ({ value, kind: 'kpi' })),
+    ...metadata.watchlistTags.map(value => ({ value, kind: 'watchlist' })),
+    ...metadata.sourcePeople.map(value => ({ value, kind: 'source_person' }))
   ];
 
   if (!items.length) return null;
@@ -1136,9 +1287,10 @@ function AuthScreen({ authClient, error, onError }: { authClient: SupabaseClient
   </main>;
 }
 
-function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | WorkspaceClaim; compact?: boolean; onUpdate?: (input: UpdateClaimInput) => void }) {
-  const workspaceClaim = claim as Partial<WorkspaceClaim>;
+function ClaimCard({ claim, compact = false, participantOptions = [], onUpdate }: { claim: Claim | FrontendWorkspaceClaim; compact?: boolean; participantOptions?: string[]; onUpdate?: (input: FrontendUpdateClaimInput) => void }) {
+  const workspaceClaim = claim as Partial<FrontendWorkspaceClaim>;
   const status = workspaceClaim.reviewStatus ?? 'machine';
+  const claimMetadata = metadataArraysFromSource(workspaceClaim);
   const [text, setText] = useState(claim.text);
   const [subject, setSubject] = useState(claim.subject);
   const [direction, setDirection] = useState<Direction>(claim.direction);
@@ -1147,9 +1299,11 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
   const [appliesToStart, setAppliesToStart] = useState(claim.appliesToStart);
   const [appliesToEnd, setAppliesToEnd] = useState(claim.appliesToEnd ?? '');
   const [horizon, setHorizon] = useState<Horizon>(claim.horizon);
+  const [sourcePeople, setClaimSourcePeople] = useState(claimMetadata.sourcePeople);
   const [reviewNote, setReviewNote] = useState(workspaceClaim.reviewNote ?? '');
 
   useEffect(() => {
+    const metadata = metadataArraysFromSource(workspaceClaim);
     setText(claim.text);
     setSubject(claim.subject);
     setDirection(claim.direction);
@@ -1158,10 +1312,16 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
     setAppliesToStart(claim.appliesToStart);
     setAppliesToEnd(claim.appliesToEnd ?? '');
     setHorizon(claim.horizon);
+    setClaimSourcePeople(metadata.sourcePeople);
     setReviewNote(workspaceClaim.reviewNote ?? '');
-  }, [claim.id, claim.text, claim.subject, claim.direction, claim.observedAt, claim.appliesToStart, claim.appliesToEnd, claim.horizon, claim.themes, workspaceClaim.reviewNote]);
+  }, [claim.id, claim.text, claim.subject, claim.direction, claim.observedAt, claim.appliesToStart, claim.appliesToEnd, claim.horizon, claim.themes, workspaceClaim.reviewNote, workspaceClaim.linkedEntities, workspaceClaim.sourcePeople]);
 
   function save(reviewStatus: ClaimReviewStatus) {
+    const linkedEntities = replaceLinkedEntityRoles(
+      workspaceClaim.linkedEntities,
+      legacyArraysToLinkedEntities({ sourcePeople }),
+      ['source_person']
+    );
     onUpdate?.({
       reviewStatus,
       text,
@@ -1172,6 +1332,8 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
       appliesToStart,
       appliesToEnd: appliesToEnd || undefined,
       horizon,
+      sourcePeople,
+      linkedEntities,
       reviewNote,
     });
   }
@@ -1190,48 +1352,77 @@ function ClaimCard({ claim, compact = false, onUpdate }: { claim: Claim | Worksp
         <label><span>Applies to</span><input type="date" value={appliesToEnd} onChange={e => setAppliesToEnd(e.target.value)} /></label>
         <label><span>Horizon</span><select value={horizon} onChange={e => setHorizon(e.target.value as Horizon)}><option value="point_in_time">point in time</option><option value="near_term">near term</option><option value="quarter">quarter</option><option value="year">year</option><option value="unknown">unknown</option></select></label>
       </div>
+      <MetadataChipInput label="Participants" values={sourcePeople} options={participantOptions} onChange={setClaimSourcePeople} placeholder="Add person" />
       <label><span>Review note</span><textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} /></label>
       <div className="review-actions">
         <button onClick={() => save('edited')}><Save size={14}/> Save edit</button>
-        <button onClick={() => onUpdate({ reviewStatus: 'analyst_confirmed', reviewNote })}><Check size={14}/> Approve</button>
-        <button onClick={() => onUpdate({ reviewStatus: 'analyst_rejected', reviewNote })}><Ban size={14}/> Reject</button>
+        <button onClick={() => onUpdate({ reviewStatus: 'analyst_confirmed', reviewNote, sourcePeople, linkedEntities: replaceLinkedEntityRoles(workspaceClaim.linkedEntities, legacyArraysToLinkedEntities({ sourcePeople }), ['source_person']) })}><Check size={14}/> Approve</button>
+        <button onClick={() => onUpdate({ reviewStatus: 'analyst_rejected', reviewNote, sourcePeople, linkedEntities: replaceLinkedEntityRoles(workspaceClaim.linkedEntities, legacyArraysToLinkedEntities({ sourcePeople }), ['source_person']) })}><Ban size={14}/> Reject</button>
       </div>
     </div>}
   </article>;
 }
 
-function RelationshipMap({ relations, selected, asOf, onSelect, onUpdate }: { relations: WorkspaceRelation[]; selected: string; asOf: string; onSelect: (subject: string) => void; onUpdate: (id: string, input: UpdateRelationInput) => void }) {
+function RelationshipMap({
+  relations,
+  notes,
+  selected,
+  asOf,
+  filters,
+  options,
+  onFilterChange,
+  onSelect,
+  onUpdate
+}: {
+  relations: FrontendWorkspaceRelation[];
+  notes: FrontendWorkspaceNote[];
+  selected: string;
+  asOf: string;
+  filters: MapFilters;
+  options: ReturnType<typeof emptyMapFilterOptions>;
+  onFilterChange: (patch: Partial<MapFilters>) => void;
+  onSelect: (subject: string) => void;
+  onUpdate: (id: string, input: UpdateRelationInput) => void;
+}) {
   const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? '');
-  const selectedRelation = relations.find(relation => relation.id === selectedRelationId) ?? relations[0];
+  const filteredRelations = filterMapRelations(relations, filters, notes);
+  const selectedRelation = filteredRelations.find(relation => relation.id === selectedRelationId) ?? filteredRelations[0];
 
   useEffect(() => {
-    if (relations.length && !relations.some(relation => relation.id === selectedRelationId)) {
-      setSelectedRelationId(relations[0].id);
+    if (filteredRelations.length && !filteredRelations.some(relation => relation.id === selectedRelationId)) {
+      setSelectedRelationId(filteredRelations[0].id);
     }
-  }, [relations, selectedRelationId]);
+  }, [filteredRelations, selectedRelationId]);
 
   return <article className="panel graph-panel">
-    <div className="panel-title"><GitBranch/> Temporal claim graph · as of {asOf}</div>
+    <div className="panel-title"><GitBranch/> Temporal claim graph - as of {asOf}</div>
+    <div className="map-filter-bar">
+      <FilterSelect label="Security" value={filters.security ?? ''} options={options.securities} onChange={value => onFilterChange({ security: value })} />
+      <FilterSelect label="Industry / Theme" value={filters.industryOrTheme ?? ''} options={options.industriesAndThemes} onChange={value => onFilterChange({ industryOrTheme: value })} />
+      <FilterSelect label="Relation" value={filters.relationType ?? ''} options={relationTypes} onChange={value => onFilterChange({ relationType: value as RelationType | '' })} />
+      <FilterSelect label="Freshness" value={filters.freshness ?? ''} options={options.freshness} onChange={value => onFilterChange({ freshness: value as MapFilters['freshness'] })} />
+      <FilterSelect label="Participant" value={filters.sourcePerson ?? ''} options={options.sourcePeople} onChange={value => onFilterChange({ sourcePerson: value })} />
+    </div>
     <div className="timeline-affordance"><span>historical</span><i/><b>{asOf}</b><span>current view</span></div>
     <div className="relation-legend"><span className="contradiction">red true contradiction</span><span className="open_tension">amber tension</span><span className="update_or_trend_reversal">blue trend reversal</span><span className="corroboration">green corroboration</span><span className="stale_evidence">grey stale evidence</span></div>
-    <div className="graph-canvas" aria-label="Relationship graph">
+    {filteredRelations.length ? <div className="graph-canvas" aria-label="Relationship graph">
       <div className="node primary"><CircleDot/> {selected}</div>
-      {relations.slice(0, 8).map((r, i) => <React.Fragment key={r.id}>
+      {filteredRelations.slice(0, 8).map((r, i) => <React.Fragment key={r.id}>
         <button className={`node satellite n${i} ${r.type}`} onClick={() => {
           setSelectedRelationId(r.id);
           onSelect(r.a.subject);
         }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
         <i className={`edge e${i} ${r.type}`} />
       </React.Fragment>)}
-    </div>
+    </div> : <EmptyState title="No matching relations" body="Adjust the map filters to broaden the visible relationship set." />}
     <div className="relation-list">
-      {relations.slice(0, 5).map(r => <RelationCard key={r.id} relation={r} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
+      {filteredRelations.slice(0, 5).map(r => <RelationCard key={r.id} relation={r} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
     </div>
     {selectedRelation && <RelationDetailDrawer relation={selectedRelation} />}
   </article>;
 }
 
-function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: WorkspaceRelation; selected: boolean; onSelect: () => void; onUpdate: (input: UpdateRelationInput) => void }) {
+function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: FrontendWorkspaceRelation; selected: boolean; onSelect: () => void; onUpdate: (input: UpdateRelationInput) => void }) {
   const [type, setType] = useState<RelationType>(relation.type);
   const [reviewNote, setReviewNote] = useState(relation.reviewNote ?? '');
 
@@ -1244,7 +1435,7 @@ function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: Wo
     <b>{relationLabel(relation.type)} · {Math.round(relation.score * 100)}% · {relation.reviewStatus}</b>
     <p><span>{relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</span> {relation.a.text}</p>
     <p><span>{relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</span> {relation.b.text}</p>
-    <small>{relation.reason} Snippets are shown so analysts can see why this is or is not a contradiction.</small>
+    <small>{relation.reason} Source-person context: {relation.sourcePersonContext ?? 'unknown'}. Snippets are shown so analysts can see why this is or is not a contradiction.</small>
     <label className="relation-review-note"><span>Review note</span><textarea value={reviewNote} onChange={event => setReviewNote(event.target.value)} /></label>
     <div className="relation-actions">
       <button onClick={onSelect}><Eye size={14}/> Details</button>
@@ -1256,7 +1447,7 @@ function RelationCard({ relation, selected, onSelect, onUpdate }: { relation: Wo
   </article>;
 }
 
-function RelationDetailDrawer({ relation }: { relation: WorkspaceRelation }) {
+function RelationDetailDrawer({ relation }: { relation: FrontendWorkspaceRelation }) {
   return <aside className="relation-detail-drawer" aria-label="Relation detail">
     <div className="panel-title"><PanelLeft/> Relation detail</div>
     <div className="relation-detail-grid">
@@ -1265,6 +1456,7 @@ function RelationDetailDrawer({ relation }: { relation: WorkspaceRelation }) {
       <span>Overlap days<b>{relation.overlapDays}</b></span>
       <span>Score<b>{Math.round(relation.score * 100)}%</b></span>
       <span>Review state<b>{relation.reviewStatus}</b></span>
+      <span>People context<b>{relation.sourcePersonContext ?? 'unknown'}</b></span>
       <span>Review note<b>{relation.reviewNote || 'None'}</b></span>
     </div>
     <div className="relation-detail-claims">
@@ -1281,6 +1473,20 @@ function RelationDetailDrawer({ relation }: { relation: WorkspaceRelation }) {
     </div>
     <p>{relation.reason}</p>
   </aside>;
+}
+
+function PersonMemoryPanel({ people, onSelectPerson }: { people: PersonMemorySummary[]; onSelectPerson: (name: string) => void }) {
+  return <article className="panel person-memory-panel">
+    <div className="panel-title"><Network/> Source-person memory</div>
+    {people.length ? <div className="person-memory-list">
+      {people.slice(0, 6).map(person => <button type="button" key={person.name} onClick={() => onSelectPerson(person.name)}>
+        <span>{person.name}</span>
+        <small>{person.claimCount} claims Â· latest {person.latestDirection ?? 'unknown'}{person.latestObservedAt ? ` Â· ${person.latestObservedAt}` : ''}</small>
+        <b>{person.positiveCount ?? 0}+ / {person.negativeCount ?? 0}- / {person.neutralCount ?? 0} neutral</b>
+        <em>{(person.subjects ?? []).slice(0, 3).join(', ') || 'No subjects yet'} Â· {person.contradictionCount ?? 0} contradictions Â· {person.trendReversalCount ?? 0} reversals</em>
+      </button>)}
+    </div> : <EmptyState title="No source-person history" body="Add meeting participants or source people to notes and reviewed claims to build a person-level history." />}
+  </article>;
 }
 
 function Metric({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: number; sub: string }) {
@@ -1304,7 +1510,7 @@ function knownTickers(): string[] {
   return Object.values(companyLexicon).map(item => item.ticker).sort((a, b) => a.localeCompare(b));
 }
 
-function mergeEntities(primary: Entity[], manual: Entity[]): Entity[] {
+function mergeEntities(primary: PreviewEntity[], manual: PreviewEntity[]): PreviewEntity[] {
   const seen = new Set<string>();
   return [...primary, ...manual].filter(entity => {
     const key = `${entity.kind}:${entity.name.toLowerCase()}`;
@@ -1314,31 +1520,158 @@ function mergeEntities(primary: Entity[], manual: Entity[]): Entity[] {
   });
 }
 
-function emptyFilterOptions(): NoteFilterOptions {
-  return { tickers: [], themes: [], kpis: [], visibilities: [] };
+function emptyFilterOptions(): FrontendNoteFilterOptions {
+  return { tickers: [], themes: [], kpis: [], industries: [], watchlists: [], sourcePeople: [], visibilities: [] };
 }
 
-function hasDraftContent(draft: Partial<NoteDraft>) {
+function emptyMapFilterOptions() {
+  return {
+    securities: [] as string[],
+    industriesAndThemes: [] as string[],
+    sourcePeople: [] as string[],
+    freshness: ['fresh', 'aging', 'stale']
+  };
+}
+
+function hasDraftContent(draft: Partial<FrontendNoteDraft>) {
+  const metadata = metadataArraysFromSource(draft);
   return Boolean(
     draft.title?.trim()
     || draft.body?.trim()
-    || draft.tickers?.length
-    || draft.manualThemes?.length
-    || draft.kpis?.length
+    || metadata.tickers.length
+    || metadata.manualThemes.length
+    || metadata.kpis.length
+    || metadata.industries.length
+    || metadata.companyTags.length
+    || metadata.watchlistTags.length
+    || metadata.sourcePeople.length
   );
 }
 
-function draftSignature(draft: Partial<NoteDraft>) {
+function draftSignature(draft: Partial<FrontendNoteDraft>) {
+  const metadata = metadataArraysFromSource(draft);
   return JSON.stringify({
     selectedNoteId: draft.selectedNoteId ?? '',
     title: draft.title ?? '',
     body: draft.body ?? '',
     visibility: draft.visibility ?? 'team',
     observedAt: draft.observedAt ?? '',
-    tickers: draft.tickers ?? [],
-    manualThemes: draft.manualThemes ?? [],
-    kpis: draft.kpis ?? []
+    ...metadata,
+    linkedEntities: draft.linkedEntities ?? legacyArraysToLinkedEntities(metadata)
   });
+}
+
+function metadataArraysFromSource(source: FrontendMetadata = {}): MetadataArrays {
+  const linked = metadataArraysFromLinkedEntities(source.linkedEntities ?? []);
+  return {
+    tickers: normalizeTickerTags([...(source.tickers ?? []), ...linked.tickers]),
+    manualThemes: normalizeTags([...(source.manualThemes ?? []), ...linked.manualThemes]),
+    kpis: normalizeTags([...(source.kpis ?? []), ...linked.kpis]),
+    industries: normalizeTags([...(source.industries ?? []), ...linked.industries]),
+    companyTags: normalizeTags([...(source.companyTags ?? []), ...linked.companyTags]),
+    watchlistTags: normalizeTags([...(source.watchlistTags ?? []), ...linked.watchlistTags]),
+    sourcePeople: normalizeTags([...(source.sourcePeople ?? []), ...linked.sourcePeople])
+  };
+}
+
+function addTag(values: string[], value: string, transform: (value: string) => string = item => item): string[] {
+  return normalizeTags([...values, transform(value).trim()]);
+}
+
+function normalizeTickerTags(values: string[]): string[] {
+  return normalizeTags(values.map(value => value.toUpperCase()));
+}
+
+function extendNoteFilterOptions(options: NoteFilterOptions, notes: FrontendWorkspaceNote[]): FrontendNoteFilterOptions {
+  return {
+    ...options,
+    industries: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).industries)),
+    watchlists: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).watchlistTags)),
+    sourcePeople: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).sourcePeople))
+  };
+}
+
+function filterFrontendNotes(notes: FrontendWorkspaceNote[], filters: FrontendNoteFilters): FrontendWorkspaceNote[] {
+  return filterAndSortNotes(notes, filters).filter(note => {
+    const metadata = metadataArraysFromSource(note);
+    return matchesTag(metadata.industries, filters.industry)
+      && matchesTag(metadata.watchlistTags, filters.watchlist)
+      && matchesTag(metadata.sourcePeople, filters.sourcePerson);
+  });
+}
+
+function deriveMapFilterOptions(graph: FrontendWorkspaceSnapshot): ReturnType<typeof emptyMapFilterOptions> {
+  const empty = emptyMapFilterOptions();
+  const claimMetadata = graph.claims.map(claim => metadataArraysFromSource(claim));
+  const noteMetadata = graph.visibleNotes.map(note => metadataArraysFromSource(note));
+  return {
+    securities: sortedUnique([...claimMetadata, ...noteMetadata].flatMap(metadata => metadata.tickers)),
+    industriesAndThemes: sortedUnique([...claimMetadata, ...noteMetadata].flatMap(metadata => [...metadata.industries, ...metadata.manualThemes])),
+    sourcePeople: sortedUnique([...claimMetadata, ...noteMetadata].flatMap(metadata => metadata.sourcePeople)),
+    freshness: empty.freshness
+  };
+}
+
+function filterMapRelations(relations: FrontendWorkspaceRelation[], filters: MapFilters, notes: FrontendWorkspaceNote[]): FrontendWorkspaceRelation[] {
+  return relations.filter(relation => {
+    const a = claimMetadataWithNoteFallback(relation.a, notes);
+    const b = claimMetadataWithNoteFallback(relation.b, notes);
+    return (!filters.security || matchesTag([...a.tickers, ...b.tickers], filters.security))
+      && (!filters.industryOrTheme || matchesTag([...a.industries, ...a.manualThemes, ...b.industries, ...b.manualThemes], filters.industryOrTheme))
+      && (!filters.relationType || relation.type === filters.relationType)
+      && (!filters.freshness || relation.a.freshness === filters.freshness || relation.b.freshness === filters.freshness)
+      && (!filters.sourcePerson || matchesTag([...a.sourcePeople, ...b.sourcePeople], filters.sourcePerson));
+  });
+}
+
+function claimMetadataWithNoteFallback(claim: FrontendWorkspaceClaim, notes: FrontendWorkspaceNote[]): MetadataArrays {
+  const claimMetadata = metadataArraysFromSource(claim);
+  const note = notes.find(item => item.id === claim.noteId);
+  if (!note) return claimMetadata;
+  const noteMetadata = metadataArraysFromSource(note);
+  return {
+    tickers: sortedUnique([...claimMetadata.tickers, ...noteMetadata.tickers]),
+    manualThemes: sortedUnique([...claimMetadata.manualThemes, ...noteMetadata.manualThemes]),
+    kpis: sortedUnique([...claimMetadata.kpis, ...noteMetadata.kpis]),
+    industries: sortedUnique([...claimMetadata.industries, ...noteMetadata.industries]),
+    companyTags: sortedUnique([...claimMetadata.companyTags, ...noteMetadata.companyTags]),
+    watchlistTags: sortedUnique([...claimMetadata.watchlistTags, ...noteMetadata.watchlistTags]),
+    sourcePeople: sortedUnique([...claimMetadata.sourcePeople, ...noteMetadata.sourcePeople])
+  };
+}
+
+function relationMatchesSubject(relation: FrontendWorkspaceRelation, subject: string): boolean {
+  return relation.a.subject === subject
+    || relation.b.subject === subject
+    || relation.a.themes.includes(subject)
+    || relation.b.themes.includes(subject);
+}
+
+function replaceLinkedEntityRoles(existing: LinkedEntity[] = [], replacements: LinkedEntity[] = [], roles: EntityRole[]): LinkedEntity[] {
+  const roleSet = new Set<EntityRole>(roles);
+  return mergeLinkedEntities(existing.filter(entity => !roleSet.has(entity.role)), replacements);
+}
+
+function industryOptions(options: FrontendNoteFilterOptions): string[] {
+  return sortedUnique([...options.industries, ...themeLexicon]);
+}
+
+function suggestionLabel(kind: PreviewEntityKind): string {
+  if (kind === 'source_person') return 'person';
+  return kind;
+}
+
+function chipKind(kind: PreviewEntityKind): string {
+  return kind === 'source_person' ? 'person' : kind;
+}
+
+function matchesTag(values: string[] | undefined, expected: string | undefined): boolean {
+  if (!expected) return true;
+  return (values ?? []).some(value => value.toLowerCase() === expected.toLowerCase());
+}
+
+function sortedUnique(values: string[]): string[] {
+  return normalizeTags(values).sort((a, b) => a.localeCompare(b));
 }
 
 function today() {

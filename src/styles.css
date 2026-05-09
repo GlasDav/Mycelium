@@ -921,6 +921,22 @@ textarea::placeholder {
   background: var(--amber-soft);
 }
 
+.chip.industry {
+  border-color: #bed0ec;
+  background: #eef4fb;
+}
+
+.chip.watchlist {
+  border-color: #d1c4ea;
+  background: #f0ecfa;
+}
+
+.chip.person,
+.chip.source_person {
+  border-color: #c8d0cc;
+  background: #f3f5f2;
+}
+
 .chip.hot {
   color: var(--accent);
   border-color: #b8d8ce;
@@ -1312,6 +1328,42 @@ textarea::placeholder {
 
 .graph-panel {
   overflow: hidden;
+}
+
+.map-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.map-filter-bar label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.map-filter-bar span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.map-filter-bar select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 7px 8px;
+  font-size: 12px;
 }
 
 .timeline-affordance {
@@ -1780,6 +1832,49 @@ textarea::placeholder {
   font-size: 10px;
 }
 
+.person-memory-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.person-memory-list {
+  display: grid;
+  gap: 8px;
+}
+
+.person-memory-list button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  color: var(--ink);
+  padding: 10px;
+  text-align: left;
+}
+
+.person-memory-list button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.person-memory-list span {
+  font-weight: 760;
+}
+
+.person-memory-list small,
+.person-memory-list em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.person-memory-list b {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
 .notes h3 {
   margin: 0 0 5px;
   color: var(--ink);
@@ -1869,6 +1964,7 @@ textarea::placeholder {
 
   .capture-actions,
   .metadata-linking,
+  .map-filter-bar,
   .synthesis-head,
   .stance-strip {
     grid-template-columns: 1fr;
@@ -1933,7 +2029,7 @@ textarea::placeholder {
 }
 
 .primary-note .metadata-grid {
-  grid-template-columns: repeat(2, minmax(0, 220px));
+  grid-template-columns: repeat(3, minmax(0, 220px));
 }
 
 .metadata-grid.compact {

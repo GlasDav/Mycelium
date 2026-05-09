@@ -14,6 +14,17 @@ import {
   type User,
   type Visibility
 } from '../src/engine';
+import {
+  legacyArraysToLinkedEntities,
+  linkedEntity,
+  mergeLinkedEntities,
+  metadataArraysFromLinkedEntities,
+  normalizeLinkedEntities,
+  sameLinkedEntities,
+  type EntityRole,
+  type LinkedEntity,
+  type MetadataArrays
+} from '../src/entity-links';
 
 export type ClaimReviewStatus = 'machine' | 'analyst_confirmed' | 'analyst_rejected' | 'edited';
 export type RelationReviewStatus = 'open' | 'confirmed' | 'dismissed' | 'reclassified';
@@ -29,6 +40,14 @@ export interface WorkspaceNote extends Note {
   authorName: string;
   teamId?: string;
   updatedAt: string;
+  linkedEntities: LinkedEntity[];
+  tickers: string[];
+  manualThemes: string[];
+  kpis: string[];
+  industries: string[];
+  companyTags: string[];
+  watchlistTags: string[];
+  sourcePeople: string[];
 }
 
 export interface WorkspaceClaim extends Claim {
@@ -39,6 +58,14 @@ export interface WorkspaceClaim extends Claim {
   reviewNote?: string;
   reviewerId?: string;
   updatedAt: string;
+  linkedEntities: LinkedEntity[];
+  tickers: string[];
+  manualThemes: string[];
+  kpis: string[];
+  industries: string[];
+  companyTags: string[];
+  watchlistTags: string[];
+  sourcePeople: string[];
 }
 
 export interface WorkspaceRelation extends Relation {
@@ -75,6 +102,11 @@ export interface NoteRevision {
   previousTickers: string[];
   previousManualThemes: string[];
   previousKpis: string[];
+  previousLinkedEntities: LinkedEntity[];
+  previousIndustries: string[];
+  previousCompanyTags: string[];
+  previousWatchlistTags: string[];
+  previousSourcePeople: string[];
   changedFields: string[];
   createdAt: string;
 }
@@ -90,6 +122,11 @@ export interface NoteDraft {
   tickers: string[];
   manualThemes: string[];
   kpis: string[];
+  linkedEntities: LinkedEntity[];
+  industries: string[];
+  companyTags: string[];
+  watchlistTags: string[];
+  sourcePeople: string[];
   updatedAt: string;
 }
 
@@ -111,6 +148,19 @@ export interface WorkspaceSummary {
   summary: string;
 }
 
+export interface PersonMemorySummary {
+  name: string;
+  claimCount: number;
+  positiveClaims: number;
+  negativeClaims: number;
+  neutralClaims: number;
+  subjects: string[];
+  latestObservedAt?: string;
+  latestClaim?: string;
+  contradictions: number;
+  reversals: number;
+}
+
 export interface WorkspaceSnapshot {
   viewer: WorkspaceUser;
   visibleNotes: WorkspaceNote[];
@@ -119,6 +169,7 @@ export interface WorkspaceSnapshot {
   alerts: Alert[];
   companies: WorkspaceSummary[];
   themes: WorkspaceSummary[];
+  people: PersonMemorySummary[];
   auditEvents: AuditEvent[];
   asOf: string;
 }
@@ -142,6 +193,11 @@ export interface CreateNoteInput {
   tickers?: string[];
   manualThemes?: string[];
   kpis?: string[];
+  linkedEntities?: LinkedEntity[];
+  industries?: string[];
+  companyTags?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
 }
 
 export interface UpdateNoteInput {
@@ -152,6 +208,11 @@ export interface UpdateNoteInput {
   tickers?: string[];
   manualThemes?: string[];
   kpis?: string[];
+  linkedEntities?: LinkedEntity[];
+  industries?: string[];
+  companyTags?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
 }
 
 export interface UpsertNoteDraftInput {
@@ -163,6 +224,11 @@ export interface UpsertNoteDraftInput {
   tickers?: string[];
   manualThemes?: string[];
   kpis?: string[];
+  linkedEntities?: LinkedEntity[];
+  industries?: string[];
+  companyTags?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
 }
 
 export interface UpdateClaimInput {
@@ -176,6 +242,13 @@ export interface UpdateClaimInput {
   appliesToEnd?: string;
   horizon?: Horizon;
   reviewNote?: string;
+  linkedEntities?: LinkedEntity[];
+  tickers?: string[];
+  industries?: string[];
+  kpis?: string[];
+  companyTags?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
 }
 
 export interface UpdateRelationInput {
@@ -277,6 +350,7 @@ export function createWorkspaceService(
     const alerts = generateAlerts(relations, activeClaims);
     const companies = uniqueBy(activeClaims.map(claim => claim.subject), item => item).map(subject => synthesize(activeClaims, relations, subject));
     const themes = uniqueBy(activeClaims.flatMap(claim => claim.themes), item => item).map(theme => synthesize(activeClaims, relations, theme));
+    const people = buildPersonMemorySummaries(activeClaims, relations);
     const auditEvents = (await repository.listAuditEvents(viewer.orgId))
       .filter(event => viewer.role === 'PM' || viewer.role === 'Compliance' || event.actorId === viewer.id)
       .slice(0, 25);
@@ -289,6 +363,7 @@ export function createWorkspaceService(
       alerts,
       companies,
       themes,
+      people,
       auditEvents,
       asOf: maxDate(activeClaims.map(claim => claim.observedAt))
     };
@@ -318,16 +393,13 @@ export function createWorkspaceService(
       importedNoteIds.add(exportedNote.id);
       const author = usersById.get(exportedNote.authorId) ?? viewer;
       await repository.insertNote({
-        ...exportedNote,
+        ...withDerivedMetadata(exportedNote),
         orgId: viewer.orgId,
         authorId: author.id,
         authorName: author.name,
         team: author.team,
         teamId: author.teamId,
-        updatedAt: exportedNote.updatedAt ?? new Date().toISOString(),
-        tickers: exportedNote.tickers ?? [],
-        manualThemes: exportedNote.manualThemes ?? [],
-        kpis: exportedNote.kpis ?? []
+        updatedAt: exportedNote.updatedAt ?? new Date().toISOString()
       });
     }
 
@@ -352,6 +424,7 @@ export function createWorkspaceService(
     const viewer = await requireViewer(viewerId);
     const now = new Date().toISOString();
     const date = now.slice(0, 10);
+    const metadata = metadataFromInput(input);
     const note: WorkspaceNote = {
       id: `n-${Date.now()}-${slug(input.body.slice(0, 32))}`,
       orgId: viewer.orgId,
@@ -369,9 +442,7 @@ export function createWorkspaceService(
       appliesToStart: input.appliesToStart,
       appliesToEnd: input.appliesToEnd,
       horizon: input.horizon,
-      tickers: input.tickers ?? [],
-      manualThemes: input.manualThemes ?? [],
-      kpis: input.kpis ?? []
+      ...metadata
     };
 
     await repository.insertNote(note);
@@ -379,7 +450,11 @@ export function createWorkspaceService(
       visibility: note.visibility,
       tickers: note.tickers,
       manualThemes: note.manualThemes,
-      kpis: note.kpis
+      kpis: note.kpis,
+      industries: note.industries,
+      companyTags: note.companyTags,
+      watchlistTags: note.watchlistTags,
+      sourcePeople: note.sourcePeople
     }));
     await materializeGraph(viewer.orgId, viewer.id);
     return getWorkspace(viewerId);
@@ -409,19 +484,23 @@ export function createWorkspaceService(
       previousTickers: note.tickers ?? [],
       previousManualThemes: note.manualThemes ?? [],
       previousKpis: note.kpis ?? [],
+      previousLinkedEntities: note.linkedEntities ?? [],
+      previousIndustries: note.industries ?? [],
+      previousCompanyTags: note.companyTags ?? [],
+      previousWatchlistTags: note.watchlistTags ?? [],
+      previousSourcePeople: note.sourcePeople ?? [],
       changedFields,
       createdAt: now
     });
 
+    const metadata = metadataFromInput(input, note.linkedEntities);
     const updated: WorkspaceNote = {
       ...note,
       title: input.title?.trim() || note.title,
       body: Object.prototype.hasOwnProperty.call(input, 'body') ? input.body ?? '' : note.body,
       visibility: input.visibility ?? note.visibility,
       observedAt: Object.prototype.hasOwnProperty.call(input, 'observedAt') ? input.observedAt : note.observedAt,
-      tickers: input.tickers ?? note.tickers ?? [],
-      manualThemes: input.manualThemes ?? note.manualThemes ?? [],
-      kpis: input.kpis ?? note.kpis ?? [],
+      ...metadata,
       updatedAt: now
     };
 
@@ -449,6 +528,7 @@ export function createWorkspaceService(
   async function upsertNoteDraft(viewerId: string, input: UpsertNoteDraftInput): Promise<NoteDraft> {
     const viewer = await requireViewer(viewerId);
     const now = new Date().toISOString();
+    const metadata = metadataFromInput(input);
     const draft: NoteDraft = {
       orgId: viewer.orgId,
       userId: viewer.id,
@@ -457,9 +537,7 @@ export function createWorkspaceService(
       body: input.body ?? '',
       visibility: input.visibility ?? 'team',
       observedAt: input.observedAt,
-      tickers: input.tickers ?? [],
-      manualThemes: input.manualThemes ?? [],
-      kpis: input.kpis ?? [],
+      ...metadata,
       updatedAt: now
     };
     await repository.upsertNoteDraft(draft);
@@ -519,6 +597,7 @@ export function createWorkspaceService(
     const claim = (await repository.listClaims(viewer.orgId)).find(item => item.id === claimId);
     if (!claim || !canAccess(viewer, claim)) throw new Error(`Claim ${claimId} is not accessible`);
 
+    const metadata = metadataForClaimUpdate(input, claim);
     const updated: WorkspaceClaim = {
       ...claim,
       text: input.text ?? claim.text,
@@ -532,6 +611,7 @@ export function createWorkspaceService(
       reviewStatus: input.reviewStatus ?? claim.reviewStatus,
       reviewNote: input.reviewNote ?? claim.reviewNote,
       reviewerId: viewer.id,
+      ...metadata,
       updatedAt: new Date().toISOString()
     };
 
@@ -600,6 +680,7 @@ export function createWorkspaceService(
         reviewStatus: exportedClaim.reviewStatus,
         reviewNote: exportedClaim.reviewNote,
         reviewerId: exportedClaim.reviewerId,
+        ...metadataForImportedClaim(exportedClaim, claim),
         updatedAt: exportedClaim.updatedAt ?? new Date().toISOString()
       };
     });
@@ -667,6 +748,11 @@ function noteChangedFields(note: WorkspaceNote, input: UpdateNoteInput): string[
   if (Object.prototype.hasOwnProperty.call(input, 'tickers') && !sameStringArray(input.tickers ?? [], note.tickers ?? [])) changed.push('tickers');
   if (Object.prototype.hasOwnProperty.call(input, 'manualThemes') && !sameStringArray(input.manualThemes ?? [], note.manualThemes ?? [])) changed.push('manualThemes');
   if (Object.prototype.hasOwnProperty.call(input, 'kpis') && !sameStringArray(input.kpis ?? [], note.kpis ?? [])) changed.push('kpis');
+  if (Object.prototype.hasOwnProperty.call(input, 'industries') && !sameStringArray(input.industries ?? [], note.industries ?? [])) changed.push('industries');
+  if (Object.prototype.hasOwnProperty.call(input, 'companyTags') && !sameStringArray(input.companyTags ?? [], note.companyTags ?? [])) changed.push('companyTags');
+  if (Object.prototype.hasOwnProperty.call(input, 'watchlistTags') && !sameStringArray(input.watchlistTags ?? [], note.watchlistTags ?? [])) changed.push('watchlistTags');
+  if (Object.prototype.hasOwnProperty.call(input, 'sourcePeople') && !sameStringArray(input.sourcePeople ?? [], note.sourcePeople ?? [])) changed.push('sourcePeople');
+  if (Object.prototype.hasOwnProperty.call(input, 'linkedEntities') && !sameLinkedEntities(input.linkedEntities ?? [], note.linkedEntities ?? [])) changed.push('linkedEntities');
   return changed;
 }
 
@@ -676,6 +762,172 @@ function requiresDerivedReviewReset(changedFields: string[]): boolean {
 
 function sameStringArray(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+type MetadataInput = Partial<MetadataArrays> & { linkedEntities?: LinkedEntity[] };
+
+interface NormalizedMetadata extends MetadataArrays {
+  linkedEntities: LinkedEntity[];
+}
+
+const metadataRoles: Record<keyof MetadataArrays, EntityRole[]> = {
+  tickers: ['security'],
+  manualThemes: ['theme'],
+  kpis: ['kpi'],
+  industries: ['industry'],
+  companyTags: ['company'],
+  watchlistTags: ['watchlist'],
+  sourcePeople: ['source_person']
+};
+
+function metadataFromInput(input: MetadataInput, existing: LinkedEntity[] = []): NormalizedMetadata {
+  let linkedEntities = Object.prototype.hasOwnProperty.call(input, 'linkedEntities')
+    ? normalizeLinkedEntities(input.linkedEntities ?? [])
+    : normalizeLinkedEntities(existing);
+
+  for (const key of Object.keys(metadataRoles) as Array<keyof MetadataArrays>) {
+    if (!Object.prototype.hasOwnProperty.call(input, key)) continue;
+    const replacement = legacyArraysToLinkedEntities({ [key]: input[key] ?? [] });
+    linkedEntities = replaceEntityRoles(linkedEntities, metadataRoles[key], replacement);
+  }
+
+  return withDerivedMetadata({ ...input, linkedEntities });
+}
+
+function withDerivedMetadata<T extends MetadataInput>(value: T): T & NormalizedMetadata {
+  const linkedEntities = mergeLinkedEntities(value.linkedEntities, legacyArraysToLinkedEntities(value));
+  const arrays = metadataArraysFromLinkedEntities(linkedEntities);
+  return {
+    ...value,
+    linkedEntities,
+    ...arrays,
+    tickers: Object.prototype.hasOwnProperty.call(value, 'tickers') ? normalizeStringArray(value.tickers ?? []) : arrays.tickers,
+    manualThemes: Object.prototype.hasOwnProperty.call(value, 'manualThemes') ? normalizeStringArray(value.manualThemes ?? []) : arrays.manualThemes,
+    kpis: Object.prototype.hasOwnProperty.call(value, 'kpis') ? normalizeStringArray(value.kpis ?? []) : arrays.kpis,
+    industries: Object.prototype.hasOwnProperty.call(value, 'industries') ? normalizeStringArray(value.industries ?? []) : arrays.industries,
+    companyTags: Object.prototype.hasOwnProperty.call(value, 'companyTags') ? normalizeStringArray(value.companyTags ?? []) : arrays.companyTags,
+    watchlistTags: Object.prototype.hasOwnProperty.call(value, 'watchlistTags') ? normalizeStringArray(value.watchlistTags ?? []) : arrays.watchlistTags,
+    sourcePeople: Object.prototype.hasOwnProperty.call(value, 'sourcePeople') ? normalizeStringArray(value.sourcePeople ?? []) : arrays.sourcePeople
+  };
+}
+
+function metadataForMaterializedClaim(note: WorkspaceNote, claim: Claim): NormalizedMetadata {
+  const noteEntities = normalizeLinkedEntities(note.linkedEntities).filter(entity => (
+    entity.role === 'security'
+    || entity.role === 'industry'
+    || entity.role === 'kpi'
+    || entity.role === 'watchlist'
+    || entity.role === 'source_person'
+  ));
+  const claimEntities = [
+    linkedEntity('company', 'subject', claim.subject),
+    ...claim.themes.map(theme => linkedEntity('theme', 'theme', theme))
+  ];
+  return withDerivedMetadata({ linkedEntities: mergeLinkedEntities(claimEntities, noteEntities) });
+}
+
+function metadataForExistingClaim(claim: WorkspaceClaim): NormalizedMetadata {
+  return withDerivedMetadata({
+    linkedEntities: mergeLinkedEntities(
+      claim.linkedEntities,
+      [linkedEntity('company', 'subject', claim.subject)],
+      claim.themes.map(theme => linkedEntity('theme', 'theme', theme))
+    ),
+    tickers: claim.tickers ?? [],
+    manualThemes: claim.manualThemes ?? claim.themes ?? [],
+    kpis: claim.kpis ?? [],
+    industries: claim.industries ?? [],
+    companyTags: claim.companyTags ?? [],
+    watchlistTags: claim.watchlistTags ?? [],
+    sourcePeople: claim.sourcePeople ?? []
+  });
+}
+
+function metadataForClaimUpdate(input: UpdateClaimInput, claim: WorkspaceClaim): NormalizedMetadata {
+  const metadataInput = input as MetadataInput;
+  let linkedEntities = Object.prototype.hasOwnProperty.call(input, 'linkedEntities')
+    ? normalizeLinkedEntities(input.linkedEntities ?? [])
+    : metadataForExistingClaim(claim).linkedEntities;
+
+  if (Object.prototype.hasOwnProperty.call(input, 'subject')) {
+    linkedEntities = replaceEntityRoles(linkedEntities, ['subject'], input.subject ? [linkedEntity('company', 'subject', input.subject)] : []);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'themes')) {
+    linkedEntities = replaceEntityRoles(linkedEntities, ['theme'], (input.themes ?? []).map(theme => linkedEntity('theme', 'theme', theme)));
+  }
+
+  for (const key of Object.keys(metadataRoles) as Array<keyof MetadataArrays>) {
+    if (!Object.prototype.hasOwnProperty.call(metadataInput, key)) continue;
+    const replacement = legacyArraysToLinkedEntities({ [key]: metadataInput[key] ?? [] });
+    linkedEntities = replaceEntityRoles(linkedEntities, metadataRoles[key], replacement);
+  }
+
+  return withDerivedMetadata({ linkedEntities });
+}
+
+function metadataForImportedClaim(exportedClaim: WorkspaceClaim, currentClaim: WorkspaceClaim): NormalizedMetadata {
+  return withDerivedMetadata({
+    linkedEntities: exportedClaim.linkedEntities?.length ? exportedClaim.linkedEntities : currentClaim.linkedEntities,
+    tickers: exportedClaim.tickers ?? currentClaim.tickers ?? [],
+    manualThemes: exportedClaim.manualThemes ?? exportedClaim.themes ?? currentClaim.manualThemes ?? [],
+    kpis: exportedClaim.kpis ?? currentClaim.kpis ?? [],
+    industries: exportedClaim.industries ?? currentClaim.industries ?? [],
+    companyTags: exportedClaim.companyTags ?? currentClaim.companyTags ?? [],
+    watchlistTags: exportedClaim.watchlistTags ?? currentClaim.watchlistTags ?? [],
+    sourcePeople: exportedClaim.sourcePeople ?? currentClaim.sourcePeople ?? []
+  });
+}
+
+function replaceEntityRoles(current: LinkedEntity[], roles: EntityRole[], replacement: LinkedEntity[]): LinkedEntity[] {
+  const blocked = new Set(roles);
+  return mergeLinkedEntities(
+    normalizeLinkedEntities(current).filter(entity => !blocked.has(entity.role)),
+    replacement
+  );
+}
+
+function normalizeStringArray(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function buildPersonMemorySummaries(claims: WorkspaceClaim[], relations: WorkspaceRelation[]): PersonMemorySummary[] {
+  const claimsByPerson = new Map<string, WorkspaceClaim[]>();
+  for (const claim of claims) {
+    for (const person of claim.sourcePeople ?? []) {
+      claimsByPerson.set(person, [...claimsByPerson.get(person) ?? [], claim]);
+    }
+  }
+
+  return [...claimsByPerson.entries()]
+    .map(([name, personClaims]) => {
+      const claimIds = new Set(personClaims.map(claim => claim.id));
+      const personRelations = relations.filter(relation => claimIds.has(relation.a.id) && claimIds.has(relation.b.id));
+      const latest = [...personClaims].sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
+      return {
+        name,
+        claimCount: personClaims.length,
+        positiveClaims: personClaims.filter(claim => claim.direction === 'positive').length,
+        negativeClaims: personClaims.filter(claim => claim.direction === 'negative').length,
+        neutralClaims: personClaims.filter(claim => claim.direction === 'neutral').length,
+        subjects: uniqueBy(personClaims.map(claim => claim.subject), item => item).sort((a, b) => a.localeCompare(b)),
+        latestObservedAt: latest?.observedAt,
+        latestClaim: latest?.text,
+        contradictions: personRelations.filter(relation => relation.type === 'contradiction').length,
+        reversals: personRelations.filter(relation => relation.type === 'update_or_trend_reversal').length
+      };
+    })
+    .sort((a, b) => b.claimCount - a.claimCount || a.name.localeCompare(b.name));
 }
 
 export function createMemoryWorkspaceRepository() {
@@ -692,7 +944,7 @@ export function createMemoryWorkspaceRepository() {
       this.users = input.users.map(user => ({ ...user, orgId: input.organizationId, email: `${slug(user.name)}@example.test` }));
       this.notes = input.notes.map(note => {
         const author = this.users.find(user => user.id === note.authorId);
-        return {
+        return withDerivedMetadata({
           ...note,
           orgId: input.organizationId,
           authorName: author?.name ?? note.authorId,
@@ -700,7 +952,7 @@ export function createMemoryWorkspaceRepository() {
           tickers: note.tickers ?? [],
           manualThemes: note.manualThemes ?? [],
           kpis: note.kpis ?? []
-        };
+        });
       });
       this.claims = [];
       this.relations = [];
@@ -761,20 +1013,25 @@ export function createMemoryWorkspaceRepository() {
 }
 
 function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing?: WorkspaceClaim): WorkspaceClaim {
-  const preserved = existing && existing.reviewStatus !== 'machine';
+  const preserved = Boolean(existing && existing.reviewStatus !== 'machine');
+  const base = preserved && existing ? existing : claim;
+  const metadata = preserved && existing
+    ? metadataForExistingClaim(existing)
+    : metadataForMaterializedClaim(note, claim);
   return {
     ...claim,
     orgId,
     authorName: note.authorName,
     teamId: note.teamId,
-    text: preserved ? existing.text : claim.text,
-    subject: preserved ? existing.subject : claim.subject,
-    direction: preserved ? existing.direction : claim.direction,
-    themes: preserved ? existing.themes : claim.themes,
-    observedAt: preserved ? existing.observedAt : claim.observedAt,
-    appliesToStart: preserved ? existing.appliesToStart : claim.appliesToStart,
-    appliesToEnd: preserved ? existing.appliesToEnd : claim.appliesToEnd,
-    horizon: preserved ? existing.horizon : claim.horizon,
+    text: base.text,
+    subject: base.subject,
+    direction: base.direction,
+    themes: base.themes,
+    observedAt: base.observedAt,
+    appliesToStart: base.appliesToStart,
+    appliesToEnd: base.appliesToEnd,
+    horizon: base.horizon,
+    ...metadata,
     reviewStatus: existing?.reviewStatus ?? 'machine',
     reviewNote: existing?.reviewNote,
     reviewerId: existing?.reviewerId,

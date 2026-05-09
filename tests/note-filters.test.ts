@@ -31,7 +31,10 @@ const notes: WorkspaceNote[] = [
     observedAt: '2026-05-06',
     tickers: ['NVDA'],
     manualThemes: ['AI infrastructure'],
-    kpis: ['Demand']
+    kpis: ['Demand'],
+    industries: ['Semiconductors'],
+    watchlistTags: ['AI Capex'],
+    sourcePeople: ['Dana Lee']
   },
   {
     ...base,
@@ -44,7 +47,10 @@ const notes: WorkspaceNote[] = [
     observedAt: '2026-05-04',
     tickers: ['AAPL'],
     manualThemes: ['Services'],
-    kpis: ['Pricing']
+    kpis: ['Pricing'],
+    industries: ['Consumer hardware'],
+    watchlistTags: ['Consumer'],
+    sourcePeople: ['Mei Tan']
   },
   {
     ...base,
@@ -56,7 +62,10 @@ const notes: WorkspaceNote[] = [
     observedAt: undefined,
     tickers: ['MSFT', 'NVDA'],
     manualThemes: ['Cloud spend'],
-    kpis: ['Capex']
+    kpis: ['Capex'],
+    industries: ['Cloud infrastructure'],
+    watchlistTags: ['AI Capex'],
+    sourcePeople: ['Dana Lee']
   }
 ];
 
@@ -70,6 +79,9 @@ test('deriveNoteFilterOptions returns sorted metadata options', () => {
   assert.deepEqual(options.tickers, ['AAPL', 'MSFT', 'NVDA']);
   assert.deepEqual(options.themes, ['AI infrastructure', 'Cloud spend', 'Services']);
   assert.deepEqual(options.kpis, ['Capex', 'Demand', 'Pricing']);
+  assert.deepEqual(options.industries, ['Cloud infrastructure', 'Consumer hardware', 'Semiconductors']);
+  assert.deepEqual(options.watchlists, ['AI Capex', 'Consumer']);
+  assert.deepEqual(options.sourcePeople, ['Dana Lee', 'Mei Tan']);
   assert.equal('sourceTypes' in options, false);
   assert.deepEqual(options.visibilities, ['public', 'team']);
 });
@@ -80,6 +92,9 @@ test('filterAndSortNotes filters by metadata, dates, visibility, and search', ()
     ticker: 'NVDA',
     theme: 'AI infrastructure',
     kpi: 'Demand',
+    industry: 'Semiconductors',
+    watchlist: 'AI Capex',
+    sourcePerson: 'Dana Lee',
     dateFrom: '2026-05-05',
     dateTo: '2026-05-07',
     visibility: 'team',
@@ -87,6 +102,12 @@ test('filterAndSortNotes filters by metadata, dates, visibility, and search', ()
   };
 
   assert.deepEqual(filterAndSortNotes(notes, filters).map(note => note.id), ['n1']);
+});
+
+test('filterAndSortNotes filters new metadata facets independently', () => {
+  assert.deepEqual(filterAndSortNotes(notes, { industry: 'Cloud infrastructure' }).map(note => note.id), ['n3']);
+  assert.deepEqual(filterAndSortNotes(notes, { watchlist: 'AI Capex' }).map(note => note.id), ['n3', 'n1']);
+  assert.deepEqual(filterAndSortNotes(notes, { sourcePerson: 'Dana Lee' }).map(note => note.id), ['n3', 'n1']);
 });
 
 test('filterAndSortNotes ignores legacy source filters', () => {

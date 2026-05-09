@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canAccess, classifyTemporalRelation, detectEntities, detectRelations, extractClaims, inferTemporalWindow, runPipeline, type Claim, type Note, type User } from '../src/engine';
+import { buildPersonMemory, canAccess, classifyTemporalRelation, detectEntities, detectRelations, extractClaims, inferTemporalWindow, runPipeline, type Claim, type Note, type User } from '../src/engine';
+import { linkedEntity } from '../src/entity-links';
 
 const analyst: User = { id: 'a', name: 'Analyst', role: 'Analyst', team: 'Semis' };
 const pm: User = { id: 'p', name: 'PM', role: 'PM', team: 'Portfolio' };
@@ -42,6 +43,33 @@ test('extracts entities, claims, and temporal metadata from investment notes', (
   assert.equal(claims[0].appliesToStart, '2026-05-01');
   assert.equal(claims[0].appliesToEnd, '2026-08-01');
   assert.equal(claims[0].freshness, 'fresh');
+});
+
+test('extracted claims inherit linked note metadata and source people', () => {
+  const note: Note = {
+    ...base,
+    id: 'n-linked',
+    title: 'linked note',
+    body: 'Nvidia demand is strong and GPU supply is tight.',
+    linkedEntities: [
+      linkedEntity('security', 'security', 'NVDA', { ticker: 'NVDA' }),
+      linkedEntity('industry', 'industry', 'Semiconductors'),
+      linkedEntity('theme', 'theme', 'AI infrastructure'),
+      linkedEntity('kpi', 'kpi', 'Demand'),
+      linkedEntity('watchlist', 'watchlist', 'AI Capex'),
+      linkedEntity('source_person', 'source_person', 'Dana Lee')
+    ]
+  };
+
+  const [claim] = extractClaims(note, '2026-05-03');
+
+  assert.deepEqual(claim.tickers, ['NVDA']);
+  assert.deepEqual(claim.industries, ['Semiconductors']);
+  assert.deepEqual(claim.kpis, ['Demand', 'supply']);
+  assert.deepEqual(claim.watchlistTags, ['AI Capex']);
+  assert.deepEqual(claim.sourcePeople, ['Dana Lee']);
+  assert(claim.linkedEntities?.some(entity => entity.role === 'subject' && entity.name === 'Nvidia'));
+  assert(claim.linkedEntities?.some(entity => entity.role === 'source_person' && entity.name === 'Dana Lee'));
 });
 
 test('permission model hides other-team restricted notes from analysts', () => {
@@ -122,4 +150,63 @@ test('temporal relation helper separates overlapping contradictions from stale s
   const staleEvidence = classifyTemporalRelation(staleBull, freshBull, 4, '2026-05-01');
   assert.equal(staleEvidence?.type, 'stale_evidence');
   assert.equal(staleEvidence?.overlapDays, 0);
+});
+
+test('relations expose source-person context without changing temporal relation types', () => {
+  const bear = claim({
+    id: 'bear-dana',
+    noteId: 'bear-note',
+    direction: 'negative',
+    text: 'Nvidia demand is weak as GPU supply slows.',
+    sourcePeople: ['Dana Lee']
+  } as Partial<Claim>);
+  const bull = claim({
+    id: 'bull-dana',
+    noteId: 'bull-note',
+    direction: 'positive',
+    sourcePeople: ['Dana Lee']
+  } as Partial<Claim>);
+  const differentPersonBull = claim({
+    id: 'bull-ravi',
+    noteId: 'bull-note-2',
+    direction: 'positive',
+    sourcePeople: ['Ravi Patel']
+  } as Partial<Claim>);
+
+  assert.equal(classifyTemporalRelation(bear, bull, 4, '2026-05-01')?.type, 'contradiction');
+  assert.equal(classifyTemporalRelation(bear, bull, 4, '2026-05-01')?.sourcePersonContext, 'same_source_person');
+  assert.equal(classifyTemporalRelation(bear, differentPersonBull, 4, '2026-05-01')?.sourcePersonContext, 'different_source_people');
+});
+
+test('person memory summarizes accessible source-person claim history', () => {
+  const claims = [
+    claim({ id: 'dana-bear', noteId: 'dana-bear-note', direction: 'negative', sourcePeople: ['Dana Lee'], observedAt: '2026-04-01', appliesToStart: '2026-04-01', appliesToEnd: '2026-06-30' } as Partial<Claim>),
+    claim({ id: 'dana-bull', noteId: 'dana-bull-note', direction: 'positive', sourcePeople: ['Dana Lee'], observedAt: '2026-05-01', appliesToStart: '2026-05-01', appliesToEnd: '2026-08-29' } as Partial<Claim>),
+    claim({ id: 'ravi-bull', direction: 'positive', subject: 'Microsoft', sourcePeople: ['Ravi Patel'] } as Partial<Claim>)
+  ];
+  const relations = detectRelations(claims);
+
+  const people = buildPersonMemory(claims, relations);
+  const dana = people.find(person => person.name === 'Dana Lee');
+
+  assert(dana);
+  assert.equal(dana.claimCount, 2);
+  assert.equal(dana.positives, 1);
+  assert.equal(dana.negatives, 1);
+  assert.deepEqual(dana.subjects, ['Nvidia']);
+  assert(dana.contradictions >= 1);
+  assert.equal(dana.latestClaimId, 'dana-bull');
+});
+
+test('pipeline exposes source-person memory for visible claims', () => {
+  const notes: Note[] = [
+    { ...base, id: 'n1', title: 'old bear', body: 'Nvidia demand is weak as GPU supply slows.', sourcePeople: ['Dana Lee'] },
+    { ...base, id: 'n2', title: 'new bull', body: 'Nvidia demand is strong and GPU supply is tight.', sourcePeople: ['Dana Lee'] },
+    { ...base, id: 'n3', title: 'hidden', team: 'Consumer', authorId: 'other', body: 'Nvidia demand is strong and GPU supply is tight.', sourcePeople: ['Ravi Patel'] }
+  ];
+
+  const graph = runPipeline(notes, analyst);
+
+  assert(graph.people.some(person => person.name === 'Dana Lee' && person.claimCount === 2));
+  assert(!graph.people.some(person => person.name === 'Ravi Patel'));
 });

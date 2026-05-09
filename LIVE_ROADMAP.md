@@ -32,7 +32,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 62 tests.
+- [x] Validation passing: build + 71 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -54,6 +54,17 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - author-only note update enforcement,
   - evidence-bearing note edits reset derived claim/relation review state,
   - workspace export/import preserves dismissed relation decisions.
+- [x] Normalized research entity layer added:
+  - `research_entities`, note entity links, and claim entity links with access-following RLS,
+  - shared `LinkedEntity` metadata contract with legacy array compatibility,
+  - note/claim links for securities, industries, themes, KPIs, watchlists, companies, and source people,
+  - source-person relation context and workspace person-memory summaries.
+- [x] Expanded metadata UX added:
+  - read-only team display,
+  - securities/tickers, industries/sectors, themes, KPIs, watchlists, and participants controls,
+  - addable live extraction suggestions,
+  - archive/sidebar/map filters for normalized metadata,
+  - claim participant correction and source-person memory panel.
 
 ### Current MVP Validation
 
@@ -72,11 +83,12 @@ Expected result:
   - non-overlapping 12-month trend reversal,
   - stale evidence,
   - permission-aware temporal graph filtering,
-  - migration/RLS schema contract,
+  - migration/RLS schema contract including normalized entity links,
   - Fastify BFF route auth,
   - server-side graph materialization,
   - persisted note edits, server drafts, note history, and claim/relation review behavior.
-  - note metadata persistence,
+  - normalized note/claim metadata persistence,
+  - source-person relation context and memory summaries.
   - note filtering and sorting helpers.
   - page-level review/map/archive layout and full-width archive behavior.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
@@ -100,7 +112,7 @@ Goal: make the app feel like a real product a design partner could use with samp
 
 - [x] Add persistent production storage for notes, server drafts, note history, and review state.
 - [x] Add export/import for workspace JSON so demos survive reloads.
-- [ ] Improve note capture metadata controls:
+- [x] Improve note capture metadata controls:
   - observed date,
   - visibility,
   - team,
@@ -116,7 +128,7 @@ Goal: make the app feel like a real product a design partner could use with samp
   - open a formatting palette when typing `/`,
   - support headings, lists, quotes, and text styling commands,
   - keep keyboard behavior compatible with the existing toolbar and undo/redo flow.
-- [ ] Add explicit stock and industry linking UX:
+- [x] Add explicit stock and industry linking UX:
   - attach notes to one or more tickers/securities,
   - attach notes to one or more industries/sectors/themes,
   - support manual correction when entity extraction is wrong,
@@ -141,13 +153,13 @@ Goal: make the map the product’s “aha” moment.
 
 - [ ] Add true timeline/as-of control.
 - [ ] Let users filter map by:
-  - company,
-  - stock/ticker/security,
-  - industry/sector/theme,
-  - relation type,
+  - company, **done through subject rail,**
+  - stock/ticker/security, **done,**
+  - industry/sector/theme, **done,**
+  - relation type, **done,**
   - author/team,
-  - source person/meeting participant,
-  - freshness.
+  - source person/meeting participant, **done,**
+  - freshness, **done.**
 - [ ] Add current vs historical lanes.
 - [x] Add detail drawer for selected relation:
   - both evidence snippets,
@@ -180,13 +192,15 @@ Goal: improve extraction/relation quality while keeping explainability.
   - industry/sector hierarchy,
   - watchlist/portfolio membership,
   - many-to-many note ↔ stock and note ↔ industry links.
-- [ ] Add source-person memory:
+- [x] Add source-person memory v1:
   - identify recurring people across notes/transcripts,
   - link claims to the person who said them when available,
   - compare a person’s latest view against their own prior notes,
   - flag sentiment changes, thesis drift, and self-inconsistencies,
   - distinguish “person changed view over time” from “two people disagree.”
 - [ ] Add confidence scoring by extraction quality, source-person identity confidence, and relation evidence strength.
+
+Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Security-master providers, industry hierarchy, watchlist/portfolio membership, fuzzy source-person identity resolution, and identity-confidence workflows remain deferred.
 - [ ] Add candidate retrieval abstraction for future vector search/RAG.
 - [ ] Add optional LLM extraction interface with deterministic fallback.
 - [ ] Add eval fixtures for known contradiction/reversal/stale examples.
@@ -202,8 +216,8 @@ Goal: move from in-browser mock to production-shaped architecture.
   - organizations,
   - users,
   - teams,
-  - notes with stock/theme/KPI metadata arrays,
-  - entities/security/industry/source-person links are deferred to the next schema pass,
+  - notes with stock/theme/KPI metadata arrays and normalized linked metadata compatibility,
+  - entities/security/industry/source-person link tables,
   - claims,
   - relations,
   - review decisions,
@@ -212,7 +226,7 @@ Goal: move from in-browser mock to production-shaped architecture.
 - [x] Add audit log for note creation, graph materialization, and reviewer decisions.
 - [x] Add tenant isolation assumptions and migration/RLS contract tests.
 - [x] Add deployment path for private alpha: `npm run build` + `npm start` serves API and React from one Node process.
-- [ ] Add entity/security/industry/source-person tables and links.
+- [x] Add entity/security/industry/source-person tables and links.
 - [ ] Add live Supabase RLS integration tests once Docker Desktop is available in the environment.
 
 ### P5 — Real Input Sources + Transcription
@@ -278,12 +292,12 @@ Suggested tasks:
 
 1. Add production persistence layer. **Done.**
 2. Add claim/relation review state. **Done.**
-3. Keep the note-first capture workbench focused on observed date, visibility, and stock/theme/KPI chips while claim windows and horizon are inferred and reviewed on claims.
-4. Add stock/ticker and industry linking controls.
-5. Add source-person/participant field and person-level history view.
+3. Keep the note-first capture workbench focused on observed date, visibility, and linked metadata while claim windows and horizon are inferred and reviewed on claims. **Done.**
+4. Add stock/ticker and industry linking controls. **Done.**
+5. Add source-person/participant field and person-level history view. **Done.**
 6. Add relation detail drawer. **Done.**
 7. Add timeline/as-of filter.
-8. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, and source-person sentiment changes. **Partially done for persistence/drafts/history.**
+8. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, and source-person sentiment changes. **Done for normalized metadata/source-person v1.**
 9. Add a slash-command formatting palette to the markdown editor. **Done.**
 10. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
 

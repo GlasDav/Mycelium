@@ -83,6 +83,62 @@ test('note creation persists metadata, materializes graph rows, and writes audit
   assert(repository.auditEvents.some(event => event.action === 'graph.materialized'));
 });
 
+test('normalized entity links persist through notes, claims, drafts, history, and people summaries', async () => {
+  const { service } = buildService();
+
+  const linkedEntities = [
+    { type: 'security', role: 'security', key: 'nvda', name: 'NVDA', externalIds: { ticker: 'NVDA' } },
+    { type: 'industry', role: 'industry', key: 'semiconductors', name: 'Semiconductors' },
+    { type: 'theme', role: 'theme', key: 'ai-infrastructure', name: 'AI infrastructure' },
+    { type: 'kpi', role: 'kpi', key: 'demand', name: 'Demand' },
+    { type: 'watchlist', role: 'watchlist', key: 'ai-capex', name: 'AI Capex' },
+    { type: 'source_person', role: 'source_person', key: 'dana-lee', name: 'Dana Lee' }
+  ];
+
+  const snapshot = await service.createNote('u1', {
+    title: 'Dana channel check',
+    body: 'Nvidia Blackwell demand is strong and GPU supply is tight.',
+    visibility: 'team',
+    observedAt: '2026-05-06',
+    linkedEntities
+  } as any);
+
+  const createdNote = snapshot.visibleNotes.find(note => note.title === 'Dana channel check');
+  assert(createdNote);
+  assert.deepEqual(createdNote.linkedEntities?.map(entity => entity.name), ['NVDA', 'Semiconductors', 'AI infrastructure', 'Demand', 'AI Capex', 'Dana Lee']);
+  assert.deepEqual(createdNote.tickers, ['NVDA']);
+  assert.deepEqual(createdNote.industries, ['Semiconductors']);
+  assert.deepEqual(createdNote.watchlistTags, ['AI Capex']);
+  assert.deepEqual(createdNote.sourcePeople, ['Dana Lee']);
+
+  const createdClaim = snapshot.claims.find(claim => claim.noteId === createdNote.id);
+  assert(createdClaim);
+  assert.deepEqual(createdClaim.sourcePeople, ['Dana Lee']);
+  assert(createdClaim.linkedEntities?.some(entity => entity.role === 'source_person' && entity.name === 'Dana Lee'));
+  assert(snapshot.people.some(person => (
+    person.name === 'Dana Lee'
+    && person.claimCount > 0
+    && person.subjects.includes('Nvidia')
+  )));
+
+  const draft = await service.upsertNoteDraft('u1', {
+    title: 'Draft with links',
+    body: 'Nvidia demand follow-up.',
+    visibility: 'team',
+    observedAt: '2026-05-07',
+    linkedEntities
+  } as any);
+  assert.deepEqual(draft.linkedEntities?.map(entity => entity.name), ['NVDA', 'Semiconductors', 'AI infrastructure', 'Demand', 'AI Capex', 'Dana Lee']);
+
+  await service.updateNote('u1', createdNote.id, {
+    body: 'Nvidia demand is weak as GPU supply slows.',
+    linkedEntities: linkedEntities.filter(entity => entity.role !== 'watchlist')
+  } as any);
+  const history = await service.listNoteHistory('u1', createdNote.id);
+  assert(history[0].changedFields.includes('linkedEntities'));
+  assert(history[0].previousLinkedEntities?.some(entity => entity.role === 'watchlist' && entity.name === 'AI Capex'));
+});
+
 test('note body edits persist revision history and reset derived reviews', async () => {
   const { repository, service } = buildService();
 

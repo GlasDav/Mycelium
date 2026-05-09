@@ -53,6 +53,11 @@ test('BFF requires auth and returns the permission-filtered workspace', async ()
 
 test('BFF creates notes and patches claim/relation reviews', async () => {
   const { app } = buildTestApp();
+  const linkedEntities = [
+    { type: 'security', role: 'security', key: 'nvda', name: 'NVDA', externalIds: { ticker: 'NVDA' } },
+    { type: 'industry', role: 'industry', key: 'semiconductors', name: 'Semiconductors' },
+    { type: 'source_person', role: 'source_person', key: 'dana-lee', name: 'Dana Lee' }
+  ];
 
   const created = await app.inject({
     method: 'POST',
@@ -65,14 +70,18 @@ test('BFF creates notes and patches claim/relation reviews', async () => {
       observedAt: '2026-05-02',
       appliesToStart: '2026-05-02',
       appliesToEnd: '2026-08-02',
-      horizon: 'near_term'
+      horizon: 'near_term',
+      linkedEntities
     }
   });
   assert.equal(created.statusCode, 200);
   const createdBody = created.json();
+  const createdNote = createdBody.visibleNotes.find((item: { title: string }) => item.title.includes('Research intake'));
+  assert.deepEqual(createdNote.linkedEntities.map((item: { name: string }) => item.name), ['NVDA', 'Semiconductors', 'Dana Lee']);
   const claim = createdBody.claims.find((item: { text: string }) => item.text.includes('weak'));
   const relation = createdBody.relations.find((item: { type: string }) => item.type === 'contradiction');
   assert(claim);
+  assert.deepEqual(claim.sourcePeople, ['Dana Lee']);
   assert(relation);
 
   const relationUpdate = await app.inject({
@@ -96,12 +105,13 @@ test('BFF creates notes and patches claim/relation reviews', async () => {
     headers: { authorization: 'Bearer u1' },
     payload: {
       reviewStatus: 'analyst_rejected',
-      reviewNote: 'BFF claim review note.'
+      reviewNote: 'BFF claim review note.',
+      sourcePeople: ['Ravi Patel']
     }
   });
   assert.equal(claimUpdate.statusCode, 200);
-  assert(claimUpdate.json().claims.some((item: { id: string; reviewStatus: string; reviewNote: string }) => {
-    return item.id === claim.id && item.reviewStatus === 'analyst_rejected' && item.reviewNote === 'BFF claim review note.';
+  assert(claimUpdate.json().claims.some((item: { id: string; reviewStatus: string; reviewNote: string; sourcePeople: string[] }) => {
+    return item.id === claim.id && item.reviewStatus === 'analyst_rejected' && item.reviewNote === 'BFF claim review note.' && item.sourcePeople.includes('Ravi Patel');
   }));
 });
 
@@ -203,7 +213,11 @@ test('BFF note draft routes persist and clear the recoverable workbench draft', 
       observedAt: '2026-05-07',
       tickers: ['NVDA'],
       manualThemes: ['AI infrastructure'],
-      kpis: ['demand']
+      kpis: ['demand'],
+      linkedEntities: [
+        { type: 'source_person', role: 'source_person', key: 'dana-lee', name: 'Dana Lee' },
+        { type: 'watchlist', role: 'watchlist', key: 'ai-capex', name: 'AI Capex' }
+      ]
     }
   });
   assert.equal(saved.statusCode, 200);
@@ -216,6 +230,8 @@ test('BFF note draft routes persist and clear the recoverable workbench draft', 
   });
   assert.equal(loaded.statusCode, 200);
   assert.deepEqual(loaded.json().draft.tickers, ['NVDA']);
+  assert.deepEqual(loaded.json().draft.sourcePeople, ['Dana Lee']);
+  assert.deepEqual(loaded.json().draft.watchlistTags, ['AI Capex']);
 
   const deleted = await app.inject({
     method: 'DELETE',

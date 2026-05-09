@@ -44,6 +44,11 @@ test('note workbench does not ask for source or claim validity metadata', () => 
   assert.doesNotMatch(capture, /<span>Horizon<\/span>/);
   assert.match(capture, /<span>Observed<\/span>/);
   assert.match(capture, /<span>Visibility<\/span>/);
+  assert.match(capture, /<span>Team<\/span>/);
+  assert.match(capture, /label="Securities\/Tickers"/);
+  assert.match(capture, /label="Industries\/Sectors"/);
+  assert.match(capture, /label="Watchlists"/);
+  assert.match(capture, /label="Participants"/);
 });
 
 test('notes sidebar filters do not include source metadata controls', () => {
@@ -56,6 +61,9 @@ test('notes sidebar filters do not include source metadata controls', () => {
   assert.doesNotMatch(sidebar, /label="Source"/);
   assert.doesNotMatch(sidebar, /sourceType/);
   assert.doesNotMatch(sidebar, /<option value="sourceType">source<\/option>/);
+  assert.match(sidebar, /label="Industry"/);
+  assert.match(sidebar, /label="Watchlist"/);
+  assert.match(sidebar, /label="Participant"/);
 });
 
 test('markdown editor exposes display editing only with undo and redo controls', () => {
@@ -115,6 +123,25 @@ test('note workbench supports explicit saved-note editing and server draft recov
   assert.match(source, /selectedNoteId \? 'Save note' : 'Add note'/);
   assert.match(source, /selectedNoteId \? 'Save note' : 'Add note'/);
   assert.match(source, /onSubmit=\{saveWorkbenchNote\}/);
+  assert.match(source, /currentLinkedEntities/);
+  assert.match(source, /linkedEntities/);
+  assert.match(source, /industries/);
+  assert.match(source, /watchlistTags/);
+  assert.match(source, /sourcePeople/);
+});
+
+test('live extraction suggestions can be added to linked note metadata', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const livePreviewStart = source.indexOf('<article className="panel live-preview">');
+  const livePreviewEnd = source.indexOf('<div className="preview-claims">', livePreviewStart);
+  assert(livePreviewStart >= 0 && livePreviewEnd > livePreviewStart, 'live preview source is missing');
+  const livePreview = source.slice(livePreviewStart, livePreviewEnd);
+
+  assert.match(source, /function addPreviewEntity/);
+  assert.match(livePreview, /onClick=\{\(\) => addPreviewEntity\(e\)\}/);
+  assert.match(source, /setTickers\(values => addTag\(values/);
+  assert.match(source, /setManualThemes\(values => addTag\(values/);
+  assert.match(source, /setKpis\(values => addTag\(values/);
 });
 
 test('selected saved notes expose a read-only history drawer', () => {
@@ -160,6 +187,8 @@ test('claim review cards capture analyst review notes on every action', () => {
   assert.match(claimCard, /reviewNote,\s*\n/);
   assert.match(claimCard, /reviewStatus: 'analyst_confirmed', reviewNote/);
   assert.match(claimCard, /reviewStatus: 'analyst_rejected', reviewNote/);
+  assert.match(claimCard, /sourcePeople/);
+  assert.match(claimCard, /label="Participants"/);
 });
 
 test('relation review cards capture analyst notes and map mode exposes a detail drawer', () => {
@@ -178,4 +207,18 @@ test('relation review cards capture analyst notes and map mode exposes a detail 
   assert.match(relationSource, /reviewStatus: 'confirmed', reviewNote/);
   assert.match(relationSource, /reviewStatus: 'dismissed', reviewNote/);
   assert.match(relationSource, /reviewStatus: 'reclassified', type, reviewNote/);
+  assert.match(relationSource, /map-filter-bar/);
+  assert.match(relationSource, /sourcePersonContext/);
+});
+
+test('review mode exposes source-person memory panel', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(appReturn, /graph\.people/);
+  assert.match(source, /function PersonMemoryPanel/);
+  assert.match(source, /Source-person memory/);
 });

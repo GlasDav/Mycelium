@@ -2,6 +2,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config as loadDotenv } from 'dotenv';
 import type { FastifyRequest } from 'fastify';
 import type { Claim, RelationType, User } from '../src/engine';
+import {
+  legacyArraysToLinkedEntities,
+  mergeLinkedEntities,
+  metadataArraysFromLinkedEntities,
+  normalizeLinkedEntities,
+  type LinkedEntity
+} from '../src/entity-links';
 import type {
   AuditEvent,
   NoteDraft,
@@ -65,18 +72,23 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
       return Promise.all((data ?? []).map(row => hydrateUser(client, row)));
     },
     async listNotes(orgId) {
-      const { data, error } = await client.from('notes').select('*').eq('org_id', orgId).order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data ?? []).map(mapNoteFromRow);
+      const [notesResult, noteLinks] = await Promise.all([
+        client.from('notes').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+        listEntityLinks(client, orgId, 'note')
+      ]);
+      if (notesResult.error) throw notesResult.error;
+      return (notesResult.data ?? []).map(row => mapNoteFromRow(row, noteLinks.get(row.id)));
     },
     async insertNote(note) {
       const teamId = note.teamId ?? await findTeamId(client, note.orgId, note.team);
       const { error } = await client.from('notes').insert(mapNoteToRow({ ...note, teamId }));
       if (error) throw error;
+      await syncEntityLinks(client, note.orgId, 'note', note.id, note.linkedEntities);
     },
     async updateNote(note) {
       const { error } = await client.from('notes').update(mapNoteToRow(note)).eq('id', note.id);
       if (error) throw error;
+      await syncEntityLinks(client, note.orgId, 'note', note.id, note.linkedEntities);
     },
     async insertNoteRevision(revision) {
       const { error } = await client.from('note_revisions').insert(mapNoteRevisionToRow(revision));
@@ -111,9 +123,12 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
       if (error) throw error;
     },
     async listClaims(orgId) {
-      const { data, error } = await client.from('claims').select('*').eq('org_id', orgId);
-      if (error) throw error;
-      return (data ?? []).map(mapClaimFromRow);
+      const [claimsResult, claimLinks] = await Promise.all([
+        client.from('claims').select('*').eq('org_id', orgId),
+        listEntityLinks(client, orgId, 'claim')
+      ]);
+      if (claimsResult.error) throw claimsResult.error;
+      return (claimsResult.data ?? []).map(row => mapClaimFromRow(row, claimLinks.get(row.id)));
     },
     async replaceClaims(orgId, claims) {
       const rows = await Promise.all(claims.map(async claim => mapClaimToRow({ ...claim, teamId: claim.teamId ?? await findTeamId(client, claim.orgId, claim.team) })));
@@ -121,11 +136,15 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
         const { error } = await client.from('claims').upsert(rows, { onConflict: 'id' });
         if (error) throw error;
       }
+      for (const claim of claims) {
+        await syncEntityLinks(client, claim.orgId, 'claim', claim.id, claim.linkedEntities);
+      }
       await deleteMissing(client, 'claims', orgId, claims.map(claim => claim.id));
     },
     async updateClaim(claim) {
       const { error } = await client.from('claims').update(mapClaimToRow(claim)).eq('id', claim.id);
       if (error) throw error;
+      await syncEntityLinks(client, claim.orgId, 'claim', claim.id, claim.linkedEntities);
     },
     async listRelations(orgId) {
       const [relationsResult, claims] = await Promise.all([
@@ -171,7 +190,8 @@ async function hydrateUser(client: SupabaseClient, profile: Record<string, any>)
     .eq('user_id', profile.id)
     .limit(1)
     .maybeSingle();
-  const teamName = data?.teams && !Array.isArray(data.teams) ? data.teams.name : 'Research';
+  const team = data?.teams as { name?: string } | { name?: string }[] | undefined;
+  const teamName = team && !Array.isArray(team) && team.name ? team.name : 'Research';
   return {
     id: profile.id,
     orgId: profile.org_id,
@@ -199,8 +219,150 @@ async function deleteMissing(client: SupabaseClient, table: string, orgId: strin
   if (error) throw error;
 }
 
-function mapNoteFromRow(row: Record<string, any>): WorkspaceNote {
+type LinkOwner = 'note' | 'claim';
+
+async function listEntityLinks(client: SupabaseClient, orgId: string, owner: LinkOwner): Promise<Map<string, LinkedEntity[]>> {
+  const table = owner === 'note' ? 'note_entity_links' : 'claim_entity_links';
+  const ownerColumn = owner === 'note' ? 'note_id' : 'claim_id';
+  const { data, error } = await client
+    .from(table)
+    .select(`${ownerColumn}, role, research_entities(id,type,key,name,aliases,external_ids)`)
+    .eq('org_id', orgId);
+  if (error) throw error;
+
+  const links = new Map<string, LinkedEntity[]>();
+  for (const rawRow of data ?? []) {
+    const row = rawRow as Record<string, any>;
+    const ownerId = row[ownerColumn];
+    const entityRow = Array.isArray(row.research_entities) ? row.research_entities[0] : row.research_entities;
+    if (!ownerId || !entityRow) continue;
+    links.set(ownerId, [
+      ...links.get(ownerId) ?? [],
+      {
+        id: entityRow.id,
+        type: entityRow.type,
+        role: row.role,
+        key: entityRow.key,
+        name: entityRow.name,
+        aliases: entityRow.aliases ?? [],
+        externalIds: entityRow.external_ids ?? {}
+      }
+    ]);
+  }
+  return new Map([...links.entries()].map(([id, values]) => [id, normalizeLinkedEntities(values)]));
+}
+
+async function syncEntityLinks(
+  client: SupabaseClient,
+  orgId: string,
+  owner: LinkOwner,
+  ownerId: string,
+  linkedEntities: LinkedEntity[] = []
+): Promise<void> {
+  const table = owner === 'note' ? 'note_entity_links' : 'claim_entity_links';
+  const ownerColumn = owner === 'note' ? 'note_id' : 'claim_id';
+  const entities = normalizeLinkedEntities(linkedEntities);
+
+  const deleteResult = await client.from(table).delete().eq('org_id', orgId).eq(ownerColumn, ownerId);
+  if (deleteResult.error) throw deleteResult.error;
+  if (!entities.length) return;
+
+  const entityRowsByKey = new Map<string, Record<string, any>>();
+  for (const entity of entities) {
+    entityRowsByKey.set(`${entity.type}:${entity.key}`, {
+      org_id: orgId,
+      type: entity.type,
+      key: entity.key,
+      name: entity.name,
+      aliases: entity.aliases ?? [],
+      external_ids: entity.externalIds ?? {}
+    });
+  }
+
+  const upsertResult = await client
+    .from('research_entities')
+    .upsert([...entityRowsByKey.values()], { onConflict: 'org_id,type,key' });
+  if (upsertResult.error) throw upsertResult.error;
+
+  const keys = [...new Set(entities.map(entity => entity.key))];
+  const entityResult = await client
+    .from('research_entities')
+    .select('id,type,key')
+    .eq('org_id', orgId)
+    .in('key', keys);
+  if (entityResult.error) throw entityResult.error;
+
+  const idsByKey = new Map((entityResult.data ?? []).map(row => [`${row.type}:${row.key}`, row.id]));
+  const linkRows = entities.flatMap(entity => {
+    const entityId = idsByKey.get(`${entity.type}:${entity.key}`);
+    if (!entityId) return [];
+    return [{
+      org_id: orgId,
+      [ownerColumn]: ownerId,
+      entity_id: entityId,
+      role: entity.role
+    }];
+  });
+
+  if (!linkRows.length) return;
+  const insertResult = await client.from(table).insert(linkRows);
+  if (insertResult.error) throw insertResult.error;
+}
+
+function withDerivedMetadata<T extends Record<string, any>>(value: T, linkedEntities: LinkedEntity[] = []): T & {
+  linkedEntities: LinkedEntity[];
+  tickers: string[];
+  manualThemes: string[];
+  kpis: string[];
+  industries: string[];
+  companyTags: string[];
+  watchlistTags: string[];
+  sourcePeople: string[];
+} {
+  const merged = mergeLinkedEntities(linkedEntities, value.linkedEntities, legacyArraysToLinkedEntities({
+    tickers: value.tickers ?? [],
+    manualThemes: value.manualThemes ?? value.themes ?? [],
+    kpis: value.kpis ?? [],
+    industries: value.industries ?? [],
+    companyTags: value.companyTags ?? [],
+    watchlistTags: value.watchlistTags ?? [],
+    sourcePeople: value.sourcePeople ?? []
+  }));
+  const arrays = metadataArraysFromLinkedEntities(merged);
   return {
+    ...value,
+    linkedEntities: merged,
+    ...arrays,
+    tickers: Object.prototype.hasOwnProperty.call(value, 'tickers') ? normalizeStringArray(value.tickers ?? []) : arrays.tickers,
+    manualThemes: Object.prototype.hasOwnProperty.call(value, 'manualThemes') ? normalizeStringArray(value.manualThemes ?? []) : arrays.manualThemes,
+    kpis: Object.prototype.hasOwnProperty.call(value, 'kpis') ? normalizeStringArray(value.kpis ?? []) : arrays.kpis,
+    industries: Object.prototype.hasOwnProperty.call(value, 'industries') ? normalizeStringArray(value.industries ?? []) : arrays.industries,
+    companyTags: Object.prototype.hasOwnProperty.call(value, 'companyTags') ? normalizeStringArray(value.companyTags ?? []) : arrays.companyTags,
+    watchlistTags: Object.prototype.hasOwnProperty.call(value, 'watchlistTags') ? normalizeStringArray(value.watchlistTags ?? []) : arrays.watchlistTags,
+    sourcePeople: Object.prototype.hasOwnProperty.call(value, 'sourcePeople') ? normalizeStringArray(value.sourcePeople ?? []) : arrays.sourcePeople
+  };
+}
+
+function linkedEntitiesFromJson(value: unknown): LinkedEntity[] {
+  return Array.isArray(value) ? normalizeLinkedEntities(value as LinkedEntity[]) : [];
+}
+
+function normalizeStringArray(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function mapNoteFromRow(row: Record<string, any>, linkedEntities: LinkedEntity[] = []): WorkspaceNote {
+  return withDerivedMetadata({
     id: row.id,
     orgId: row.org_id,
     title: row.title,
@@ -220,7 +382,7 @@ function mapNoteFromRow(row: Record<string, any>): WorkspaceNote {
     tickers: row.tickers ?? [],
     manualThemes: row.manual_themes ?? [],
     kpis: row.kpis ?? []
-  };
+  }, linkedEntities);
 }
 
 function mapNoteToRow(note: WorkspaceNote) {
@@ -249,6 +411,11 @@ function mapNoteToRow(note: WorkspaceNote) {
 }
 
 function mapNoteRevisionFromRow(row: Record<string, any>): NoteRevision {
+  const metadata = withDerivedMetadata({
+    tickers: row.previous_tickers ?? [],
+    manualThemes: row.previous_manual_themes ?? [],
+    kpis: row.previous_kpis ?? []
+  }, linkedEntitiesFromJson(row.previous_linked_entities));
   return {
     id: row.id,
     orgId: row.org_id,
@@ -263,6 +430,11 @@ function mapNoteRevisionFromRow(row: Record<string, any>): NoteRevision {
     previousTickers: row.previous_tickers ?? [],
     previousManualThemes: row.previous_manual_themes ?? [],
     previousKpis: row.previous_kpis ?? [],
+    previousLinkedEntities: metadata.linkedEntities,
+    previousIndustries: metadata.industries,
+    previousCompanyTags: metadata.companyTags,
+    previousWatchlistTags: metadata.watchlistTags,
+    previousSourcePeople: metadata.sourcePeople,
     changedFields: row.changed_fields ?? [],
     createdAt: row.created_at
   };
@@ -283,13 +455,14 @@ function mapNoteRevisionToRow(revision: NoteRevision) {
     previous_tickers: revision.previousTickers,
     previous_manual_themes: revision.previousManualThemes,
     previous_kpis: revision.previousKpis,
+    previous_linked_entities: revision.previousLinkedEntities ?? [],
     changed_fields: revision.changedFields,
     created_at: revision.createdAt
   };
 }
 
 function mapNoteDraftFromRow(row: Record<string, any>): NoteDraft {
-  return {
+  return withDerivedMetadata({
     orgId: row.org_id,
     userId: row.user_id,
     selectedNoteId: row.selected_note_id,
@@ -301,7 +474,7 @@ function mapNoteDraftFromRow(row: Record<string, any>): NoteDraft {
     manualThemes: row.manual_themes ?? [],
     kpis: row.kpis ?? [],
     updatedAt: row.updated_at
-  };
+  }, linkedEntitiesFromJson(row.linked_entities));
 }
 
 function mapNoteDraftToRow(draft: NoteDraft) {
@@ -316,12 +489,13 @@ function mapNoteDraftToRow(draft: NoteDraft) {
     tickers: draft.tickers,
     manual_themes: draft.manualThemes,
     kpis: draft.kpis,
+    linked_entities: draft.linkedEntities ?? [],
     updated_at: draft.updatedAt
   };
 }
 
-function mapClaimFromRow(row: Record<string, any>): WorkspaceClaim {
-  return {
+function mapClaimFromRow(row: Record<string, any>, linkedEntities: LinkedEntity[] = []): WorkspaceClaim {
+  return withDerivedMetadata({
     id: row.id,
     orgId: row.org_id,
     noteId: row.note_id,
@@ -346,7 +520,7 @@ function mapClaimFromRow(row: Record<string, any>): WorkspaceClaim {
     reviewNote: row.review_note,
     reviewerId: row.reviewer_id,
     updatedAt: row.updated_at
-  };
+  }, linkedEntities);
 }
 
 function mapClaimToRow(claim: WorkspaceClaim) {

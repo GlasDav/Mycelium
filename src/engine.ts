@@ -1,9 +1,19 @@
+import {
+  legacyArraysToLinkedEntities,
+  linkedEntity,
+  mergeLinkedEntities,
+  metadataArraysFromLinkedEntities,
+  type LinkedEntity,
+  type MetadataArrays
+} from './entity-links';
+
 export type Visibility = 'public' | 'team' | 'private';
 export type Role = 'Analyst' | 'PM' | 'Compliance' | 'Guest';
 export type Direction = 'positive' | 'negative' | 'neutral';
 export type Horizon = 'point_in_time' | 'near_term' | 'quarter' | 'year' | 'unknown';
 export type Freshness = 'fresh' | 'aging' | 'stale';
 export type RelationType = 'contradiction' | 'update_or_trend_reversal' | 'historical_tension' | 'open_tension' | 'corroboration' | 'agreement' | 'stale_evidence';
+export type SourcePersonContext = 'same_source_person' | 'different_source_people' | 'unknown';
 
 export interface User { id: string; name: string; role: Role; team: string; }
 export interface Note {
@@ -22,8 +32,13 @@ export interface Note {
   tickers?: string[];
   manualThemes?: string[];
   kpis?: string[];
+  industries?: string[];
+  companyTags?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
+  linkedEntities?: LinkedEntity[];
 }
-export interface Entity { name: string; kind: 'company' | 'ticker' | 'theme' | 'kpi'; ticker?: string; }
+export interface Entity { name: string; kind: 'company' | 'ticker' | 'industry' | 'theme' | 'kpi' | 'watchlist' | 'source_person'; ticker?: string; }
 export interface Claim {
   id: string;
   noteId: string;
@@ -33,6 +48,13 @@ export interface Claim {
   evidence: string;
   confidence: number;
   themes: string[];
+  tickers?: string[];
+  industries?: string[];
+  companyTags?: string[];
+  kpis?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
+  linkedEntities?: LinkedEntity[];
   createdAt: string;
   observedAt: string;
   appliesToStart: string;
@@ -43,8 +65,23 @@ export interface Claim {
   visibility: Visibility;
   team: string;
 }
-export interface Relation { id: string; type: RelationType; a: Claim; b: Claim; reason: string; score: number; overlapDays: number; }
+export interface Relation { id: string; type: RelationType; a: Claim; b: Claim; reason: string; score: number; overlapDays: number; sourcePersonContext?: SourcePersonContext; }
 export interface Alert { id: string; severity: 'high' | 'medium' | 'low'; title: string; body: string; relation?: Relation; company?: string; }
+export interface PersonMemorySummary {
+  name: string;
+  claimCount: number;
+  positives: number;
+  negatives: number;
+  neutrals: number;
+  latestClaimId: string;
+  latestObservedAt: string;
+  latestDirection: Direction;
+  subjects: string[];
+  contradictions: number;
+  trendReversals: number;
+  tensions: number;
+  latestClaims: Claim[];
+}
 
 export const companyLexicon: Record<string, { ticker: string; aliases: string[]; themes: string[] }> = {
   Nvidia: { ticker: 'NVDA', aliases: ['nvidia', 'nvda', 'gpu', 'h100', 'blackwell'], themes: ['AI infrastructure', 'Semiconductors'] },
@@ -95,6 +132,8 @@ export function directionFor(sentence: string): Direction {
 export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.observedAt])): Claim[] {
   const sentences = note.body.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
   const claims: Claim[] = [];
+  const noteMetadata = metadataForNote(note);
+  const noteLinks = linkedEntitiesForNote(note);
   for (const sentence of sentences) {
     const entities = detectEntities(sentence);
     const companies = entities.filter(e => e.kind === 'company');
@@ -102,7 +141,21 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
     const dir = directionFor(sentence);
     if (dir === 'neutral' && !kpiWords.some(k => sentence.toLowerCase().includes(k))) continue;
     for (const company of companies) {
-      const themes = uniqueBy([...entities.filter(e => e.kind === 'theme').map(e => e.name), ...(note.manualThemes ?? [])], x => x);
+      const themes = sortedUnique([...entities.filter(e => e.kind === 'theme').map(e => e.name), ...noteMetadata.manualThemes]);
+      const tickers = sortedUnique([
+        ...noteMetadata.tickers,
+        ...entities.filter(e => e.kind === 'ticker').map(e => e.ticker ?? e.name),
+        company.ticker
+      ].filter(Boolean) as string[]);
+      const kpis = sortedUnique([...noteMetadata.kpis, ...entities.filter(e => e.kind === 'kpi').map(e => e.name)]);
+      const companyTags = sortedUnique([...noteMetadata.companyTags, company.name]);
+      const linkedEntities = mergeLinkedEntities(
+        noteLinks,
+        [linkedEntity('company', 'subject', company.name)],
+        tickers.map(ticker => linkedEntity('security', 'security', ticker.toUpperCase(), { ticker: ticker.toUpperCase() })),
+        themes.map(theme => linkedEntity('theme', 'theme', theme)),
+        kpis.map(kpi => linkedEntity('kpi', 'kpi', kpi))
+      );
       const temporal = inferTemporalWindow(note, sentence, asOf);
       claims.push({
         id: `${note.id}-${slug(company.name)}-${claims.length}`,
@@ -113,6 +166,13 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
         evidence: sentence,
         confidence: dir === 'neutral' ? 0.62 : 0.78,
         themes,
+        tickers,
+        industries: noteMetadata.industries,
+        companyTags,
+        kpis,
+        watchlistTags: noteMetadata.watchlistTags,
+        sourcePeople: noteMetadata.sourcePeople,
+        linkedEntities,
         createdAt: note.createdAt,
         observedAt: temporal.observedAt,
         appliesToStart: temporal.appliesToStart,
@@ -142,9 +202,10 @@ export function detectRelations(claims: Claim[]): Relation[] {
       if (a.subject !== b.subject || a.noteId === b.noteId) continue;
       const sharedThemes = a.themes.filter(t => b.themes.includes(t));
       const sharedWords = overlapKeywords(a.text, b.text);
-      const related = sharedThemes.length || sharedWords >= 2;
+      const sharedMetadata = sharedMetadataCount(a, b);
+      const related = sharedThemes.length || sharedWords >= 2 || sharedMetadata > 0;
       if (!related) continue;
-      const relation = classifyTemporalRelation(a, b, sharedWords, asOf);
+      const relation = classifyTemporalRelation(a, b, sharedWords + sharedMetadata, asOf);
       if (relation) relations.push(relation);
     }
   }
@@ -163,33 +224,34 @@ export function classifyTemporalRelation(a: Claim, b: Claim, sharedWords = overl
   const observationGap = Math.abs(daysBetween(a.observedAt, b.observedAt));
   const id = `rel-${a.id}-${b.id}`;
   const baseScore = 0.6 + Math.min(0.24, sharedWords / 24);
+  const sourcePersonContext = classifySourcePersonContext(a, b);
 
   // True contradictions require opposing claims about the same topic whose valid decision windows materially overlap.
   if (opposing && overlapDays >= 30) {
-    return { id, type: 'contradiction', a, b, overlapDays, reason: `Opposing ${a.subject} claims overlap for ${overlapDays} days (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore + 0.16 };
+    return { id, type: 'contradiction', a, b, overlapDays, sourcePersonContext, reason: `Opposing ${a.subject} claims overlap for ${overlapDays} days (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore + 0.16 };
   }
 
   // If windows do not overlap and the later observation reverses the older one, the map should read this as time-series change, not bad data.
   if (opposing && overlapDays === 0 && observationGap >= 120) {
-    return { id, type: 'update_or_trend_reversal', a: older, b: newer, overlapDays, reason: `Newer claim reverses an older read after ${observationGap} days, with non-overlapping windows (${formatWindow(older)} → ${formatWindow(newer)}).`, score: baseScore + 0.1 };
+    return { id, type: 'update_or_trend_reversal', a: older, b: newer, overlapDays, sourcePersonContext, reason: `Newer claim reverses an older read after ${observationGap} days, with non-overlapping windows (${formatWindow(older)} → ${formatWindow(newer)}).`, score: baseScore + 0.1 };
   }
 
   // Short gaps, broad horizons, and tiny overlaps are ambiguous enough to keep in the tension bucket for analyst review.
   if (opposing) {
     const type: RelationType = overlapDays > 0 ? 'historical_tension' : 'open_tension';
-    return { id, type, a, b, overlapDays, reason: `Opposing reads have ${overlapDays ? `only ${overlapDays} days of overlap` : 'no material overlap'} and ambiguous horizon/date context (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
+    return { id, type, a, b, overlapDays, sourcePersonContext, reason: `Opposing reads have ${overlapDays ? `only ${overlapDays} days of overlap` : 'no material overlap'} and ambiguous horizon/date context (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
   }
 
   if (aligned && compatible) {
-    return { id, type: 'corroboration', a, b, overlapDays, reason: `Aligned ${a.subject} claims share compatible windows (${formatWindow(a)} and ${formatWindow(b)}).`, score: baseScore + 0.08 };
+    return { id, type: 'corroboration', a, b, overlapDays, sourcePersonContext, reason: `Aligned ${a.subject} claims share compatible windows (${formatWindow(a)} and ${formatWindow(b)}).`, score: baseScore + 0.08 };
   }
 
   if (aligned && isStale(older, asOf)) {
-    return { id, type: 'stale_evidence', a: older, b: newer, overlapDays, reason: `Older aligned evidence is stale as of ${asOf}: ${formatWindow(older)} is no longer likely decision-useful beside ${formatWindow(newer)}.`, score: baseScore - 0.08 };
+    return { id, type: 'stale_evidence', a: older, b: newer, overlapDays, sourcePersonContext, reason: `Older aligned evidence is stale as of ${asOf}: ${formatWindow(older)} is no longer likely decision-useful beside ${formatWindow(newer)}.`, score: baseScore - 0.08 };
   }
 
   if (aligned) {
-    return { id, type: 'agreement', a, b, overlapDays, reason: `Aligned claims reinforce the same direction, but date windows are separated (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
+    return { id, type: 'agreement', a, b, overlapDays, sourcePersonContext, reason: `Aligned claims reinforce the same direction, but date windows are separated (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
   }
   return null;
 }
@@ -233,7 +295,43 @@ export function runPipeline(notes: Note[], user: User) {
   const alerts = generateAlerts(relations, claims);
   const companies = uniqueBy(claims.map(c => c.subject), x => x).map(subject => synthesize(claims, relations, subject));
   const themes = uniqueBy(claims.flatMap(c => c.themes), x => x).map(theme => synthesize(claims, relations, theme));
-  return { visibleNotes, claims, relations, alerts, companies, themes, asOf: maxDate(claims.map(c => c.observedAt)) };
+  const people = buildPersonMemory(claims, relations);
+  return { visibleNotes, claims, relations, alerts, companies, themes, people, asOf: maxDate(claims.map(c => c.observedAt)) };
+}
+
+export function buildPersonMemory(claims: Claim[], relations: Relation[]): PersonMemorySummary[] {
+  const byPerson = new Map<string, Claim[]>();
+  for (const claim of claims) {
+    for (const person of sourcePeopleForClaim(claim)) {
+      byPerson.set(person, [...(byPerson.get(person) ?? []), claim]);
+    }
+  }
+
+  return [...byPerson.entries()].map(([name, personClaims]) => {
+    const sortedClaims = [...personClaims].sort((a, b) => compareClaimDates(a, b));
+    const latest = sortedClaims[sortedClaims.length - 1];
+    const personRelations = relations.filter(relation => {
+      const aPeople = sourcePeopleForClaim(relation.a);
+      const bPeople = sourcePeopleForClaim(relation.b);
+      return aPeople.includes(name) && bPeople.includes(name);
+    });
+
+    return {
+      name,
+      claimCount: sortedClaims.length,
+      positives: sortedClaims.filter(claim => claim.direction === 'positive').length,
+      negatives: sortedClaims.filter(claim => claim.direction === 'negative').length,
+      neutrals: sortedClaims.filter(claim => claim.direction === 'neutral').length,
+      latestClaimId: latest.id,
+      latestObservedAt: latest.observedAt,
+      latestDirection: latest.direction,
+      subjects: sortedUnique(sortedClaims.map(claim => claim.subject)),
+      contradictions: personRelations.filter(relation => relation.type === 'contradiction').length,
+      trendReversals: personRelations.filter(relation => relation.type === 'update_or_trend_reversal').length,
+      tensions: personRelations.filter(relation => relation.type === 'historical_tension' || relation.type === 'open_tension').length,
+      latestClaims: sortedClaims.slice(-3).reverse()
+    };
+  }).sort((a, b) => b.latestObservedAt.localeCompare(a.latestObservedAt) || a.name.localeCompare(b.name));
 }
 
 export function relationLabel(type: RelationType): string {
@@ -250,6 +348,75 @@ export function relationLabel(type: RelationType): string {
 
 function relationTitle(r: Relation): string {
   return `${relationLabel(r.type)} on ${r.a.subject}`;
+}
+
+function metadataForNote(note: Note): MetadataArrays {
+  return combineMetadataArrays(note, metadataArraysFromLinkedEntities(note.linkedEntities));
+}
+
+function metadataForClaim(claim: Claim): MetadataArrays {
+  return combineMetadataArrays({
+    tickers: claim.tickers,
+    manualThemes: claim.themes,
+    kpis: claim.kpis,
+    industries: claim.industries,
+    companyTags: claim.companyTags,
+    watchlistTags: claim.watchlistTags,
+    sourcePeople: claim.sourcePeople
+  }, metadataArraysFromLinkedEntities(claim.linkedEntities));
+}
+
+function linkedEntitiesForNote(note: Note): LinkedEntity[] {
+  return mergeLinkedEntities(note.linkedEntities, legacyArraysToLinkedEntities(metadataForNote(note)));
+}
+
+function classifySourcePersonContext(a: Claim, b: Claim): SourcePersonContext {
+  const aPeople = sourcePeopleForClaim(a);
+  const bPeople = sourcePeopleForClaim(b);
+  if (!aPeople.length || !bPeople.length) return 'unknown';
+  return intersects(aPeople, bPeople) ? 'same_source_person' : 'different_source_people';
+}
+
+function sharedMetadataCount(a: Claim, b: Claim): number {
+  const aMetadata = metadataForClaim(a);
+  const bMetadata = metadataForClaim(b);
+  return [
+    [aMetadata.tickers, bMetadata.tickers],
+    [aMetadata.industries, bMetadata.industries],
+    [aMetadata.kpis, bMetadata.kpis],
+    [aMetadata.watchlistTags, bMetadata.watchlistTags]
+  ].reduce((count, [left, right]) => count + intersectionCount(left, right), 0);
+}
+
+function sourcePeopleForClaim(claim: Claim): string[] {
+  return metadataForClaim(claim).sourcePeople;
+}
+
+function compareClaimDates(a: Claim, b: Claim): number {
+  return a.observedAt.localeCompare(b.observedAt)
+    || a.createdAt.localeCompare(b.createdAt)
+    || a.id.localeCompare(b.id);
+}
+
+function combineMetadataArrays(base: Partial<MetadataArrays>, derived: Partial<MetadataArrays> = {}): MetadataArrays {
+  return {
+    tickers: sortedUnique([...(base.tickers ?? []), ...(derived.tickers ?? [])].map(value => value.toUpperCase())),
+    manualThemes: sortedUnique([...(base.manualThemes ?? []), ...(derived.manualThemes ?? [])]),
+    kpis: sortedUnique([...(base.kpis ?? []), ...(derived.kpis ?? [])]),
+    industries: sortedUnique([...(base.industries ?? []), ...(derived.industries ?? [])]),
+    companyTags: sortedUnique([...(base.companyTags ?? []), ...(derived.companyTags ?? [])]),
+    watchlistTags: sortedUnique([...(base.watchlistTags ?? []), ...(derived.watchlistTags ?? [])]),
+    sourcePeople: sortedUnique([...(base.sourcePeople ?? []), ...(derived.sourcePeople ?? [])])
+  };
+}
+
+function intersects(a: string[], b: string[]): boolean {
+  return intersectionCount(a, b) > 0;
+}
+
+function intersectionCount(a: string[], b: string[]): number {
+  const right = new Set(b.map(value => value.toLowerCase()));
+  return sortedUnique(a).filter(value => right.has(value.toLowerCase())).length;
 }
 
 export function inferTemporalWindow(note: Note, sentence: string, asOf: string): Pick<Claim, 'observedAt' | 'appliesToStart' | 'appliesToEnd' | 'horizon'> {
@@ -316,6 +483,9 @@ function overlapKeywords(a: string, b: string): number {
   const aw = new Set(a.toLowerCase().match(/[a-z0-9]+/g)?.filter(w => w.length > 3 && !stop.has(w)) ?? []);
   const bw = new Set(b.toLowerCase().match(/[a-z0-9]+/g)?.filter(w => w.length > 3 && !stop.has(w)) ?? []);
   return [...aw].filter(w => bw.has(w)).length;
+}
+function sortedUnique(values: string[]): string[] {
+  return uniqueBy(values.map(value => value.trim()).filter(Boolean), value => value.toLowerCase()).sort((a, b) => a.localeCompare(b));
 }
 function uniqueBy<T>(items: T[], key: (x: T) => string): T[] { const seen = new Set<string>(); return items.filter(item => { const k = key(item); if (seen.has(k)) return false; seen.add(k); return true; }); }
 function tally(items: string[]): [string, number][] { const m = new Map<string, number>(); items.forEach(i => m.set(i, (m.get(i) ?? 0) + 1)); return [...m.entries()].sort((a,b) => b[1] - a[1]); }

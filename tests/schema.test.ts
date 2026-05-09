@@ -4,9 +4,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const migrationPath = join(process.cwd(), 'supabase', 'migrations', '202605060001_production_foundation.sql');
-const migrationsSql = readFileSync(join(process.cwd(), 'supabase', 'migrations', '202605060001_production_foundation.sql'), 'utf8')
-  + '\n'
-  + (readFileSync(join(process.cwd(), 'supabase', 'migrations', '202605090001_note_persistence_spine.sql'), 'utf8'));
+const migrationFiles = [
+  '202605060001_production_foundation.sql',
+  '202605090001_note_persistence_spine.sql',
+  '202605090002_normalized_research_entities.sql'
+];
+const migrationsSql = migrationFiles
+  .map(file => readFileSync(join(process.cwd(), 'supabase', 'migrations', file), 'utf8'))
+  .join('\n');
 
 test('production foundation migration defines tenant tables and RLS policies', () => {
   const sql = readFileSync(migrationPath, 'utf8');
@@ -67,4 +72,21 @@ test('production persistence migration adds drafts, revisions, and author-only n
   assert.match(sql, /create policy notes_update on public\.notes[\s\S]*author_id\s*=\s*auth\.uid\(\)/i);
   assert.match(sql, /previous_body\s+text\s+not null/i);
   assert.match(sql, /changed_fields\s+text\[\]\s+not null/i);
+});
+
+test('normalized research entity migration adds entity and link tables with access policies', () => {
+  const sql = migrationsSql;
+
+  for (const table of ['research_entities', 'note_entity_links', 'claim_entity_links']) {
+    assert.match(sql, new RegExp(`create table(?: if not exists)? public\\.${table}`, 'i'), `${table} table is missing`);
+    assert.match(sql, new RegExp(`alter table public\\.${table}\\s+enable row level security`, 'i'), `${table} RLS is missing`);
+  }
+
+  assert.match(sql, /type\s+text\s+not null\s+check\s*\(\s*type\s+in\s*\('company',\s*'security',\s*'industry',\s*'theme',\s*'kpi',\s*'watchlist',\s*'source_person'\)\s*\)/i);
+  assert.match(sql, /unique\s*\(\s*org_id,\s*type,\s*key\s*\)/i);
+  assert.match(sql, /create policy research_entities_select/i);
+  assert.match(sql, /create policy note_entity_links_select/i);
+  assert.match(sql, /create policy claim_entity_links_select/i);
+  assert.match(sql, /app\.can_access_note\(n\.org_id,\s*n\.visibility,\s*n\.team_id,\s*n\.author_id\)/i);
+  assert.match(sql, /app\.can_access_note\(c\.org_id,\s*c\.visibility,\s*c\.team_id,\s*c\.author_id\)/i);
 });
