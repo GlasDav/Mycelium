@@ -18,9 +18,9 @@ The repo contains a production-shaped MVP foundation:
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
 - Server-side graph materialization for notes, claims, relations, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, observed-date/visibility/read-only-team controls, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, left-rail page navigation for review/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, workspace pulse, claim editing with analyst review notes and participant correction, relation review with analyst notes, relationship detail drawer, source-person memory panel, map metadata filters, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- Minimal note-taking-first research workspace UI with auth, observed-date/visibility/read-only-team controls, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, browser-local first-run demo guide, richer action-backed empty states, left-rail page navigation for review/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, workspace pulse, claim editing with analyst review notes and participant correction, relation review with analyst notes, relationship detail drawer, source-person memory panel, map metadata filters, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
-- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, normalized entity links, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, sidebar layout density, page navigation, archive width, and markdown toolbar/slash-command formatting helpers.
+- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, normalized entity links, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, first-run guide storage/content, empty-state copy/actions, sidebar layout density, page navigation, archive width, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -51,7 +51,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, workspace pulse, subject navigation, synthesis, source-person memory, claim editing with review notes and participant correction, relationship review with review notes, relationship map filters/detail drawer, and separate review/map/archive page bodies.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, server-backed draft restore, read-only history drawer, browser-local first-run guide, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, action-backed empty states, workspace pulse, subject navigation, synthesis, source-person memory, claim editing with review notes and participant correction, relationship review with review notes, relationship map filters/detail drawer, and separate review/map/archive page bodies.
 - `src/entity-links.ts` owns shared normalized entity/link metadata helpers, legacy array compatibility, key normalization, and derived metadata arrays.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
@@ -102,7 +102,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `tests/bff.test.ts` checks Fastify API auth, note update/history/draft routes, normalized metadata round trips, export/import, and route behavior.
 - `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting across securities, industries/themes, KPIs, watchlists, participants, visibility, and dates.
 - `tests/markdown-tools.test.ts` checks markdown toolbar and slash-command transforms.
-- `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar metadata, source-person memory UI, map filters, page navigation, archive width, and layout contracts.
+- `tests/demo-guide.test.ts`, `tests/empty-states.test.ts`, `tests/main-ui-source.test.ts`, and `tests/layout-css.test.ts` check expected guide storage/content, empty-state copy/actions, note-capture/sidebar metadata, source-person memory UI, map filters, page navigation, archive width, and layout contracts.
 - `tests/engine.test.ts` — core deterministic behavior.
 
 ### Planning / Product Docs
@@ -207,7 +207,7 @@ As of 2026-05-09:
 
 - `npm run validate` passes.
 - Build passes.
-- 71/71 tests pass.
+- 85/85 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs

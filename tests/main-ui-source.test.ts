@@ -222,3 +222,34 @@ test('review mode exposes source-person memory panel', () => {
   assert.match(source, /function PersonMemoryPanel/);
   assert.match(source, /Source-person memory/);
 });
+
+test('review mode renders a dismissible first-run demo guide with page actions', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(source, /demoGuideSteps/);
+  assert.match(source, /isDemoGuideDismissed/);
+  assert.match(source, /saveDemoGuideDismissed/);
+  assert.match(source, /function DemoGuide/);
+  assert.match(appReturn, /viewMode === 'review' && !demoGuideDismissed && <DemoGuide/);
+  assert.match(source, /aria-label="First-run demo guide"/);
+  assert.match(source, /setViewMode\(targetView\)/);
+  assert.match(source, /setDemoGuideDismissed\(true\)/);
+});
+
+test('empty states distinguish no-data states from filtered no-result states with actions', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+
+  assert.match(source, /emptyStateForNotes/);
+  assert.match(source, /emptyStateForRelations/);
+  assert.match(source, /emptyStates\['no-graph'\]/);
+  assert.match(source, /emptyStates\['no-review-claims'\]/);
+  assert.match(source, /emptyStates\['no-source-person-history'\]/);
+  assert.match(source, /actions=\{emptyStateActions/);
+  assert.match(source, /clearNoteFilters/);
+  assert.match(source, /clearMapFilters/);
+  assert.match(source, /setViewMode\('review'\)/);
+});

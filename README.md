@@ -76,6 +76,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 - Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
 - Left-rail page navigation separates claim review, relationship map, and a full-width note archive so each surface has its own workspace.
+- Browser-local first-run demo guide and action-backed empty states for no notes, filtered results, empty graph subjects, missing claim reviews, missing relations, and source-person history.
 - Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, plus search, sort, date, stock/ticker, industry/theme, KPI, watchlist, participant, and visibility filters.
 - Normalized note metadata for observed date, visibility, read-only team, stocks/securities, industries/sectors, themes, KPIs, watchlists, and participants, persisted through the BFF and Supabase. Legacy stock/theme/KPI arrays remain as compatibility fields. Applies-to windows and horizon are inferred for extracted claims and edited during claim review rather than entered on the note form.
 - Server-backed recoverable workbench drafts, explicit saved-note editing, author-only note update enforcement, and read-only note revision history.
@@ -166,9 +167,10 @@ This runs a production build/typecheck and the full deterministic test suite.
 - `server/app.ts` — Fastify BFF routes for workspace, workspace export/import, notes, note draft recovery, note history, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
 - `supabase/migrations/202605060001_production_foundation.sql` and `supabase/migrations/202605090001_note_persistence_spine.sql` — production-shaped Postgres schema, persistence spine tables, and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/visibility controls, stock/theme/KPI metadata, notes sidebar, page-level review/map/archive navigation, slash-command markdown editing, live extraction, claim editing, relationship review, relation detail drawer, alerts, and archive.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/visibility controls, stock/theme/KPI metadata, first-run guide, action-backed empty states, notes sidebar, page-level review/map/archive navigation, slash-command markdown editing, live extraction, claim editing, relationship review, relation detail drawer, alerts, and archive.
+- `src/demo-guide.ts` and `src/empty-states.ts` — pure frontend guidance helpers for walkthrough content/storage and empty-state copy/action contracts.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, note update/draft/history persistence, workspace export/import, note filtering, page layout, markdown commands, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, note update/draft/history persistence, workspace export/import, note filtering, first-run guide helpers, empty-state helpers, page layout, markdown commands, and BFF routes.
 
 - `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
 

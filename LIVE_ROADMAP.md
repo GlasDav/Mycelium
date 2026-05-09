@@ -32,7 +32,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 71 tests.
+- [x] Validation passing: build + 85 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -65,6 +65,10 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - addable live extraction suggestions,
   - archive/sidebar/map filters for normalized metadata,
   - claim participant correction and source-person memory panel.
+- [x] First-run demo guide and richer empty states added:
+  - browser-local dismissible review-mode guide,
+  - action-backed no-notes/no-filter/no-graph/no-claims/no-relations/no-person-memory states,
+  - pure helper tests for guide content/storage and empty-state copy/actions.
 
 ### Current MVP Validation
 
@@ -92,6 +96,7 @@ Expected result:
   - note filtering and sorting helpers.
   - page-level review/map/archive layout and full-width archive behavior.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
+  - first-run guide storage/content and empty-state copy/action contracts.
 
 ## Priority Ladder
 
@@ -145,7 +150,7 @@ Goal: make the app feel like a real product a design partner could use with samp
   - reclassify relation type,
   - leave analyst note.
 - [x] Persist dismissed/confirmed relation decisions.
-- [ ] Add richer empty states and first-run demo walkthrough.
+- [x] Add richer empty states and first-run demo walkthrough.
 
 ### P2 — Relationship Map v2
 

@@ -112,6 +112,19 @@ import {
   type LinkedEntity,
   type MetadataArrays
 } from './entity-links';
+import {
+  demoGuideSteps,
+  dismissDemoGuide as saveDemoGuideDismissed,
+  isDemoGuideDismissed,
+  type DemoGuideTargetViewMode
+} from './demo-guide';
+import {
+  emptyStateForNotes,
+  emptyStateForRelations,
+  emptyStates,
+  type EmptyStateActionTarget,
+  type EmptyStateCopy
+} from './empty-states';
 import './styles.css';
 
 const relationTypes: RelationType[] = ['contradiction', 'update_or_trend_reversal', 'historical_tension', 'open_tension', 'corroboration', 'agreement', 'stale_evidence'];
@@ -224,6 +237,7 @@ function App() {
   const [mapFilters, setMapFilters] = useState<MapFilters>({});
   const [noteHistory, setNoteHistory] = useState<NoteRevision[]>([]);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [demoGuideDismissed, setDemoGuideDismissed] = useState(() => isDemoGuideDismissed(browserStorage()));
   const clearedDraftSignatureRef = useRef('');
 
   useEffect(() => {
@@ -315,6 +329,27 @@ function App() {
     setCompanyTags([]);
     setWatchlistTags([]);
     setSourcePeople([]);
+  }
+
+  function focusCapture() {
+    setViewMode('review');
+  }
+
+  function openDemoGuideStep(targetView: DemoGuideTargetViewMode) {
+    setViewMode(targetView);
+  }
+
+  function dismissFirstRunGuide() {
+    saveDemoGuideDismissed(browserStorage());
+    setDemoGuideDismissed(true);
+  }
+
+  function clearNoteFilters() {
+    setNoteFilters({ sort: 'newest' });
+  }
+
+  function clearMapFilters() {
+    setMapFilters({});
   }
 
   async function restoreNoteDraft(nextSession: Session, nextWorkspace: WorkspaceSnapshot) {
@@ -541,7 +576,7 @@ function App() {
   const subjects = graph ? [...graph.companies, ...graph.themes] : [];
   const selectedSynth = subjects.find(s => s.subject === selected) ?? graph?.companies[0] ?? graph?.themes[0];
   const subjectRelations = graph?.relations.filter(r => !selectedSynth || relationMatchesSubject(r, selectedSynth.subject)) ?? [];
-  const visibleRelations = graph ? filterMapRelations(subjectRelations.length ? subjectRelations : graph.relations, mapFilters, graph.visibleNotes) : [];
+  const mapRelations = graph ? (subjectRelations.length ? subjectRelations : graph.relations) : [];
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
   const previewEntities = mergeEntities(detectEntities(draft), [
@@ -561,6 +596,7 @@ function App() {
   const tensions = graph?.relations.filter(r => r.type === 'historical_tension' || r.type === 'open_tension').length ?? 0;
   const corroborations = graph?.relations.filter(r => r.type === 'corroboration' || r.type === 'agreement').length ?? 0;
   const reviewQueue = graph?.claims.slice(0, 10) ?? [];
+  const selectedReviewClaims = selectedSynth ? reviewQueue.filter(c => c.subject === selectedSynth.subject || c.themes.includes(selectedSynth.subject)) : [];
 
   if (loading) return <StatusScreen title="Connecting to Mycelium" body="Loading auth and workspace services." />;
   if (!session || !workspace || !user) {
@@ -589,6 +625,8 @@ function App() {
       onToggle={() => setNotesCollapsed(value => !value)}
       onToggleFilters={() => setNoteFiltersCollapsed(value => !value)}
       onFilterChange={patch => setNoteFilters(current => ({ ...current, ...patch }))}
+      onClearFilters={clearNoteFilters}
+      onStartCapture={focusCapture}
       onSelectNote={note => {
         clearedDraftSignatureRef.current = draftSignature({
           selectedNoteId: note.id,
@@ -671,6 +709,7 @@ function App() {
           </article>
         </aside>
       </section>
+      {viewMode === 'review' && !demoGuideDismissed && <DemoGuide onDismiss={dismissFirstRunGuide} onOpenStep={openDemoGuideStep} />}
       {historyDrawerOpen && <NoteHistoryDrawer history={noteHistory} onClose={() => setHistoryDrawerOpen(false)} />}
 
       <section className="workspace review-workspace">
@@ -680,7 +719,7 @@ function App() {
             <span>{s.subject}</span>
             <small>{s.total} claims · {s.stance}</small>
             <i style={{ ['--mix' as string]: `${Math.min(100, (s.positives / Math.max(1, s.total)) * 100)}%` }} />
-          </button>) : <EmptyState title="No graph yet" body="Add a note to create the first company view." />}
+          </button>) : <EmptyState title={emptyStates['no-graph'].title} body={emptyStates['no-graph'].body} actions={emptyStateActions(emptyStates['no-graph'], { capture: focusCapture })} />}
         </aside>
 
         <section className="center-stage">
@@ -700,7 +739,9 @@ function App() {
             </div>
             <h3>Review queue</h3>
             <div className="claim-list">
-              {reviewQueue.filter(c => c.subject === selectedSynth.subject || c.themes.includes(selectedSynth.subject)).map(c => <ClaimCard key={c.id} claim={c} participantOptions={noteFilterOptions.sourcePeople} onUpdate={input => patchClaim(c.id, input)} />)}
+              {selectedReviewClaims.length
+                ? selectedReviewClaims.map(c => <ClaimCard key={c.id} claim={c} participantOptions={noteFilterOptions.sourcePeople} onUpdate={input => patchClaim(c.id, input)} />)
+                : <EmptyState title={emptyStates['no-review-claims'].title} body={emptyStates['no-review-claims'].body} actions={emptyStateActions(emptyStates['no-review-claims'], { capture: focusCapture })} />}
             </div>
           </article>}
 
@@ -720,7 +761,7 @@ function App() {
           <PersonMemoryPanel people={graph.people ?? []} onSelectPerson={name => {
             setNoteFilters(current => ({ ...current, sourcePerson: name }));
             setMapFilters(current => ({ ...current, sourcePerson: name }));
-          }} />
+          }} onStartCapture={focusCapture} />
         </aside>
       </section>
       </ReviewPage>}
@@ -733,16 +774,16 @@ function App() {
               <span>{s.subject}</span>
               <small>{s.total} claims · {s.stance}</small>
               <i style={{ ['--mix' as string]: `${Math.min(100, (s.positives / Math.max(1, s.total)) * 100)}%` }} />
-            </button>) : <EmptyState title="No graph yet" body="Add a note to create the first company view." />}
+            </button>) : <EmptyState title={emptyStates['no-graph'].title} body={emptyStates['no-graph'].body} actions={emptyStateActions(emptyStates['no-graph'], { capture: focusCapture })} />}
           </aside>
 
           <section className="center-stage">
-            <RelationshipMap relations={visibleRelations.length ? visibleRelations : graph.relations} notes={graph.visibleNotes} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} filters={mapFilters} options={mapFilterOptions} onFilterChange={patch => setMapFilters(current => ({ ...current, ...patch }))} onSelect={setSelected} onUpdate={patchRelation} />
+            <RelationshipMap relations={mapRelations} notes={graph.visibleNotes} selected={selectedSynth?.subject ?? selected} asOf={graph.asOf} filters={mapFilters} options={mapFilterOptions} onFilterChange={patch => setMapFilters(current => ({ ...current, ...patch }))} onClearFilters={clearMapFilters} onStartCapture={focusCapture} onSelect={setSelected} onUpdate={patchRelation} />
           </section>
         </section>
       </MapPage>}
 
-      {viewMode === 'archive' && <ArchivePage notes={filteredNotes} totalNotes={graph.visibleNotes.length} selectedNoteId={selectedNoteId} />}
+      {viewMode === 'archive' && <ArchivePage notes={filteredNotes} totalNotes={graph.visibleNotes.length} selectedNoteId={selectedNoteId} hasActiveFilters={activeFilterCount(noteFilters) > 0} onClearFilters={clearNoteFilters} onStartCapture={focusCapture} />}
     </section>
   </main>;
 }
@@ -753,6 +794,25 @@ function ReviewPage({ children }: { children: React.ReactNode }) {
 
 function MapPage({ children }: { children: React.ReactNode }) {
   return <div className="page-layout map-layout">{children}</div>;
+}
+
+function DemoGuide({ onDismiss, onOpenStep }: { onDismiss: () => void; onOpenStep: (targetView: DemoGuideTargetViewMode) => void }) {
+  return <article className="panel demo-guide" aria-label="First-run demo guide">
+    <div className="demo-guide-head">
+      <div>
+        <div className="panel-title"><Sparkles/> First-run guide</div>
+        <p>Use this compact path to see how notes become claims, relationships, and recoverable research memory.</p>
+      </div>
+      <button type="button" className="demo-guide-dismiss" onClick={onDismiss} title="Dismiss guide"><X size={15}/></button>
+    </div>
+    <div className="demo-guide-steps">
+      {demoGuideSteps.map(step => <button type="button" key={step.id} onClick={() => onOpenStep(step.targetViewMode)}>
+        <b>{step.title}</b>
+        <span>{step.body}</span>
+        <small>{step.actionLabel}<ArrowUpRight size={12}/></small>
+      </button>)}
+    </div>
+  </article>;
 }
 
 function NoteHistoryDrawer({ history, onClose }: { history: NoteRevision[]; onClose: () => void }) {
@@ -777,7 +837,22 @@ function NoteHistoryDrawer({ history, onClose }: { history: NoteRevision[]; onCl
   </aside>;
 }
 
-function ArchivePage({ notes, totalNotes, selectedNoteId }: { notes: FrontendWorkspaceNote[]; totalNotes: number; selectedNoteId: string }) {
+function ArchivePage({
+  notes,
+  totalNotes,
+  selectedNoteId,
+  hasActiveFilters,
+  onClearFilters,
+  onStartCapture
+}: {
+  notes: FrontendWorkspaceNote[];
+  totalNotes: number;
+  selectedNoteId: string;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
+  onStartCapture: () => void;
+}) {
+  const emptyState = emptyStateForNotes({ hasWorkspaceNotes: totalNotes > 0, hasActiveFilters });
   return <div className="page-layout archive-layout">
     <section className="workspace archive-workspace">
       <article className="panel notes">
@@ -787,7 +862,7 @@ function ArchivePage({ notes, totalNotes, selectedNoteId }: { notes: FrontendWor
           <div><h3>{n.title}</h3><small>{n.team} · {n.visibility} · {n.createdAt}</small></div>
           <NoteMetadataChips note={n} />
           <MarkdownPreview source={n.body} />
-        </article>) : <EmptyState title="No notes match" body="Adjust the sidebar filters to broaden the archive." />}
+        </article>) : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
       </article>
     </section>
   </div>;
@@ -804,6 +879,8 @@ function NotesSidebar({
   onToggle,
   onToggleFilters,
   onFilterChange,
+  onClearFilters,
+  onStartCapture,
   onSelectNote
 }: {
   collapsed: boolean;
@@ -816,6 +893,8 @@ function NotesSidebar({
   onToggle: () => void;
   onToggleFilters: () => void;
   onFilterChange: (patch: Partial<FrontendNoteFilters>) => void;
+  onClearFilters: () => void;
+  onStartCapture: () => void;
   onSelectNote: (note: FrontendWorkspaceNote) => void;
 }) {
   if (collapsed) {
@@ -823,6 +902,8 @@ function NotesSidebar({
       <button className="notes-toggle collapsed" onClick={onToggle} title="Open notes"><ChevronRight size={17}/><span>{totalNotes}</span></button>
     </aside>;
   }
+
+  const emptyState = emptyStateForNotes({ hasWorkspaceNotes: totalNotes > 0, hasActiveFilters: activeFilterCount(filters) > 0 });
 
   return <aside className="notes-sidebar panel" aria-label="Notes sidebar">
     <div className="notes-sidebar-head">
@@ -851,14 +932,14 @@ function NotesSidebar({
           <label><span>From</span><input type="date" value={filters.dateFrom ?? ''} onChange={event => onFilterChange({ dateFrom: event.target.value })} /></label>
           <label><span>To</span><input type="date" value={filters.dateTo ?? ''} onChange={event => onFilterChange({ dateTo: event.target.value })} /></label>
         </div>
-        <button className="clear-note-filters" onClick={() => onFilterChange({ query: '', ticker: '', industry: '', theme: '', kpi: '', watchlist: '', sourcePerson: '', dateFrom: '', dateTo: '', visibility: '', sort: 'newest' })}><ListFilter size={14}/> Clear filters</button>
+        <button className="clear-note-filters" onClick={onClearFilters}><ListFilter size={14}/> Clear filters</button>
       </div>}
     </div>
 
     <div className="notes-list">
       {notes.length ? notes.map(note => <button className={`sidebar-note ${selectedNoteId === note.id ? 'selected' : ''}`} key={note.id} onClick={() => onSelectNote(note)}>
         <span className="sidebar-note-row"><b className="sidebar-note-title">{note.title}</b><span className="sidebar-note-date">{noteRecencyDate(note)}</span></span>
-      </button>) : <EmptyState title="No notes match" body="Adjust filters to broaden the visible note set." />}
+      </button>) : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
     </div>
   </aside>;
 }
@@ -879,6 +960,16 @@ function activeFilterCount(filters: NoteFilters) {
     filters.dateFrom,
     filters.dateTo,
     filters.visibility
+  ].filter(Boolean).length;
+}
+
+function activeMapFilterCount(filters: MapFilters) {
+  return [
+    filters.security,
+    filters.industryOrTheme,
+    filters.relationType,
+    filters.freshness,
+    filters.sourcePerson
   ].filter(Boolean).length;
 }
 
@@ -1371,6 +1462,8 @@ function RelationshipMap({
   filters,
   options,
   onFilterChange,
+  onClearFilters,
+  onStartCapture,
   onSelect,
   onUpdate
 }: {
@@ -1381,12 +1474,15 @@ function RelationshipMap({
   filters: MapFilters;
   options: ReturnType<typeof emptyMapFilterOptions>;
   onFilterChange: (patch: Partial<MapFilters>) => void;
+  onClearFilters: () => void;
+  onStartCapture: () => void;
   onSelect: (subject: string) => void;
   onUpdate: (id: string, input: UpdateRelationInput) => void;
 }) {
   const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? '');
   const filteredRelations = filterMapRelations(relations, filters, notes);
   const selectedRelation = filteredRelations.find(relation => relation.id === selectedRelationId) ?? filteredRelations[0];
+  const relationEmptyState = emptyStateForRelations({ hasRelations: relations.length > 0, hasActiveFilters: activeMapFilterCount(filters) > 0 });
 
   useEffect(() => {
     if (filteredRelations.length && !filteredRelations.some(relation => relation.id === selectedRelationId)) {
@@ -1414,7 +1510,7 @@ function RelationshipMap({
         }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
         <i className={`edge e${i} ${r.type}`} />
       </React.Fragment>)}
-    </div> : <EmptyState title="No matching relations" body="Adjust the map filters to broaden the visible relationship set." />}
+    </div> : <EmptyState title={relationEmptyState.title} body={relationEmptyState.body} actions={emptyStateActions(relationEmptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
     <div className="relation-list">
       {filteredRelations.slice(0, 5).map(r => <RelationCard key={r.id} relation={r} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
     </div>
@@ -1475,7 +1571,8 @@ function RelationDetailDrawer({ relation }: { relation: FrontendWorkspaceRelatio
   </aside>;
 }
 
-function PersonMemoryPanel({ people, onSelectPerson }: { people: PersonMemorySummary[]; onSelectPerson: (name: string) => void }) {
+function PersonMemoryPanel({ people, onSelectPerson, onStartCapture }: { people: PersonMemorySummary[]; onSelectPerson: (name: string) => void; onStartCapture: () => void }) {
+  const emptyState = emptyStates['no-source-person-history'];
   return <article className="panel person-memory-panel">
     <div className="panel-title"><Network/> Source-person memory</div>
     {people.length ? <div className="person-memory-list">
@@ -1485,7 +1582,7 @@ function PersonMemoryPanel({ people, onSelectPerson }: { people: PersonMemorySum
         <b>{person.positiveCount ?? 0}+ / {person.negativeCount ?? 0}- / {person.neutralCount ?? 0} neutral</b>
         <em>{(person.subjects ?? []).slice(0, 3).join(', ') || 'No subjects yet'} Â· {person.contradictionCount ?? 0} contradictions Â· {person.trendReversalCount ?? 0} reversals</em>
       </button>)}
-    </div> : <EmptyState title="No source-person history" body="Add meeting participants or source people to notes and reviewed claims to build a person-level history." />}
+    </div> : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture })} />}
   </article>;
 }
 
@@ -1493,8 +1590,27 @@ function Metric({ icon, label, value, sub }: { icon: React.ReactNode; label: str
   return <div className="metric">{icon}<b>{value}</b><span>{label}</span><small>{sub}</small></div>;
 }
 
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return <div className="empty"><Sparkles size={18}/><b>{title}</b><p>{body}</p></div>;
+type EmptyStateButtonAction = {
+  label: string;
+  onClick: () => void;
+};
+
+function EmptyState({ title, body, actions = [] }: { title: string; body: string; actions?: EmptyStateButtonAction[] }) {
+  return <div className="empty">
+    <Sparkles size={18}/>
+    <b>{title}</b>
+    <p>{body}</p>
+    {actions.length > 0 && <div className="empty-actions">
+      {actions.map(action => <button type="button" key={action.label} onClick={action.onClick}>{action.label}<ArrowUpRight size={12}/></button>)}
+    </div>}
+  </div>;
+}
+
+function emptyStateActions(copy: EmptyStateCopy, handlers: Partial<Record<EmptyStateActionTarget, () => void>>): EmptyStateButtonAction[] {
+  return copy.actions.flatMap(action => {
+    const onClick = handlers[action.target];
+    return onClick ? [{ label: action.label, onClick }] : [];
+  });
 }
 
 function StatusScreen({ title, body }: { title: string; body: string }) {
@@ -1676,6 +1792,11 @@ function sortedUnique(values: string[]): string[] {
 
 function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function browserStorage() {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

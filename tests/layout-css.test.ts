@@ -31,6 +31,9 @@ test('notes sidebar and metadata controls have stable layout selectors', () => {
     '.map-filter-bar',
     '.person-memory-panel',
     '.person-memory-list',
+    '.demo-guide',
+    '.demo-guide-steps',
+    '.empty-actions',
     '.note-card.selected',
     '.relation-detail-drawer',
     '.relation-detail-grid',
@@ -101,4 +104,16 @@ test('archive workspace overrides the shared workspace grid with full-width layo
   assert(archiveIndex > workspaceIndex, 'archive workspace override must come after the shared workspace rule');
   assert(archiveMatch?.groups?.body, 'archive workspace rule is missing');
   assert.match(archiveMatch.groups.body, /display\s*:\s*block/);
+});
+
+test('demo guide and empty state actions stay compact inside panels', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const guideMatch = css.match(/\.demo-guide-steps\s*\{(?<body>[^}]+)\}/);
+  const actionsMatch = css.match(/\.empty-actions\s*\{(?<body>[^}]+)\}/);
+
+  assert(guideMatch?.groups?.body, 'demo-guide-steps rule is missing');
+  assert(actionsMatch?.groups?.body, 'empty-actions rule is missing');
+  assert.match(guideMatch.groups.body, /grid-template-columns\s*:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(actionsMatch.groups.body, /display\s*:\s*flex/);
+  assert.match(actionsMatch.groups.body, /flex-wrap\s*:\s*wrap/);
 });
