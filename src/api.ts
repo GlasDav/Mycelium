@@ -2,6 +2,9 @@ import { createClient, type Session, type SupabaseClient } from '@supabase/supab
 import type {
   ClaimReviewStatus,
   CreateNoteInput,
+  DashboardRange,
+  DashboardScope,
+  DashboardSnapshot,
   NoteDraft,
   NoteRevision,
   RelationReviewStatus,
@@ -34,6 +37,19 @@ export function createAuthClient(config: AuthBootstrap): SupabaseClient {
 
 export async function loadWorkspace(session: Session): Promise<WorkspaceSnapshot> {
   const response = await fetch('/api/workspace', { headers: authHeaders(session) });
+  return readJson(response);
+}
+
+export async function loadDashboard(
+  session: Session,
+  input: { scope?: DashboardScope; range?: DashboardRange; teamId?: string } = {}
+): Promise<DashboardSnapshot> {
+  const params = new URLSearchParams();
+  if (input.scope) params.set('scope', input.scope);
+  if (input.range) params.set('range', input.range);
+  if (input.teamId) params.set('teamId', input.teamId);
+  const query = params.toString();
+  const response = await fetch(`/api/dashboard${query ? `?${query}` : ''}`, { headers: authHeaders(session) });
   return readJson(response);
 }
 

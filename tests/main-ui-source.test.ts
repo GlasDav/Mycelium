@@ -28,7 +28,7 @@ test('sidebar note clicks load the note into the note workbench', () => {
   assert.doesNotMatch(source, /<FilePlus2\/>\s*New note/);
   assert.match(source, /setNoteTitle\(note\.title\)/);
   assert.match(source, /setDraft\(note\.body\)/);
-  assert.match(source, /setViewMode\('review'\)/);
+  assert.match(source, /setViewMode\('notes'\)/);
 });
 
 test('note workbench does not ask for source or claim validity metadata', () => {
@@ -160,15 +160,20 @@ test('selected saved notes expose a read-only history drawer', () => {
   assert.doesNotMatch(source, /Restore version/);
 });
 
-test('left rail modes render separate page bodies instead of in-page tabs', () => {
+test('left rail modes render notes, dashboard, map, and archive page bodies', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const appReturnStart = source.indexOf('return <main');
   const appReturnEnd = source.indexOf('function NotesSidebar');
   assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
   const appReturn = source.slice(appReturnStart, appReturnEnd);
 
+  assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive'/);
   assert.match(appReturn, /className=\{`shell page-shell \$\{viewMode\}-page`\}/);
-  assert.match(appReturn, /viewMode === 'review' && <ReviewPage/);
+  assert.match(appReturn, /setViewMode\('notes'\)/);
+  assert.match(appReturn, /setViewMode\('dashboard'\)/);
+  assert(appReturn.indexOf("setViewMode('notes')") < appReturn.indexOf("setViewMode('dashboard')"));
+  assert.match(appReturn, /viewMode === 'notes' && <NotesPage/);
+  assert.match(appReturn, /viewMode === 'dashboard' && <DashboardPage/);
   assert.match(appReturn, /viewMode === 'map' && <MapPage/);
   assert.match(appReturn, /viewMode === 'archive' && <ArchivePage/);
   assert.doesNotMatch(appReturn, /className="mode-tabs"/);
@@ -211,33 +216,53 @@ test('relation review cards capture analyst notes and map mode exposes a detail 
   assert.match(relationSource, /sourcePersonContext/);
 });
 
-test('review mode exposes source-person memory panel', () => {
+test('notes mode shows only current-note intelligence and dashboard owns broad widgets', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const appReturnStart = source.indexOf('return <main');
   const appReturnEnd = source.indexOf('function NotesSidebar');
   assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
   const appReturn = source.slice(appReturnStart, appReturnEnd);
+  const notesStart = appReturn.indexOf("viewMode === 'notes' && <NotesPage");
+  const dashboardStart = appReturn.indexOf("viewMode === 'dashboard' && <DashboardPage");
+  assert(notesStart >= 0 && dashboardStart > notesStart, 'Notes and dashboard page bodies are missing');
+  const notesPage = appReturn.slice(notesStart, dashboardStart);
+  const dashboardPage = appReturn.slice(dashboardStart);
 
-  assert.match(appReturn, /graph\.people/);
+  assert.match(notesPage, /currentNoteClaims/);
+  assert.match(source, /relationTouchesSelectedNote/);
+  assert.match(source, /claim\.noteId === selectedNoteId/);
+  assert.doesNotMatch(notesPage, /Workspace pulse/);
+  assert.doesNotMatch(notesPage, /Synthesized view/);
+  assert.doesNotMatch(notesPage, /Signals/);
+  assert.doesNotMatch(notesPage, /Trust boundary/);
+  assert.doesNotMatch(notesPage, /PersonMemoryPanel/);
+  assert.match(dashboardPage, /Workspace pulse/);
+  assert.match(dashboardPage, /Signals/);
+  assert.match(dashboardPage, /PersonMemoryPanel/);
   assert.match(source, /function PersonMemoryPanel/);
   assert.match(source, /Source-person memory/);
 });
 
-test('review mode renders a dismissible first-run demo guide with page actions', () => {
+test('dashboard mode renders scoped research intelligence controls', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const appReturnStart = source.indexOf('return <main');
   const appReturnEnd = source.indexOf('function NotesSidebar');
   assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
   const appReturn = source.slice(appReturnStart, appReturnEnd);
 
-  assert.match(source, /demoGuideSteps/);
-  assert.match(source, /isDemoGuideDismissed/);
-  assert.match(source, /saveDemoGuideDismissed/);
-  assert.match(source, /function DemoGuide/);
-  assert.match(appReturn, /viewMode === 'review' && !demoGuideDismissed && <DemoGuide/);
-  assert.match(source, /aria-label="First-run demo guide"/);
-  assert.match(source, /setViewMode\(targetView\)/);
-  assert.match(source, /setDemoGuideDismissed\(true\)/);
+  assert.match(source, /DashboardScope/);
+  assert.match(source, /DashboardRange/);
+  assert.match(source, /loadDashboard/);
+  assert.match(source, /function DashboardPage/);
+  assert.match(source, /dashboard-scope-toggle/);
+  assert.match(source, /dashboard-range-toggle/);
+  assert.match(source, /dashboard-metric-grid/);
+  assert.match(source, /dashboard-insight-grid/);
+  assert.match(source, /dashboard-widget-grid/);
+  assert.match(source, /dashboard-donut-caption/);
+  assert.doesNotMatch(source, /<span>fresh claims<\/span>/);
+  assert.match(appReturn, /dashboardScope/);
+  assert.doesNotMatch(appReturn, /<DemoGuide/);
 });
 
 test('empty states distinguish no-data states from filtered no-result states with actions', () => {
@@ -246,10 +271,10 @@ test('empty states distinguish no-data states from filtered no-result states wit
   assert.match(source, /emptyStateForNotes/);
   assert.match(source, /emptyStateForRelations/);
   assert.match(source, /emptyStates\['no-graph'\]/);
-  assert.match(source, /emptyStates\['no-review-claims'\]/);
+  assert.match(source, /Save this note to review claims/);
   assert.match(source, /emptyStates\['no-source-person-history'\]/);
   assert.match(source, /actions=\{emptyStateActions/);
   assert.match(source, /clearNoteFilters/);
   assert.match(source, /clearMapFilters/);
-  assert.match(source, /setViewMode\('review'\)/);
+  assert.match(source, /setViewMode\('notes'\)/);
 });

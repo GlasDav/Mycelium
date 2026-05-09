@@ -161,6 +161,78 @@ export interface PersonMemorySummary {
   reversals: number;
 }
 
+export type DashboardScope = 'workspace' | 'team' | 'org';
+export type DashboardRange = '30d' | '90d' | 'all';
+
+export interface DashboardScopeAvailability {
+  scope: DashboardScope;
+  label: string;
+  enabled: boolean;
+  reason?: string;
+}
+
+export interface DashboardTeamOption {
+  id?: string;
+  name: string;
+}
+
+export interface DashboardTopItem {
+  label: string;
+  value: number;
+  share: number;
+}
+
+export interface DashboardSignal {
+  id: string;
+  severity: Alert['severity'];
+  title: string;
+  body: string;
+  company?: string;
+}
+
+export interface DashboardActivity {
+  id: string;
+  action: string;
+  entityType: string;
+  createdAt: string;
+}
+
+export interface DashboardSnapshot {
+  viewer: WorkspaceUser;
+  scope: DashboardScope;
+  range: DashboardRange;
+  selectedTeam?: DashboardTeamOption;
+  teams: DashboardTeamOption[];
+  scopeAvailability: DashboardScopeAvailability[];
+  asOf: string;
+  totals: {
+    notes: number;
+    claims: number;
+    relations: number;
+    activeClaims: number;
+  };
+  relationMix: Record<RelationType, number>;
+  freshness: Record<'fresh' | 'aging' | 'stale', number>;
+  reviewBacklog: {
+    claims: number;
+    relations: number;
+  };
+  topCompanies: DashboardTopItem[];
+  topThemes: DashboardTopItem[];
+  topKpis: DashboardTopItem[];
+  topSecurities: DashboardTopItem[];
+  topWatchlists: DashboardTopItem[];
+  topSourcePeople: DashboardTopItem[];
+  signals: DashboardSignal[];
+  activity: DashboardActivity[];
+}
+
+export interface DashboardOptions {
+  scope?: DashboardScope;
+  range?: DashboardRange;
+  teamId?: string;
+}
+
 export interface WorkspaceSnapshot {
   viewer: WorkspaceUser;
   visibleNotes: WorkspaceNote[];
@@ -367,6 +439,66 @@ export function createWorkspaceService(
       auditEvents,
       asOf: maxDate(activeClaims.map(claim => claim.observedAt))
     };
+  }
+
+  async function getDashboard(viewerId: string, options: DashboardOptions = {}): Promise<DashboardSnapshot> {
+    const viewer = await requireViewer(viewerId);
+    const orgNotes = await repository.listNotes(viewer.orgId);
+    const orgClaims = await repository.listClaims(viewer.orgId);
+    if (orgNotes.length && !orgClaims.length) {
+      await materializeGraph(viewer.orgId);
+    }
+
+    const users = await repository.listUsers(viewer.orgId);
+    const notes = await repository.listNotes(viewer.orgId);
+    const claims = await repository.listClaims(viewer.orgId);
+    const relations = await repository.listRelations(viewer.orgId);
+    const auditEvents = await repository.listAuditEvents(viewer.orgId);
+    const scope = options.scope ?? 'workspace';
+    const range = options.range ?? '90d';
+    const teams = dashboardTeams(users);
+    const scopeAvailability = dashboardScopeAvailability(viewer);
+    const selectedTeam = selectedDashboardTeam(viewer, users, options.teamId);
+    const unavailable = scopeAvailability.find(item => item.scope === scope && !item.enabled);
+    if (unavailable) {
+      throw new Error(`Dashboard scope ${scope} is not available: ${unavailable.reason}`);
+    }
+    if (scope === 'team' && options.teamId && selectedTeam.id !== options.teamId && viewer.role !== 'PM' && viewer.role !== 'Compliance') {
+      throw new Error('Dashboard scope team is not available for the selected team');
+    }
+
+    const scopedNotes = notes.filter(note => dashboardNoteInScope(viewer, note, scope, selectedTeam));
+    const scopedNoteIds = new Set(scopedNotes.map(note => note.id));
+    const scopedClaims = claims.filter(claim => scopedNoteIds.has(claim.noteId) && dashboardClaimInScope(viewer, claim, scope, selectedTeam));
+    const activeScopedClaims = scopedClaims.filter(claim => claim.reviewStatus !== 'analyst_rejected');
+    const asOf = maxDate([
+      ...activeScopedClaims.map(claim => claim.observedAt),
+      ...scopedNotes.map(note => note.observedAt ?? note.createdAt)
+    ]);
+    const cutoff = dashboardCutoff(asOf, range);
+    const rangedNotes = scopedNotes.filter(note => dateInRange(note.observedAt ?? note.createdAt, cutoff));
+    const rangedNoteIds = new Set(rangedNotes.map(note => note.id));
+    const rangedClaims = activeScopedClaims.filter(claim => rangedNoteIds.has(claim.noteId) && dateInRange(claim.observedAt, cutoff));
+    const rangedClaimIds = new Set(rangedClaims.map(claim => claim.id));
+    const rangedRelations = relations.filter(relation => (
+      relation.reviewStatus !== 'dismissed'
+      && rangedClaimIds.has(relation.a.id)
+      && rangedClaimIds.has(relation.b.id)
+    ));
+
+    return buildDashboardSnapshot({
+      viewer,
+      scope,
+      range,
+      selectedTeam: scope === 'team' ? selectedTeam : undefined,
+      teams,
+      scopeAvailability,
+      notes: rangedNotes,
+      claims: rangedClaims,
+      relations: rangedRelations,
+      auditEvents: auditEvents.filter(event => dateInRange(event.createdAt.slice(0, 10), cutoff)),
+      asOf
+    });
   }
 
   async function exportWorkspace(viewerId: string): Promise<WorkspaceExport> {
@@ -718,6 +850,7 @@ export function createWorkspaceService(
 
   return {
     materializeGraph,
+    getDashboard,
     getWorkspace,
     exportWorkspace,
     importWorkspace,
@@ -737,6 +870,158 @@ function readWorkspaceExport(input: WorkspaceExport): WorkspaceExport {
     throw new Error('Invalid workspace export');
   }
   return input;
+}
+
+interface DashboardBuildInput {
+  viewer: WorkspaceUser;
+  scope: DashboardScope;
+  range: DashboardRange;
+  selectedTeam?: DashboardTeamOption;
+  teams: DashboardTeamOption[];
+  scopeAvailability: DashboardScopeAvailability[];
+  notes: WorkspaceNote[];
+  claims: WorkspaceClaim[];
+  relations: WorkspaceRelation[];
+  auditEvents: AuditEvent[];
+  asOf: string;
+}
+
+const dashboardRelationTypes: RelationType[] = [
+  'contradiction',
+  'update_or_trend_reversal',
+  'historical_tension',
+  'open_tension',
+  'corroboration',
+  'agreement',
+  'stale_evidence'
+];
+
+function buildDashboardSnapshot(input: DashboardBuildInput): DashboardSnapshot {
+  const relationMix = Object.fromEntries(dashboardRelationTypes.map(type => [type, 0])) as Record<RelationType, number>;
+  for (const relation of input.relations) {
+    relationMix[relation.type] += 1;
+  }
+
+  const freshness = { fresh: 0, aging: 0, stale: 0 };
+  for (const claim of input.claims) {
+    freshness[claim.freshness] += 1;
+  }
+
+  return {
+    viewer: input.viewer,
+    scope: input.scope,
+    range: input.range,
+    selectedTeam: input.selectedTeam,
+    teams: input.teams,
+    scopeAvailability: input.scopeAvailability,
+    asOf: input.asOf,
+    totals: {
+      notes: input.notes.length,
+      claims: input.claims.length,
+      relations: input.relations.length,
+      activeClaims: input.claims.length
+    },
+    relationMix,
+    freshness,
+    reviewBacklog: {
+      claims: input.claims.filter(claim => claim.reviewStatus === 'machine').length,
+      relations: input.relations.filter(relation => relation.reviewStatus === 'open').length
+    },
+    topCompanies: topDashboardItems(input.claims.map(claim => claim.subject), input.claims.length),
+    topThemes: topDashboardItems(input.claims.flatMap(claim => [...claim.themes, ...claim.manualThemes]), input.claims.length),
+    topKpis: topDashboardItems(input.claims.flatMap(claim => claim.kpis), input.claims.length),
+    topSecurities: topDashboardItems(input.claims.flatMap(claim => claim.tickers), input.claims.length),
+    topWatchlists: topDashboardItems(input.claims.flatMap(claim => claim.watchlistTags), input.claims.length),
+    topSourcePeople: topDashboardItems(input.claims.flatMap(claim => claim.sourcePeople), input.claims.length),
+    signals: generateAlerts(input.relations, input.claims).slice(0, 8).map(alert => ({
+      id: alert.id,
+      severity: alert.severity,
+      title: alert.title,
+      body: alert.body,
+      company: alert.company
+    })),
+    activity: input.auditEvents.slice(0, 8).map(event => ({
+      id: event.id,
+      action: event.action,
+      entityType: event.entityType,
+      createdAt: event.createdAt
+    }))
+  };
+}
+
+function dashboardScopeAvailability(viewer: WorkspaceUser): DashboardScopeAvailability[] {
+  const canViewOrg = viewer.role === 'PM' || viewer.role === 'Compliance';
+  return [
+    { scope: 'workspace', label: 'Workspace', enabled: true },
+    { scope: 'team', label: 'Team', enabled: true },
+    {
+      scope: 'org',
+      label: 'Org',
+      enabled: canViewOrg,
+      reason: canViewOrg ? undefined : 'Only PM or Compliance users can view organization-wide dashboard aggregates.'
+    }
+  ];
+}
+
+function dashboardTeams(users: WorkspaceUser[]): DashboardTeamOption[] {
+  return uniqueBy(
+    users.map(user => ({ id: user.teamId, name: user.team })),
+    team => team.id ?? team.name.toLowerCase()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function selectedDashboardTeam(viewer: WorkspaceUser, users: WorkspaceUser[], teamId?: string): DashboardTeamOption {
+  const teams = dashboardTeams(users);
+  if (teamId) {
+    const found = teams.find(team => team.id === teamId);
+    if (!found) throw new Error(`Unknown dashboard team ${teamId}`);
+    return found;
+  }
+  return { id: viewer.teamId, name: viewer.team };
+}
+
+function dashboardNoteInScope(viewer: WorkspaceUser, note: WorkspaceNote, scope: DashboardScope, selectedTeam: DashboardTeamOption): boolean {
+  if (scope === 'workspace') return canAccess(viewer, note);
+  if (scope === 'org') return viewer.role === 'PM' || viewer.role === 'Compliance';
+  return sameDashboardTeam(note, selectedTeam)
+    && (note.visibility !== 'private' || viewer.role === 'PM' || viewer.role === 'Compliance' || canAccess(viewer, note));
+}
+
+function dashboardClaimInScope(viewer: WorkspaceUser, claim: WorkspaceClaim, scope: DashboardScope, selectedTeam: DashboardTeamOption): boolean {
+  if (scope === 'workspace') return canAccess(viewer, claim);
+  if (scope === 'org') return viewer.role === 'PM' || viewer.role === 'Compliance';
+  return sameDashboardTeam(claim, selectedTeam)
+    && (claim.visibility !== 'private' || viewer.role === 'PM' || viewer.role === 'Compliance' || canAccess(viewer, claim));
+}
+
+function sameDashboardTeam(item: { team: string; teamId?: string }, selectedTeam: DashboardTeamOption): boolean {
+  return selectedTeam.id ? item.teamId === selectedTeam.id : item.team === selectedTeam.name;
+}
+
+function dashboardCutoff(asOf: string, range: DashboardRange): string | undefined {
+  if (range === 'all') return undefined;
+  const days = range === '30d' ? 30 : 90;
+  const date = new Date(`${asOf}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function dateInRange(value: string | undefined, cutoff: string | undefined): boolean {
+  return !cutoff || Boolean(value && Date.parse(value) >= Date.parse(cutoff));
+}
+
+function topDashboardItems(values: string[], denominator: number): DashboardTopItem[] {
+  const counts = new Map<string, number>();
+  for (const rawValue of values) {
+    const value = rawValue.trim();
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  const base = Math.max(1, denominator);
+  return [...counts.entries()]
+    .map(([label, value]) => ({ label, value, share: Math.round((value / base) * 100) }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
+    .slice(0, 6);
 }
 
 function noteChangedFields(note: WorkspaceNote, input: UpdateNoteInput): string[] {

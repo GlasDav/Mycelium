@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import { marked } from 'marked';
 import rehypeRaw from 'rehype-raw';
@@ -11,8 +11,10 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Ban,
+  BarChart3,
   BookOpen,
   Bold,
+  Building2,
   CaseLower,
   CaseUpper,
   Check,
@@ -25,6 +27,7 @@ import {
   Eye,
   FilePlus2,
   GitBranch,
+  Gauge,
   Heading1,
   Heading2,
   Heading3,
@@ -53,6 +56,7 @@ import {
   Underline,
   Undo2,
   Workflow,
+  UsersRound,
   X,
   XCircle
 } from 'lucide-react';
@@ -61,6 +65,7 @@ import {
   createNote,
   deleteNoteDraft,
   loadAuthBootstrap,
+  loadDashboard,
   loadNoteDraft,
   loadNoteHistory,
   loadWorkspace,
@@ -95,6 +100,10 @@ import {
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import type {
   ClaimReviewStatus,
+  DashboardRange,
+  DashboardScope,
+  DashboardSnapshot,
+  DashboardTopItem,
   NoteDraft,
   NoteRevision,
   UpdateClaimInput,
@@ -112,12 +121,6 @@ import {
   type LinkedEntity,
   type MetadataArrays
 } from './entity-links';
-import {
-  demoGuideSteps,
-  dismissDemoGuide as saveDemoGuideDismissed,
-  isDemoGuideDismissed,
-  type DemoGuideTargetViewMode
-} from './demo-guide';
 import {
   emptyStateForNotes,
   emptyStateForRelations,
@@ -159,6 +162,13 @@ interface FrontendWorkspaceSnapshot extends Omit<WorkspaceSnapshot, 'visibleNote
   relations: FrontendWorkspaceRelation[];
   people: PersonMemorySummary[];
 }
+
+declare global {
+  interface Window {
+    __myceliumRoot?: Root;
+  }
+}
+
 type FrontendNoteDraft = NoteDraft & FrontendMetadata;
 type FrontendNotePayload = {
   title?: string;
@@ -207,7 +217,7 @@ turndownService.addRule('fontSizeSpan', {
   replacement: (content, node) => `<span data-size="${(node as HTMLElement).getAttribute('data-size')}">${content}</span>`
 });
 
-type ViewMode = 'review' | 'map' | 'archive';
+type ViewMode = 'notes' | 'dashboard' | 'map' | 'archive';
 const DEFAULT_NOTE_SOURCE_TYPE = 'Typed note';
 
 function App() {
@@ -222,7 +232,13 @@ function App() {
   const [draft, setDraft] = useState('');
   const [visibility, setVisibility] = useState<Note['visibility']>('team');
   const [observedAt, setObservedAt] = useState(today());
-  const [viewMode, setViewMode] = useState<ViewMode>('review');
+  const [viewMode, setViewMode] = useState<ViewMode>('notes');
+  const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
+  const [dashboardScope, setDashboardScope] = useState<DashboardScope>('workspace');
+  const [dashboardRange, setDashboardRange] = useState<DashboardRange>('90d');
+  const [dashboardTeamId, setDashboardTeamId] = useState('');
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState('');
   const [tickers, setTickers] = useState<string[]>([]);
   const [manualThemes, setManualThemes] = useState<string[]>([]);
   const [kpis, setKpis] = useState<string[]>([]);
@@ -237,7 +253,6 @@ function App() {
   const [mapFilters, setMapFilters] = useState<MapFilters>({});
   const [noteHistory, setNoteHistory] = useState<NoteRevision[]>([]);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [demoGuideDismissed, setDemoGuideDismissed] = useState(() => isDemoGuideDismissed(browserStorage()));
   const clearedDraftSignatureRef = useRef('');
 
   useEffect(() => {
@@ -265,6 +280,7 @@ function App() {
             if (next) await restoreNoteDraft(nextSession, next);
           } else {
             setWorkspace(null);
+            setDashboard(null);
           }
         });
         unsubscribe = () => subscription.data.subscription.unsubscribe();
@@ -293,6 +309,32 @@ function App() {
     }
     return next;
   }
+
+  async function refreshDashboard(nextSession = session): Promise<DashboardSnapshot | undefined> {
+    if (!nextSession) return undefined;
+    setDashboardLoading(true);
+    setDashboardError('');
+    try {
+      const next = await loadDashboard(nextSession, {
+        scope: dashboardScope,
+        range: dashboardRange,
+        teamId: dashboardScope === 'team' ? dashboardTeamId || undefined : undefined
+      });
+      setDashboard(normalizeDashboardSnapshot(next));
+      return next;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDashboardError(message);
+      return undefined;
+    } finally {
+      setDashboardLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!session) return;
+    void refreshDashboard(session);
+  }, [session, dashboardScope, dashboardRange, dashboardTeamId]);
 
   function currentMetadataArrays(): MetadataArrays {
     return {
@@ -332,16 +374,7 @@ function App() {
   }
 
   function focusCapture() {
-    setViewMode('review');
-  }
-
-  function openDemoGuideStep(targetView: DemoGuideTargetViewMode) {
-    setViewMode(targetView);
-  }
-
-  function dismissFirstRunGuide() {
-    saveDemoGuideDismissed(browserStorage());
-    setDemoGuideDismissed(true);
+    setViewMode('notes');
   }
 
   function clearNoteFilters() {
@@ -366,7 +399,7 @@ function App() {
       setObservedAt(savedDraft.observedAt ?? today());
       applyWorkbenchMetadata(savedDraft);
       clearedDraftSignatureRef.current = draftSignature(savedDraft);
-      setViewMode('review');
+      setViewMode('notes');
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -423,9 +456,10 @@ function App() {
       setDraft('');
       resetWorkbenchMetadata();
       setSelectedNoteId('');
-      setViewMode('review');
+      setViewMode('notes');
       clearedDraftSignatureRef.current = '';
       await deleteNoteDraft(session);
+      void refreshDashboard(session);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -462,6 +496,7 @@ function App() {
       const history = await loadNoteHistory(session, selectedNoteId);
       setNoteHistory(history);
       setHistoryDrawerOpen(false);
+      void refreshDashboard(session);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -481,6 +516,7 @@ function App() {
     if (!session) return;
     try {
       setWorkspace(await updateClaim(session, id, input));
+      void refreshDashboard(session);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -490,6 +526,7 @@ function App() {
     if (!session) return;
     try {
       setWorkspace(await updateRelation(session, id, input));
+      void refreshDashboard(session);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -523,7 +560,7 @@ function App() {
     setNoteHistory([]);
     setHistoryDrawerOpen(false);
     clearedDraftSignatureRef.current = '';
-    setViewMode('review');
+    setViewMode('notes');
     if (session) {
       deleteNoteDraft(session).catch(error => {
         setAppError(error instanceof Error ? error.message : String(error));
@@ -534,6 +571,7 @@ function App() {
   async function signOut() {
     await authClient?.auth.signOut();
     setWorkspace(null);
+    setDashboard(null);
   }
 
   function addPreviewEntity(entity: PreviewEntity) {
@@ -591,12 +629,16 @@ function App() {
   const noteFilterOptions = graph ? extendNoteFilterOptions(deriveNoteFilterOptions(graph.visibleNotes), graph.visibleNotes) : emptyFilterOptions();
   const mapFilterOptions = graph ? deriveMapFilterOptions(graph) : emptyMapFilterOptions();
   const filteredNotes = graph ? filterFrontendNotes(graph.visibleNotes, noteFilters) : [];
-  const contradictions = graph?.relations.filter(r => r.type === 'contradiction').length ?? 0;
-  const reversals = graph?.relations.filter(r => r.type === 'update_or_trend_reversal').length ?? 0;
-  const tensions = graph?.relations.filter(r => r.type === 'historical_tension' || r.type === 'open_tension').length ?? 0;
-  const corroborations = graph?.relations.filter(r => r.type === 'corroboration' || r.type === 'agreement').length ?? 0;
-  const reviewQueue = graph?.claims.slice(0, 10) ?? [];
-  const selectedReviewClaims = selectedSynth ? reviewQueue.filter(c => c.subject === selectedSynth.subject || c.themes.includes(selectedSynth.subject)) : [];
+  const currentNoteClaims = selectedNoteId && graph ? graph.claims.filter(claim => claim.noteId === selectedNoteId) : [];
+  const currentNoteRelations = selectedNoteId && graph ? graph.relations.filter(relation => relationTouchesSelectedNote(relation, selectedNoteId)) : [];
+  const dashboardPeople = (dashboard?.topSourcePeople ?? []).map(item => ({
+    name: item.label,
+    claimCount: item.value,
+    positiveCount: 0,
+    negativeCount: 0,
+    neutralCount: 0,
+    subjects: []
+  })) ?? [];
 
   if (loading) return <StatusScreen title="Connecting to Mycelium" body="Loading auth and workspace services." />;
   if (!session || !workspace || !user) {
@@ -607,7 +649,8 @@ function App() {
     <aside className="left-rail" aria-label="Workspace navigation">
       <div className="mark"><span>M</span></div>
       <nav>
-        <button className={viewMode === 'review' ? 'active' : ''} onClick={() => setViewMode('review')} title="Review"><BookOpen size={18}/></button>
+        <button className={viewMode === 'notes' ? 'active' : ''} onClick={() => setViewMode('notes')} title="Notes"><BookOpen size={18}/></button>
+        <button className={viewMode === 'dashboard' ? 'active' : ''} onClick={() => setViewMode('dashboard')} title="Dashboard"><BarChart3 size={18}/></button>
         <button className={viewMode === 'map' ? 'active' : ''} onClick={() => setViewMode('map')} title="Relationship map"><GitBranch size={18}/></button>
         <button className={viewMode === 'archive' ? 'active' : ''} onClick={() => setViewMode('archive')} title="Archive"><Layers3 size={18}/></button>
       </nav>
@@ -646,14 +689,14 @@ function App() {
         setNoteHistory([]);
         setHistoryDrawerOpen(false);
         clearedDraftSignatureRef.current = '';
-        setViewMode('review');
+        setViewMode('notes');
       }}
     />
 
     <section className={`shell page-shell ${viewMode}-page`}>
       {appError && <div className="inline-error">{appError}</div>}
 
-      {viewMode === 'review' && <ReviewPage>
+      {viewMode === 'notes' && <NotesPage>
       <section className="note-workbench">
         <article className="capture panel primary-note">
           <div className="note-panel-head">
@@ -699,72 +742,52 @@ function App() {
             </div>
           </article>
 
-          <article className="panel pulse">
-            <div className="panel-title"><Radar/> Workspace pulse</div>
-            <div className="mini-metrics">
-              <Metric icon={<Eye/>} label="Visible notes" value={graph.visibleNotes.length} sub={`as of ${graph.asOf}`} />
-              <Metric icon={<Network/>} label="Claims" value={graph.claims.length} sub="server materialized" />
-              <Metric icon={<Workflow/>} label="Relations" value={graph.relations.length} sub={`${contradictions} contradiction · ${reversals} reversal · ${tensions} tension · ${corroborations} corroborate`} />
-            </div>
-          </article>
         </aside>
       </section>
-      {viewMode === 'review' && !demoGuideDismissed && <DemoGuide onDismiss={dismissFirstRunGuide} onOpenStep={openDemoGuideStep} />}
       {historyDrawerOpen && <NoteHistoryDrawer history={noteHistory} onClose={() => setHistoryDrawerOpen(false)} />}
 
-      <section className="workspace review-workspace">
-        <aside className="subject-rail panel">
-          <div className="panel-title"><Search/> Companies & themes</div>
-          {subjects.length ? subjects.map(s => <button className={selected === s.subject ? 'active' : ''} key={s.subject} onClick={() => setSelected(s.subject)}>
-            <span>{s.subject}</span>
-            <small>{s.total} claims · {s.stance}</small>
-            <i style={{ ['--mix' as string]: `${Math.min(100, (s.positives / Math.max(1, s.total)) * 100)}%` }} />
-          </button>) : <EmptyState title={emptyStates['no-graph'].title} body={emptyStates['no-graph'].body} actions={emptyStateActions(emptyStates['no-graph'], { capture: focusCapture })} />}
-        </aside>
-
-        <section className="center-stage">
-          {selectedSynth && <article className="panel synthesis">
-            <div className="panel-title"><PanelLeft/> Synthesized view</div>
-            <div className="synthesis-head">
-              <div><h2>{selectedSynth.subject}</h2><p>{selectedSynth.summary}</p></div>
-              <div className={`stance-badge ${selectedSynth.stance}`}>{selectedSynth.stance}</div>
-            </div>
-            <div className="stance-strip">
-              <span><CheckCircle2/> {selectedSynth.positives} supportive</span>
-              <span><XCircle/> {selectedSynth.negatives} skeptical</span>
-              <span><AlertTriangle/> {selectedSynth.contradictions} contradictions · {selectedSynth.updates} reversals</span>
-            </div>
-            <div className="backlinks">
-              {selectedSynth.topThemes.map(t => <button className="chip hot" key={t} onClick={() => setSelected(t)}>backlink: {t}<ArrowUpRight size={13}/></button>)}
-            </div>
-            <h3>Review queue</h3>
-            <div className="claim-list">
-              {selectedReviewClaims.length
-                ? selectedReviewClaims.map(c => <ClaimCard key={c.id} claim={c} participantOptions={noteFilterOptions.sourcePeople} onUpdate={input => patchClaim(c.id, input)} />)
-                : <EmptyState title={emptyStates['no-review-claims'].title} body={emptyStates['no-review-claims'].body} actions={emptyStateActions(emptyStates['no-review-claims'], { capture: focusCapture })} />}
-            </div>
-          </article>}
-
-        </section>
-
-        <aside className="right-stack">
-          <article className="panel alerts">
-            <div className="panel-title"><AlertTriangle/> Signals</div>
-            {graph.alerts.length ? graph.alerts.map(a => <button key={a.id} className={`alert ${a.severity}`} onClick={() => a.company && setSelected(a.company)}>
-              <span>{a.severity}</span><h3>{a.title}</h3><p>{a.body}</p>
-            </button>) : <EmptyState title="No alerts" body="The workspace is quiet. New contradictions and dense clusters will appear here." />}
+      <section className="note-intelligence panel">
+        <div className="panel-title"><PanelLeft/> Current-note intelligence</div>
+        <div className="note-intelligence-grid">
+          <article>
+            <h3>Saved claims</h3>
+            {selectedNoteId
+              ? currentNoteClaims.length
+                ? <div className="claim-list">{currentNoteClaims.map(claim => <ClaimCard key={claim.id} claim={claim} participantOptions={noteFilterOptions.sourcePeople} onUpdate={input => patchClaim(claim.id, input)} />)}</div>
+                : <EmptyState title="No saved claims for this note" body="Save evidence-bearing note text so extracted claims can be reviewed here." />
+              : <EmptyState title="Save this note to review claims" body="Draft extraction stays live above. Saved-note claims appear here after the note is added to the graph." />}
           </article>
-          <article className="panel privacy-note">
-            <div className="panel-title"><ShieldCheck/> Trust boundary</div>
-            <p>Every count, synthesis, and alert is assembled by the server from rows the current user can access. Hidden notes stay out of graph computation.</p>
+          <article>
+            <h3>Saved relations</h3>
+            {selectedNoteId
+              ? <NoteRelationsPanel relations={currentNoteRelations} onUpdate={patchRelation} />
+              : <EmptyState title="Save this note to compare evidence" body="Relations are only shown here when they involve the currently selected saved note." />}
           </article>
-          <PersonMemoryPanel people={graph.people ?? []} onSelectPerson={name => {
-            setNoteFilters(current => ({ ...current, sourcePerson: name }));
-            setMapFilters(current => ({ ...current, sourcePerson: name }));
-          }} onStartCapture={focusCapture} />
-        </aside>
+        </div>
       </section>
-      </ReviewPage>}
+      </NotesPage>}
+
+      {viewMode === 'dashboard' && <DashboardPage
+        dashboard={dashboard}
+        people={dashboardPeople}
+        loading={dashboardLoading}
+        error={dashboardError}
+        scope={dashboardScope}
+        range={dashboardRange}
+        teamId={dashboardTeamId}
+        onScopeChange={setDashboardScope}
+        onRangeChange={setDashboardRange}
+        onTeamChange={setDashboardTeamId}
+        onSelectCompany={company => {
+          setSelected(company);
+          setViewMode('map');
+        }}
+        onSelectPerson={name => {
+          setNoteFilters(current => ({ ...current, sourcePerson: name }));
+          setMapFilters(current => ({ ...current, sourcePerson: name }));
+        }}
+        onStartCapture={focusCapture}
+      />}
 
       {viewMode === 'map' && <MapPage>
         <section className="workspace map-workspace">
@@ -788,32 +811,164 @@ function App() {
   </main>;
 }
 
-function ReviewPage({ children }: { children: React.ReactNode }) {
-  return <div className="page-layout review-layout">{children}</div>;
+function NotesPage({ children }: { children: React.ReactNode }) {
+  return <div className="page-layout notes-layout">{children}</div>;
 }
 
 function MapPage({ children }: { children: React.ReactNode }) {
   return <div className="page-layout map-layout">{children}</div>;
 }
 
-function DemoGuide({ onDismiss, onOpenStep }: { onDismiss: () => void; onOpenStep: (targetView: DemoGuideTargetViewMode) => void }) {
-  return <article className="panel demo-guide" aria-label="First-run demo guide">
-    <div className="demo-guide-head">
+function DashboardPage({
+  dashboard,
+  people,
+  loading,
+  error,
+  scope,
+  range,
+  teamId,
+  onScopeChange,
+  onRangeChange,
+  onTeamChange,
+  onSelectCompany,
+  onSelectPerson,
+  onStartCapture
+}: {
+  dashboard: DashboardSnapshot | null;
+  people: PersonMemorySummary[];
+  loading: boolean;
+  error: string;
+  scope: DashboardScope;
+  range: DashboardRange;
+  teamId: string;
+  onScopeChange: (scope: DashboardScope) => void;
+  onRangeChange: (range: DashboardRange) => void;
+  onTeamChange: (teamId: string) => void;
+  onSelectCompany: (company: string) => void;
+  onSelectPerson: (name: string) => void;
+  onStartCapture: () => void;
+}) {
+  const availability = dashboard?.scopeAvailability ?? defaultDashboardScopeAvailability();
+  const relationTotal = Math.max(1, dashboard?.totals.relations ?? 0);
+  const activeTeamId = teamId || dashboard?.selectedTeam?.id || '';
+
+  return <div className="page-layout dashboard-layout">
+    <header className="dashboard-header panel">
       <div>
-        <div className="panel-title"><Sparkles/> First-run guide</div>
-        <p>Use this compact path to see how notes become claims, relationships, and recoverable research memory.</p>
+        <div className="panel-title"><Gauge/> Research dashboard</div>
+        <h1>Workspace pulse</h1>
+        <p>Permission-aware research intelligence across notes, claims, relations, freshness, review backlog, and source-person coverage.</p>
       </div>
-      <button type="button" className="demo-guide-dismiss" onClick={onDismiss} title="Dismiss guide"><X size={15}/></button>
-    </div>
-    <div className="demo-guide-steps">
-      {demoGuideSteps.map(step => <button type="button" key={step.id} onClick={() => onOpenStep(step.targetViewMode)}>
-        <b>{step.title}</b>
-        <span>{step.body}</span>
-        <small>{step.actionLabel}<ArrowUpRight size={12}/></small>
+      <div className="dashboard-controls">
+        <div className="dashboard-scope-toggle">
+          {availability.map(item => <button type="button" key={item.scope} className={scope === item.scope ? 'active' : ''} disabled={!item.enabled} title={item.reason} onClick={() => item.enabled && onScopeChange(item.scope)}>{item.label}</button>)}
+        </div>
+        <div className="dashboard-range-toggle">
+          {(['30d', '90d', 'all'] as DashboardRange[]).map(item => <button type="button" key={item} className={range === item ? 'active' : ''} onClick={() => onRangeChange(item)}>{dashboardRangeLabel(item)}</button>)}
+        </div>
+        {scope === 'team' && <select value={activeTeamId} onChange={event => onTeamChange(event.target.value)} aria-label="Dashboard team">
+          {(dashboard?.teams ?? []).map(team => <option key={team.id ?? team.name} value={team.id ?? ''}>{team.name}</option>)}
+        </select>}
+      </div>
+    </header>
+
+    {error && <div className="inline-error">{error}</div>}
+    {loading && !dashboard && <div className="panel dashboard-loading"><div className="panel-title"><Sparkles/> Loading dashboard</div><p>Preparing scoped research aggregates.</p></div>}
+
+    {dashboard && <section className="dashboard-metric-grid">
+      <DashboardMetricCard icon={<BookOpen/>} label="Notes" value={dashboard.totals.notes} sub={`${dashboardRangeLabel(dashboard.range)} ${dashboard.scope}`} />
+      <DashboardMetricCard icon={<Network/>} label="Claims" value={dashboard.totals.claims} sub={`${dashboard.reviewBacklog.claims} awaiting claim review`} />
+      <DashboardMetricCard icon={<GitBranch/>} label="Relations" value={dashboard.totals.relations} sub={`${dashboard.reviewBacklog.relations} open relation reviews`} />
+      <DashboardMetricCard icon={<AlertTriangle/>} label="Signals" value={dashboard.signals.length} sub={`as of ${dashboard.asOf}`} />
+    </section>}
+
+    {dashboard && <>
+    <section className="dashboard-insight-grid">
+      <article className="dashboard-chart-card relation-mix-card">
+        <div className="panel-title"><Workflow/> Relation mix</div>
+        <div className="dashboard-bars">
+          {relationTypes.map(type => <div key={type} className={`dashboard-bar-row ${type}`}>
+            <span>{relationLabel(type)}</span>
+            <i><b style={{ ['--share' as string]: `${Math.round((dashboard.relationMix[type] / relationTotal) * 100)}%` }} /></i>
+            <strong>{dashboard.relationMix[type]}</strong>
+          </div>)}
+        </div>
+      </article>
+
+      <article className="dashboard-chart-card freshness-card">
+        <div className="panel-title"><CircleDot/> Freshness</div>
+        <div className="dashboard-donut" style={{ ['--fresh' as string]: dashboardFreshnessShare(dashboard, 'fresh'), ['--aging' as string]: dashboardFreshnessShare(dashboard, 'aging') }}>
+          <b>{dashboard.freshness.fresh}</b>
+        </div>
+        <div className="dashboard-donut-caption">fresh claims</div>
+        <div className="dashboard-legend">
+          <span>Fresh {dashboard.freshness.fresh}</span>
+          <span>Aging {dashboard.freshness.aging}</span>
+          <span>Stale {dashboard.freshness.stale}</span>
+        </div>
+      </article>
+    </section>
+
+    <section className="dashboard-widget-grid">
+      <DashboardTopList title="Companies" icon={<Building2/>} items={dashboard.topCompanies} onSelect={onSelectCompany} />
+      <DashboardTopList title="Themes" icon={<PanelLeft/>} items={dashboard.topThemes} />
+      <DashboardTopList title="KPIs" icon={<BarChart3/>} items={dashboard.topKpis} />
+      <DashboardTopList title="Securities" icon={<Layers3/>} items={dashboard.topSecurities} />
+      <DashboardTopList title="Watchlists" icon={<ListFilter/>} items={dashboard.topWatchlists} />
+      <DashboardTopList title="Source people" icon={<UsersRound/>} items={dashboard.topSourcePeople} onSelect={onSelectPerson} />
+
+      <article className="dashboard-chart-card dashboard-widget-card signals-card">
+        <div className="panel-title"><AlertTriangle/> Signals</div>
+        {dashboard.signals.length ? dashboard.signals.map(signal => <button key={signal.id} className={`alert ${signal.severity}`} onClick={() => signal.company && onSelectCompany(signal.company)}>
+          <span>{signal.severity}</span><h3>{signal.title}</h3><p>{signal.body}</p>
+        </button>) : <EmptyState title="No alerts" body="The selected dashboard scope is quiet for this timeframe." />}
+      </article>
+
+      <PersonMemoryPanel people={people} onSelectPerson={onSelectPerson} onStartCapture={onStartCapture} />
+    </section>
+    </>}
+  </div>;
+}
+
+function DashboardMetricCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: number; sub: string }) {
+  return <article className="dashboard-metric-card">{icon}<span>{label}</span><b>{value}</b><small>{sub}</small></article>;
+}
+
+function DashboardTopList({ title, icon, items, onSelect }: { title: string; icon: React.ReactNode; items: DashboardTopItem[]; onSelect?: (label: string) => void }) {
+  return <article className="dashboard-chart-card dashboard-widget-card">
+    <div className="panel-title">{icon}{title}</div>
+    {items.length ? <div className="dashboard-top-list">
+      {items.map(item => <button type="button" key={item.label} onClick={() => onSelect?.(item.label)} disabled={!onSelect}>
+        <span>{item.label}</span>
+        <i><b style={{ ['--share' as string]: `${item.share}%` }} /></i>
+        <strong>{item.value}</strong>
       </button>)}
-    </div>
+    </div> : <EmptyState title={`No ${title.toLowerCase()} yet`} body="Add and review notes in this scope to populate this dashboard panel." />}
   </article>;
 }
+
+function NoteRelationsPanel({ relations, onUpdate }: { relations: FrontendWorkspaceRelation[]; onUpdate: (id: string, input: UpdateRelationInput) => void }) {
+  const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? '');
+  const selectedRelation = relations.find(relation => relation.id === selectedRelationId) ?? relations[0];
+
+  useEffect(() => {
+    if (relations.length && !relations.some(relation => relation.id === selectedRelationId)) {
+      setSelectedRelationId(relations[0].id);
+    }
+  }, [relations, selectedRelationId]);
+
+  if (!relations.length) {
+    return <EmptyState title="No relations for this note" body="When this note corroborates, contradicts, updates, or tensions with accessible evidence, those relations appear here." />;
+  }
+
+  return <div className="note-relations-panel">
+    <div className="relation-list">
+      {relations.map(relation => <RelationCard key={relation.id} relation={relation} selected={relation.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(relation.id)} onUpdate={input => onUpdate(relation.id, input)} />)}
+    </div>
+    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} />}
+  </div>;
+}
+
 
 function NoteHistoryDrawer({ history, onClose }: { history: NoteRevision[]; onClose: () => void }) {
   return <aside className="note-history-drawer panel" aria-label="Note history">
@@ -1573,7 +1728,7 @@ function RelationDetailDrawer({ relation }: { relation: FrontendWorkspaceRelatio
 
 function PersonMemoryPanel({ people, onSelectPerson, onStartCapture }: { people: PersonMemorySummary[]; onSelectPerson: (name: string) => void; onStartCapture: () => void }) {
   const emptyState = emptyStates['no-source-person-history'];
-  return <article className="panel person-memory-panel">
+  return <article className="dashboard-chart-card dashboard-widget-card person-memory-panel">
     <div className="panel-title"><Network/> Source-person memory</div>
     {people.length ? <div className="person-memory-list">
       {people.slice(0, 6).map(person => <button type="button" key={person.name} onClick={() => onSelectPerson(person.name)}>
@@ -1763,6 +1918,75 @@ function relationMatchesSubject(relation: FrontendWorkspaceRelation, subject: st
     || relation.b.themes.includes(subject);
 }
 
+function relationTouchesSelectedNote(relation: FrontendWorkspaceRelation, selectedNoteId: string): boolean {
+  return relation.a.noteId === selectedNoteId || relation.b.noteId === selectedNoteId;
+}
+
+function normalizeDashboardSnapshot(snapshot: DashboardSnapshot): DashboardSnapshot {
+  const partial = snapshot as Partial<DashboardSnapshot>;
+  const totals = partial.totals;
+  const relationMix = partial.relationMix;
+  const freshness = partial.freshness;
+  const reviewBacklog = partial.reviewBacklog;
+
+  return {
+    ...snapshot,
+    totals: {
+      notes: totals?.notes ?? 0,
+      claims: totals?.claims ?? 0,
+      relations: totals?.relations ?? 0,
+      activeClaims: totals?.activeClaims ?? totals?.claims ?? 0
+    },
+    relationMix: {
+      contradiction: relationMix?.contradiction ?? 0,
+      update_or_trend_reversal: relationMix?.update_or_trend_reversal ?? 0,
+      historical_tension: relationMix?.historical_tension ?? 0,
+      open_tension: relationMix?.open_tension ?? 0,
+      corroboration: relationMix?.corroboration ?? 0,
+      agreement: relationMix?.agreement ?? 0,
+      stale_evidence: relationMix?.stale_evidence ?? 0
+    },
+    freshness: {
+      fresh: freshness?.fresh ?? 0,
+      aging: freshness?.aging ?? 0,
+      stale: freshness?.stale ?? 0
+    },
+    reviewBacklog: {
+      claims: reviewBacklog?.claims ?? 0,
+      relations: reviewBacklog?.relations ?? 0
+    },
+    scopeAvailability: partial.scopeAvailability ?? defaultDashboardScopeAvailability(),
+    teams: partial.teams ?? [],
+    topCompanies: partial.topCompanies ?? [],
+    topThemes: partial.topThemes ?? [],
+    topKpis: partial.topKpis ?? [],
+    topSecurities: partial.topSecurities ?? [],
+    topWatchlists: partial.topWatchlists ?? [],
+    topSourcePeople: partial.topSourcePeople ?? [],
+    signals: partial.signals ?? [],
+    activity: partial.activity ?? []
+  };
+}
+
+function defaultDashboardScopeAvailability(): DashboardSnapshot['scopeAvailability'] {
+  return [
+    { scope: 'workspace', label: 'Workspace', enabled: true },
+    { scope: 'team', label: 'Team', enabled: true },
+    { scope: 'org', label: 'Org', enabled: false, reason: 'Only PM or Compliance users can view organization-wide dashboard aggregates.' }
+  ];
+}
+
+function dashboardRangeLabel(range: DashboardRange): string {
+  if (range === '30d') return 'Last 30 days';
+  if (range === '90d') return 'Last 90 days';
+  return 'All time';
+}
+
+function dashboardFreshnessShare(dashboard: DashboardSnapshot, key: 'fresh' | 'aging' | 'stale'): string {
+  const total = Math.max(1, dashboard.freshness.fresh + dashboard.freshness.aging + dashboard.freshness.stale);
+  return `${Math.round((dashboard.freshness[key] / total) * 100)}%`;
+}
+
 function replaceLinkedEntityRoles(existing: LinkedEntity[] = [], replacements: LinkedEntity[] = [], roles: EntityRole[]): LinkedEntity[] {
   const roleSet = new Set<EntityRole>(roles);
   return mergeLinkedEntities(existing.filter(entity => !roleSet.has(entity.role)), replacements);
@@ -1799,4 +2023,8 @@ function browserStorage() {
   return window.localStorage;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+const rootElement = document.getElementById('root');
+if (!rootElement) throw new Error('Mycelium root element was not found.');
+const root = window.__myceliumRoot ?? createRoot(rootElement);
+window.__myceliumRoot = root;
+root.render(<App />);

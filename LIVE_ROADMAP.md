@@ -21,7 +21,16 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, and visibility filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
 - [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
-- [x] Left-rail page navigation now renders separate review, relationship map, and full-width archive pages instead of crowding every surface into the front page.
+- [x] Left-rail page navigation now renders separate notes, dashboard, relationship map, and full-width archive pages instead of crowding every surface into the front page.
+- [x] Notes is now a clean current-note surface:
+  - workspace pulse, signals, synthesis, and broad source-person memory moved off Notes,
+  - live extraction stays beside the editor,
+  - saved claim/relation review is filtered to the selected saved note.
+- [x] Scoped research dashboard added:
+  - BFF route `/api/dashboard`,
+  - service types for workspace/team/org scope and 30-day/90-day/all-time ranges,
+  - role-gated true org aggregates for PM/Compliance,
+  - native CSS/SVG-style cards, bars, freshness donut, top metadata lists, signals, and source-person coverage.
 - [x] True note metadata arrays for stocks/tickers, manual themes, and KPIs persisted through the BFF and Supabase notes table.
 - [x] API-level workspace JSON export/import so demos can be restored through authenticated BFF routes.
 - [x] Deterministic local extraction for companies, tickers, themes, KPIs, and claims.
@@ -32,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 85 tests.
+- [x] Validation passing: build + 88 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -65,8 +74,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - addable live extraction suggestions,
   - archive/sidebar/map filters for normalized metadata,
   - claim participant correction and source-person memory panel.
-- [x] First-run demo guide and richer empty states added:
-  - browser-local dismissible review-mode guide,
+- [x] Richer empty states added:
   - action-backed no-notes/no-filter/no-graph/no-claims/no-relations/no-person-memory states,
   - pure helper tests for guide content/storage and empty-state copy/actions.
 
@@ -94,9 +102,9 @@ Expected result:
   - normalized note/claim metadata persistence,
   - source-person relation context and memory summaries.
   - note filtering and sorting helpers.
-  - page-level review/map/archive layout and full-width archive behavior.
+  - page-level notes/dashboard/map/archive layout and full-width archive behavior.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
-  - first-run guide storage/content and empty-state copy/action contracts.
+  - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
 
 ## Priority Ladder
 
@@ -150,7 +158,7 @@ Goal: make the app feel like a real product a design partner could use with samp
   - reclassify relation type,
   - leave analyst note.
 - [x] Persist dismissed/confirmed relation decisions.
-- [x] Add richer empty states and first-run demo walkthrough.
+- [x] Add richer empty states and cleanly separate current-note Notes from broad dashboard intelligence.
 
 ### P2 — Relationship Map v2
 
@@ -301,10 +309,11 @@ Suggested tasks:
 4. Add stock/ticker and industry linking controls. **Done.**
 5. Add source-person/participant field and person-level history view. **Done.**
 6. Add relation detail drawer. **Done.**
-7. Add timeline/as-of filter.
-8. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, and source-person sentiment changes. **Done for normalized metadata/source-person v1.**
-9. Add a slash-command formatting palette to the markdown editor. **Done.**
-10. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
+7. Split clean current-note Notes from scoped research Dashboard. **Done.**
+8. Add timeline/as-of filter.
+9. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, source-person sentiment changes, current-note Notes scope, and dashboard aggregation. **Done for normalized metadata/source-person v1 plus dashboard/current-note scope.**
+10. Add a slash-command formatting palette to the markdown editor. **Done.**
+11. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
 
 ## Product Questions to Resolve
 
@@ -333,7 +342,7 @@ A change is not done until:
 
 - Code builds.
 - Tests pass.
-- UX still preserves core capture/review/map/archive flows.
+- UX still preserves core notes/dashboard/map/archive flows.
 - First-viewport UI still feels like note-taking software, with intelligence panels supporting capture rather than crowding it.
 - Permissions still affect graph computation.
 - Temporal relation behavior is not regressed.

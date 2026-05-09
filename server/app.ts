@@ -5,6 +5,9 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   CreateNoteInput,
+  DashboardRange,
+  DashboardScope,
+  DashboardSnapshot,
   NoteDraft,
   NoteRevision,
   UpdateClaimInput,
@@ -17,6 +20,7 @@ import type {
 
 export interface WorkspaceServiceApi {
   getWorkspace(viewerId: string): Promise<WorkspaceSnapshot>;
+  getDashboard(viewerId: string, options: { scope?: DashboardScope; range?: DashboardRange; teamId?: string }): Promise<DashboardSnapshot>;
   exportWorkspace(viewerId: string): Promise<WorkspaceExport>;
   importWorkspace(viewerId: string, input: WorkspaceExport): Promise<WorkspaceSnapshot>;
   createNote(viewerId: string, input: CreateNoteInput): Promise<WorkspaceSnapshot>;
@@ -52,6 +56,11 @@ export function buildApp(options: BuildAppOptions) {
   app.get('/api/workspace', async request => {
     const viewerId = await requireViewerId(options, request);
     return options.service.getWorkspace(viewerId);
+  });
+
+  app.get<{ Querystring: { scope?: DashboardScope; range?: DashboardRange; teamId?: string } }>('/api/dashboard', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.getDashboard(viewerId, request.query);
   });
 
   app.get('/api/workspace/export', async request => {
@@ -112,7 +121,7 @@ export function buildApp(options: BuildAppOptions) {
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    const statusCode = error.statusCode ?? (error.message.includes('not accessible') || error.message.includes('Only the note author') ? 403 : 500);
+    const statusCode = error.statusCode ?? (error.message.includes('not accessible') || error.message.includes('not available') || error.message.includes('Only the note author') ? 403 : 500);
     reply.status(statusCode).send({ error: error.message });
   });
 

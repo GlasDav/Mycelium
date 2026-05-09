@@ -53,6 +53,48 @@ test('workspace snapshots enforce permissions before graph computation', async (
   assert(pm.relations.some(r => r.type === 'contradiction'));
 });
 
+test('dashboard aggregates respect timeframe and role-gated scope availability', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      ...notes,
+      {
+        ...base,
+        id: 'n4',
+        title: 'old semis digest',
+        createdAt: '2025-05-01',
+        observedAt: '2025-05-01',
+        appliesToStart: '2025-05-01',
+        appliesToEnd: '2025-08-01',
+        body: 'Nvidia demand was strong and GPU supply was tight last spring.'
+      }
+    ]
+  });
+
+  const analystWorkspace = await service.getDashboard('u1', { scope: 'workspace', range: '90d' });
+  assert.equal(analystWorkspace.scope, 'workspace');
+  assert.equal(analystWorkspace.range, '90d');
+  assert.equal(analystWorkspace.totals.notes, 1);
+  assert.equal(analystWorkspace.scopeAvailability.find(item => item.scope === 'org')?.enabled, false);
+  assert.match(analystWorkspace.scopeAvailability.find(item => item.scope === 'org')?.reason ?? '', /PM or Compliance/);
+
+  await assert.rejects(
+    () => service.getDashboard('u1', { scope: 'org', range: '90d' }),
+    /Dashboard scope org is not available/
+  );
+
+  const pmOrgRecent = await service.getDashboard('u3', { scope: 'org', range: '90d' });
+  const pmOrgAll = await service.getDashboard('u3', { scope: 'org', range: 'all' });
+  assert.equal(pmOrgRecent.scopeAvailability.find(item => item.scope === 'org')?.enabled, true);
+  assert(pmOrgAll.totals.notes > pmOrgRecent.totals.notes);
+  assert(pmOrgAll.relationMix.contradiction > 0);
+  assert(pmOrgAll.topCompanies.some(item => item.label === 'Nvidia'));
+  assert(pmOrgAll.freshness.stale >= 1);
+});
+
 test('note creation persists metadata, materializes graph rows, and writes audit events', async () => {
   const { repository, service } = buildService();
 

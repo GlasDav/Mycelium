@@ -51,6 +51,37 @@ test('BFF requires auth and returns the permission-filtered workspace', async ()
   assert.equal(body.visibleNotes.length, 1);
 });
 
+test('BFF serves scoped dashboard aggregates with role-gated org access', async () => {
+  const { app } = buildTestApp();
+
+  const workspace = await app.inject({
+    method: 'GET',
+    url: '/api/dashboard?scope=workspace&range=90d',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(workspace.statusCode, 200);
+  assert.equal(workspace.json().scope, 'workspace');
+  assert.equal(workspace.json().range, '90d');
+  assert.equal(workspace.json().totals.notes, 1);
+  assert.equal(workspace.json().scopeAvailability.find((item: { scope: string }) => item.scope === 'org').enabled, false);
+
+  const denied = await app.inject({
+    method: 'GET',
+    url: '/api/dashboard?scope=org&range=90d',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(denied.statusCode, 403);
+  assert.match(denied.json().error, /Dashboard scope org is not available/);
+
+  const org = await app.inject({
+    method: 'GET',
+    url: '/api/dashboard?scope=org&range=all',
+    headers: { authorization: 'Bearer u2' }
+  });
+  assert.equal(org.statusCode, 200);
+  assert.equal(org.json().scope, 'org');
+});
+
 test('BFF creates notes and patches claim/relation reviews', async () => {
   const { app } = buildTestApp();
   const linkedEntities = [
