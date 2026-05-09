@@ -208,7 +208,7 @@ As of 2026-05-09:
 
 - `npm run validate` passes.
 - Build passes.
-- 101/101 tests pass.
+- 102/102 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
