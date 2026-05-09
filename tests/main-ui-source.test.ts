@@ -101,6 +101,38 @@ test('note workbench has a new note action and no sample prompt buttons', () => 
   assert.doesNotMatch(source, /Use sample/);
 });
 
+test('note workbench supports explicit saved-note editing and server draft recovery', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+
+  assert.match(source, /saveWorkbenchNote/);
+  assert.match(source, /updateNote\(/);
+  assert.match(source, /loadNoteDraft/);
+  assert.match(source, /upsertNoteDraft/);
+  assert.match(source, /deleteNoteDraft/);
+  assert.match(source, /clearedDraftSignatureRef/);
+  assert.match(source, /draftSignature/);
+  assert.match(source, /selectedNoteId: note\.id/);
+  assert.match(source, /selectedNoteId \? 'Save note' : 'Add note'/);
+  assert.match(source, /selectedNoteId \? 'Save note' : 'Add note'/);
+  assert.match(source, /onSubmit=\{saveWorkbenchNote\}/);
+});
+
+test('selected saved notes expose a read-only history drawer', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(source, /loadNoteHistory/);
+  assert.match(source, /historyDrawerOpen/);
+  assert.match(source, /function NoteHistoryDrawer/);
+  assert.match(appReturn, /<NoteHistoryDrawer/);
+  assert.match(source, /Previous body/);
+  assert.match(source, /changedFields/);
+  assert.doesNotMatch(source, /Restore version/);
+});
+
 test('left rail modes render separate page bodies instead of in-page tabs', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const appReturnStart = source.indexOf('return <main');

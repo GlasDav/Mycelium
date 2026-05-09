@@ -2,9 +2,13 @@ import { createClient, type Session, type SupabaseClient } from '@supabase/supab
 import type {
   ClaimReviewStatus,
   CreateNoteInput,
+  NoteDraft,
+  NoteRevision,
   RelationReviewStatus,
   UpdateClaimInput,
+  UpdateNoteInput,
   UpdateRelationInput,
+  UpsertNoteDraftInput,
   WorkspaceSnapshot
 } from '../server/workspace-service';
 import type { RelationType } from './engine';
@@ -40,6 +44,45 @@ export async function createNote(session: Session, input: CreateNoteInput): Prom
     body: JSON.stringify(input)
   });
   return readJson(response);
+}
+
+export async function updateNote(session: Session, id: string, input: UpdateNoteInput): Promise<WorkspaceSnapshot> {
+  const response = await fetch(`/api/notes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  return readJson(response);
+}
+
+export async function loadNoteDraft(session: Session): Promise<NoteDraft | null> {
+  const response = await fetch('/api/note-draft', { headers: authHeaders(session) });
+  const body = await readJson<{ draft: NoteDraft | null }>(response);
+  return body.draft;
+}
+
+export async function upsertNoteDraft(session: Session, input: UpsertNoteDraftInput): Promise<NoteDraft> {
+  const response = await fetch('/api/note-draft', {
+    method: 'PUT',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  const body = await readJson<{ draft: NoteDraft }>(response);
+  return body.draft;
+}
+
+export async function deleteNoteDraft(session: Session): Promise<void> {
+  const response = await fetch('/api/note-draft', {
+    method: 'DELETE',
+    headers: authHeaders(session)
+  });
+  await readJson<{ ok: boolean }>(response);
+}
+
+export async function loadNoteHistory(session: Session, id: string): Promise<NoteRevision[]> {
+  const response = await fetch(`/api/notes/${encodeURIComponent(id)}/history`, { headers: authHeaders(session) });
+  const body = await readJson<{ history: NoteRevision[] }>(response);
+  return body.history;
 }
 
 export async function updateClaim(session: Session, id: string, input: UpdateClaimInput & { reviewStatus?: ClaimReviewStatus }): Promise<WorkspaceSnapshot> {

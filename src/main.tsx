@@ -28,6 +28,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  History,
   Italic,
   KeyRound,
   Layers3,
@@ -58,10 +59,15 @@ import {
 import {
   createAuthClient,
   createNote,
+  deleteNoteDraft,
   loadAuthBootstrap,
+  loadNoteDraft,
+  loadNoteHistory,
   loadWorkspace,
   updateClaim,
-  updateRelation
+  updateNote,
+  updateRelation,
+  upsertNoteDraft
 } from './api';
 import {
   companyLexicon,
@@ -89,6 +95,8 @@ import {
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import type {
   ClaimReviewStatus,
+  NoteDraft,
+  NoteRevision,
   UpdateClaimInput,
   UpdateRelationInput,
   WorkspaceClaim,
@@ -145,6 +153,9 @@ function App() {
   const [noteFiltersCollapsed, setNoteFiltersCollapsed] = useState(true);
   const [selectedNoteId, setSelectedNoteId] = useState('');
   const [noteFilters, setNoteFilters] = useState<NoteFilters>({ sort: 'newest' });
+  const [noteHistory, setNoteHistory] = useState<NoteRevision[]>([]);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const clearedDraftSignatureRef = useRef('');
 
   useEffect(() => {
     let active = true;
@@ -160,11 +171,15 @@ function App() {
         if (!active) return;
         const currentSession = current.data.session;
         setSession(currentSession);
-        if (currentSession) await refreshWorkspace(currentSession);
+        if (currentSession) {
+          const next = await refreshWorkspace(currentSession);
+          if (next) await restoreNoteDraft(currentSession, next);
+        }
         const subscription = client.auth.onAuthStateChange(async (_event, nextSession) => {
           setSession(nextSession);
           if (nextSession) {
-            await refreshWorkspace(nextSession);
+            const next = await refreshWorkspace(nextSession);
+            if (next) await restoreNoteDraft(nextSession, next);
           } else {
             setWorkspace(null);
           }
@@ -184,14 +199,70 @@ function App() {
     };
   }, []);
 
-  async function refreshWorkspace(nextSession = session) {
-    if (!nextSession) return;
+  async function refreshWorkspace(nextSession = session): Promise<WorkspaceSnapshot | undefined> {
+    if (!nextSession) return undefined;
     setAppError('');
     const next = await loadWorkspace(nextSession);
     setWorkspace(next);
     const subjects = [...next.companies, ...next.themes];
     if (subjects.length && !subjects.some(subject => subject.subject === selected)) {
       setSelected(subjects[0].subject);
+    }
+    return next;
+  }
+
+  async function restoreNoteDraft(nextSession: Session, nextWorkspace: WorkspaceSnapshot) {
+    try {
+      const savedDraft = await loadNoteDraft(nextSession);
+      if (!savedDraft || !hasDraftContent(savedDraft)) return;
+      const linkedNote = savedDraft.selectedNoteId
+        ? nextWorkspace.visibleNotes.find(note => note.id === savedDraft.selectedNoteId)
+        : undefined;
+      setSelectedNoteId(linkedNote?.id ?? '');
+      setNoteTitle(savedDraft.title);
+      setDraft(savedDraft.body);
+      setVisibility(savedDraft.visibility);
+      setObservedAt(savedDraft.observedAt ?? today());
+      setTickers(savedDraft.tickers ?? []);
+      setManualThemes(savedDraft.manualThemes ?? []);
+      setKpis(savedDraft.kpis ?? []);
+      clearedDraftSignatureRef.current = draftSignature(savedDraft);
+      setViewMode('review');
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  useEffect(() => {
+    if (!session || !workspace) return;
+    const draftInput = {
+      selectedNoteId: selectedNoteId || undefined,
+      title: noteTitle,
+      body: draft,
+      visibility,
+      observedAt,
+      tickers,
+      manualThemes,
+      kpis
+    };
+    if (!hasDraftContent(draftInput)) return;
+    const signature = draftSignature(draftInput);
+    if (clearedDraftSignatureRef.current === signature) return;
+
+    const handle = window.setTimeout(() => {
+      upsertNoteDraft(session, draftInput).catch(error => {
+        setAppError(error instanceof Error ? error.message : String(error));
+      });
+    }, 700);
+
+    return () => window.clearTimeout(handle);
+  }, [session, workspace, selectedNoteId, noteTitle, draft, visibility, observedAt, tickers, manualThemes, kpis]);
+
+  async function saveWorkbenchNote() {
+    if (selectedNoteId) {
+      await saveExistingNote();
+    } else {
+      await addNote();
     }
   }
 
@@ -215,7 +286,57 @@ function App() {
       setTickers([]);
       setManualThemes([]);
       setKpis([]);
+      setSelectedNoteId('');
       setViewMode('review');
+      clearedDraftSignatureRef.current = '';
+      await deleteNoteDraft(session);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function saveExistingNote() {
+    if (!session || !selectedNoteId || !draft.trim()) return;
+    const selectedNote = workspace?.visibleNotes.find(note => note.id === selectedNoteId);
+    if (selectedNote && selectedNote.authorId !== workspace?.viewer.id) {
+      setAppError('Only the note author can edit this note.');
+      return;
+    }
+    try {
+      const next = await updateNote(session, selectedNoteId, {
+        title: noteTitle.trim() || undefined,
+        body: draft,
+        visibility,
+        observedAt,
+        tickers,
+        manualThemes,
+        kpis
+      });
+      setWorkspace(next);
+      clearedDraftSignatureRef.current = draftSignature({
+        selectedNoteId,
+        title: noteTitle,
+        body: draft,
+        visibility,
+        observedAt,
+        tickers,
+        manualThemes,
+        kpis
+      });
+      await deleteNoteDraft(session);
+      const history = await loadNoteHistory(session, selectedNoteId);
+      setNoteHistory(history);
+      setHistoryDrawerOpen(false);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function openNoteHistory() {
+    if (!session || !selectedNoteId) return;
+    try {
+      setNoteHistory(await loadNoteHistory(session, selectedNoteId));
+      setHistoryDrawerOpen(true);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -267,7 +388,15 @@ function App() {
     setTickers([]);
     setManualThemes([]);
     setKpis([]);
+    setNoteHistory([]);
+    setHistoryDrawerOpen(false);
+    clearedDraftSignatureRef.current = '';
     setViewMode('review');
+    if (session) {
+      deleteNoteDraft(session).catch(error => {
+        setAppError(error instanceof Error ? error.message : String(error));
+      });
+    }
   }
 
   async function signOut() {
@@ -277,6 +406,9 @@ function App() {
 
   const graph = workspace;
   const user = graph?.viewer;
+  const selectedNote = selectedNoteId ? graph?.visibleNotes.find(note => note.id === selectedNoteId) : undefined;
+  const canEditSelectedNote = !selectedNoteId || selectedNote?.authorId === user?.id;
+  const workbenchActionLabel = selectedNoteId ? 'Save note' : 'Add note';
   const subjects = graph ? [...graph.companies, ...graph.themes] : [];
   const selectedSynth = subjects.find(s => s.subject === selected) ?? graph?.companies[0] ?? graph?.themes[0];
   const visibleRelations = graph?.relations.filter(r => !selectedSynth || r.a.subject === selectedSynth.subject || r.a.themes.includes(selectedSynth.subject)) ?? [];
@@ -323,6 +455,16 @@ function App() {
       onToggleFilters={() => setNoteFiltersCollapsed(value => !value)}
       onFilterChange={patch => setNoteFilters(current => ({ ...current, ...patch }))}
       onSelectNote={note => {
+        clearedDraftSignatureRef.current = draftSignature({
+          selectedNoteId: note.id,
+          title: note.title,
+          body: note.body,
+          visibility: note.visibility,
+          observedAt: note.observedAt ?? note.createdAt,
+          tickers: note.tickers ?? [],
+          manualThemes: note.manualThemes ?? [],
+          kpis: note.kpis ?? []
+        });
         setSelectedNoteId(note.id);
         setNoteTitle(note.title);
         setDraft(note.body);
@@ -331,6 +473,9 @@ function App() {
         setTickers(note.tickers ?? []);
         setManualThemes(note.manualThemes ?? []);
         setKpis(note.kpis ?? []);
+        setNoteHistory([]);
+        setHistoryDrawerOpen(false);
+        clearedDraftSignatureRef.current = '';
         setViewMode('review');
       }}
     />
@@ -343,14 +488,17 @@ function App() {
         <article className="capture panel primary-note">
           <div className="note-panel-head">
             <div className="panel-title"><FilePlus2/> Note</div>
-            <button type="button" className="new-note-action" onClick={startNewNote}><FilePlus2 size={14}/>New note</button>
+            <div className="note-panel-actions">
+              {selectedNoteId && <button type="button" className="history-note-action" onClick={openNoteHistory}><History size={14}/>History</button>}
+              <button type="button" className="new-note-action" onClick={startNewNote}><FilePlus2 size={14}/>New note</button>
+            </div>
           </div>
           <div className="note-meta">
             <span>{user.team}</span>
             <span>{observedAt}</span>
           </div>
           <input className="note-title-input" value={noteTitle} onChange={event => setNoteTitle(event.target.value)} placeholder="Title..." aria-label="Note title" />
-          <MarkdownEditor value={draft} onChange={setDraft} onSubmit={addNote} />
+          <MarkdownEditor value={draft} onChange={setDraft} onSubmit={saveWorkbenchNote} />
           <div className="metadata-grid">
             <label><span>Observed</span><input type="date" value={observedAt} onChange={e => setObservedAt(e.target.value)} /></label>
             <label><span>Visibility</span><select value={visibility} onChange={e => setVisibility(e.target.value as Note['visibility'])}><option value="public">public</option><option value="team">team</option><option value="private">private</option></select></label>
@@ -361,8 +509,9 @@ function App() {
             <MetadataChipInput label="KPIs" values={kpis} options={kpiWords} onChange={setKpis} placeholder="Add KPI" />
           </div>
           <div className="capture-actions">
-            <button onClick={addNote}>Add note <span><Command size={13}/> Enter</span></button>
+            <button onClick={saveWorkbenchNote} disabled={!draft.trim() || !canEditSelectedNote}>{workbenchActionLabel} <span><Command size={13}/> Enter</span></button>
           </div>
+          {selectedNoteId && !canEditSelectedNote && <p className="note-edit-lock"><LockKeyhole size={13}/> Only the note author can save changes.</p>}
         </article>
 
         <aside className="note-side">
@@ -386,6 +535,7 @@ function App() {
           </article>
         </aside>
       </section>
+      {historyDrawerOpen && <NoteHistoryDrawer history={noteHistory} onClose={() => setHistoryDrawerOpen(false)} />}
 
       <section className="workspace review-workspace">
         <aside className="subject-rail panel">
@@ -463,6 +613,28 @@ function ReviewPage({ children }: { children: React.ReactNode }) {
 
 function MapPage({ children }: { children: React.ReactNode }) {
   return <div className="page-layout map-layout">{children}</div>;
+}
+
+function NoteHistoryDrawer({ history, onClose }: { history: NoteRevision[]; onClose: () => void }) {
+  return <aside className="note-history-drawer panel" aria-label="Note history">
+    <div className="note-history-head">
+      <div className="panel-title"><History/> Note history</div>
+      <button type="button" onClick={onClose} title="Close history"><X size={15}/></button>
+    </div>
+    {history.length ? <div className="note-history-list">
+      {history.map(revision => <article key={revision.id} className="note-history-item">
+        <small>{new Date(revision.createdAt).toLocaleString()} Â· {revision.editorName} Â· {revision.changedFields.join(', ')}</small>
+        <h3>{revision.previousTitle}</h3>
+        <div className="revision-meta">
+          <span>{revision.previousVisibility}</span>
+          <span>{revision.previousObservedAt ?? 'No observed date'}</span>
+          <span>{revision.previousTickers.join(', ') || 'No stocks'}</span>
+        </div>
+        <b>Previous body</b>
+        <MarkdownPreview source={revision.previousBody} />
+      </article>)}
+    </div> : <EmptyState title="No history yet" body="Saved note edits will appear here." />}
+  </aside>;
 }
 
 function ArchivePage({ notes, totalNotes, selectedNoteId }: { notes: WorkspaceNote[]; totalNotes: number; selectedNoteId: string }) {
@@ -1144,6 +1316,29 @@ function mergeEntities(primary: Entity[], manual: Entity[]): Entity[] {
 
 function emptyFilterOptions(): NoteFilterOptions {
   return { tickers: [], themes: [], kpis: [], visibilities: [] };
+}
+
+function hasDraftContent(draft: Partial<NoteDraft>) {
+  return Boolean(
+    draft.title?.trim()
+    || draft.body?.trim()
+    || draft.tickers?.length
+    || draft.manualThemes?.length
+    || draft.kpis?.length
+  );
+}
+
+function draftSignature(draft: Partial<NoteDraft>) {
+  return JSON.stringify({
+    selectedNoteId: draft.selectedNoteId ?? '',
+    title: draft.title ?? '',
+    body: draft.body ?? '',
+    visibility: draft.visibility ?? 'team',
+    observedAt: draft.observedAt ?? '',
+    tickers: draft.tickers ?? [],
+    manualThemes: draft.manualThemes ?? [],
+    kpis: draft.kpis ?? []
+  });
 }
 
 function today() {

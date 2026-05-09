@@ -17,10 +17,10 @@ The repo contains a production-shaped MVP foundation:
 - Supabase Auth/Postgres/RLS project files and raw migrations.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
-- Server-side graph materialization for notes, claims, relations, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, observed-date/visibility controls, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, left-rail page navigation for review/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing with analyst review notes, relation review with analyst notes, relationship detail drawer, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
-- API-level workspace JSON export/import for demo restore through authenticated BFF routes.
-- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions and review notes, export/import restore, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, sidebar layout density, page navigation, archive width, and markdown toolbar/slash-command formatting helpers.
+- Server-side graph materialization for notes, claims, relations, note drafts, note revision history, audit events, and extraction jobs.
+- Minimal note-taking-first research workspace UI with auth, observed-date/visibility controls, stock/theme/KPI metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, left-rail page navigation for review/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel, workspace pulse, claim editing with analyst review notes, relation review with analyst notes, relationship detail drawer, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
+- Tests covering extraction, direct temporal helper behavior, schema/RLS contract, BFF routing, permissions, temporal contradiction logic, trend reversals, stale evidence, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, note metadata persistence, note sidebar filtering helpers, sidebar layout density, page navigation, archive width, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -51,7 +51,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing with review notes, relationship review with review notes, relationship map detail drawer, and separate review/map/archive page bodies.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, server-backed draft restore, read-only history drawer, stock/theme/KPI metadata controls, collapsible all-notes sidebar and filters, live extraction, workspace pulse, subject navigation, synthesis, claim editing with review notes, relationship review with review notes, relationship map detail drawer, and separate review/map/archive page bodies.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
@@ -62,8 +62,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Backend
 
 - `server/index.ts` is the single-service Node entrypoint.
-- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace, workspace export/import, notes, claims, relations, and audit events.
-- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, workspace JSON export/import, review state, audit events, and the extraction provider contract.
+- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace, workspace export/import, notes, note drafts, note history, claims, relations, and audit events.
+- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, workspace JSON export/import, note editing/history, server drafts, review state, audit events, and the extraction provider contract.
 - `server/supabase-repository.ts` adapts the workspace service to Supabase.
 
 ### Supabase
@@ -71,6 +71,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `supabase/config.toml` configures local Supabase.
 - Local Supabase ports intentionally use `55321`-series host ports (`55321` API, `55322` DB, `55323` Studio, `55324` Mailpit, `55327` analytics) because Windows/Docker environments can reserve the default `5432x` range.
 - `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes with `tickers`, `manual_themes`, and `kpis` metadata arrays, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
+- `supabase/migrations/202605090001_note_persistence_spine.sql` adds server-backed workbench drafts, note revision history, and author-only note update RLS.
 
 ### Intelligence Engine
 
@@ -94,8 +95,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Tests
 
 - `tests/schema.test.ts` checks the migration/RLS contract.
-- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, workspace export/import restore, claim edit/reject, relation dismissal/reclassification.
-- `tests/bff.test.ts` checks Fastify API auth, export/import, and route behavior.
+- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, workspace export/import restore, note update/history/drafts, claim edit/reject, relation dismissal/reclassification.
+- `tests/bff.test.ts` checks Fastify API auth, note update/history/draft routes, export/import, and route behavior.
 - `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting.
 - `tests/markdown-tools.test.ts` checks markdown toolbar and slash-command transforms.
 - `tests/main-ui-source.test.ts` and `tests/layout-css.test.ts` check expected note-capture/sidebar metadata, page navigation, archive width, and layout contracts.
@@ -201,14 +202,14 @@ As of 2026-05-09:
 
 - `npm run validate` passes.
 - Build passes.
-- 50/50 tests pass.
+- 62/62 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
 
 - Extraction is deterministic heuristic logic, not LLM-backed.
 - Permissions are enforced in the server-side workspace service and represented in Supabase RLS policies.
-- Note capture is typed/pasted text only.
+- Note capture is typed/pasted text only, with explicit save for existing notes and server-backed draft recovery for unsaved workbench content.
 - Real Supabase Auth and Postgres/RLS schema are present; deployment still needs real hosted Supabase credentials.
 - No external news/filings ingestion yet.
 - Relationship topic matching is still coarse: shared company + themes/keyword overlap.

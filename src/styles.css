@@ -453,7 +453,14 @@ textarea:focus {
   gap: 10px;
 }
 
-.new-note-action {
+.note-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-note-action,
+.history-note-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -467,7 +474,8 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.new-note-action:hover {
+.new-note-action:hover,
+.history-note-action:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -769,6 +777,20 @@ textarea::placeholder {
   color: #b8c5c1;
   font-size: 12px;
   font-weight: 650;
+}
+
+.capture-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.note-edit-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .metadata-linking {
@@ -1669,6 +1691,64 @@ textarea::placeholder {
   margin: 8px 0 0;
   color: var(--ink-2);
   line-height: 1.4;
+}
+
+.note-history-drawer {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.note-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.note-history-head button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.note-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.note-history-item {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.note-history-item h3,
+.note-history-item small,
+.note-history-item b {
+  margin: 0;
+}
+
+.revision-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.revision-meta span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 4px 7px;
+  font-size: 11px;
 }
 
 .notes > article {

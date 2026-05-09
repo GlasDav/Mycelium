@@ -5,8 +5,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   CreateNoteInput,
+  NoteDraft,
+  NoteRevision,
   UpdateClaimInput,
+  UpdateNoteInput,
   UpdateRelationInput,
+  UpsertNoteDraftInput,
   WorkspaceExport,
   WorkspaceSnapshot
 } from './workspace-service';
@@ -16,6 +20,11 @@ export interface WorkspaceServiceApi {
   exportWorkspace(viewerId: string): Promise<WorkspaceExport>;
   importWorkspace(viewerId: string, input: WorkspaceExport): Promise<WorkspaceSnapshot>;
   createNote(viewerId: string, input: CreateNoteInput): Promise<WorkspaceSnapshot>;
+  updateNote(viewerId: string, noteId: string, input: UpdateNoteInput): Promise<WorkspaceSnapshot>;
+  getNoteDraft(viewerId: string): Promise<NoteDraft | undefined>;
+  upsertNoteDraft(viewerId: string, input: UpsertNoteDraftInput): Promise<NoteDraft>;
+  deleteNoteDraft(viewerId: string): Promise<void>;
+  listNoteHistory(viewerId: string, noteId: string): Promise<NoteRevision[]>;
   updateClaim(viewerId: string, claimId: string, input: UpdateClaimInput): Promise<WorkspaceSnapshot>;
   updateRelation(viewerId: string, relationId: string, input: UpdateRelationInput): Promise<WorkspaceSnapshot>;
 }
@@ -60,6 +69,32 @@ export function buildApp(options: BuildAppOptions) {
     return options.service.createNote(viewerId, request.body);
   });
 
+  app.patch<{ Params: { id: string }; Body: UpdateNoteInput }>('/api/notes/:id', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.updateNote(viewerId, request.params.id, request.body);
+  });
+
+  app.get('/api/note-draft', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return { draft: await options.service.getNoteDraft(viewerId) ?? null };
+  });
+
+  app.put<{ Body: UpsertNoteDraftInput }>('/api/note-draft', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return { draft: await options.service.upsertNoteDraft(viewerId, request.body) };
+  });
+
+  app.delete('/api/note-draft', async request => {
+    const viewerId = await requireViewerId(options, request);
+    await options.service.deleteNoteDraft(viewerId);
+    return { ok: true };
+  });
+
+  app.get<{ Params: { id: string } }>('/api/notes/:id/history', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return { history: await options.service.listNoteHistory(viewerId, request.params.id) };
+  });
+
   app.patch<{ Params: { id: string }; Body: UpdateClaimInput }>('/api/claims/:id', async request => {
     const viewerId = await requireViewerId(options, request);
     return options.service.updateClaim(viewerId, request.params.id, request.body);
@@ -77,7 +112,7 @@ export function buildApp(options: BuildAppOptions) {
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    const statusCode = error.statusCode ?? (error.message.includes('not accessible') ? 403 : 500);
+    const statusCode = error.statusCode ?? (error.message.includes('not accessible') || error.message.includes('Only the note author') ? 403 : 500);
     reply.status(statusCode).send({ error: error.message });
   });
 

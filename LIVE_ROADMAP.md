@@ -32,7 +32,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 50 tests.
+- [x] Validation passing: build + 62 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -47,6 +47,13 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - claim editing/review state,
   - relation confirm/dismiss/reclassify state,
   - audit events and extraction job tables.
+- [x] Production persistence spine added:
+  - explicit save for selected notes through the BFF/Supabase path,
+  - server-backed recoverable workbench drafts,
+  - read-only note revision history drawer,
+  - author-only note update enforcement,
+  - evidence-bearing note edits reset derived claim/relation review state,
+  - workspace export/import preserves dismissed relation decisions.
 
 ### Current MVP Validation
 
@@ -68,7 +75,7 @@ Expected result:
   - migration/RLS schema contract,
   - Fastify BFF route auth,
   - server-side graph materialization,
-  - persisted claim/relation review behavior.
+  - persisted note edits, server drafts, note history, and claim/relation review behavior.
   - note metadata persistence,
   - note filtering and sorting helpers.
   - page-level review/map/archive layout and full-width archive behavior.
@@ -91,7 +98,7 @@ These must remain true after every change:
 
 Goal: make the app feel like a real product a design partner could use with sample/limited data.
 
-- [ ] Add persistent local storage for notes and review state.
+- [x] Add persistent production storage for notes, server drafts, note history, and review state.
 - [x] Add export/import for workspace JSON so demos survive reloads.
 - [ ] Improve note capture metadata controls:
   - observed date,
@@ -269,14 +276,14 @@ Goal: connect internal claims to external corroboration/contradiction.
 
 Suggested tasks:
 
-1. Add local persistence layer.
+1. Add production persistence layer. **Done.**
 2. Add claim/relation review state. **Done.**
 3. Keep the note-first capture workbench focused on observed date, visibility, and stock/theme/KPI chips while claim windows and horizon are inferred and reviewed on claims.
 4. Add stock/ticker and industry linking controls.
 5. Add source-person/participant field and person-level history view.
 6. Add relation detail drawer. **Done.**
 7. Add timeline/as-of filter.
-8. Add tests for persisted review decisions, temporal filters, stock/industry links, and source-person sentiment changes.
+8. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, and source-person sentiment changes. **Partially done for persistence/drafts/history.**
 9. Add a slash-command formatting palette to the markdown editor. **Done.**
 10. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
 

@@ -83,6 +83,157 @@ test('note creation persists metadata, materializes graph rows, and writes audit
   assert(repository.auditEvents.some(event => event.action === 'graph.materialized'));
 });
 
+test('note body edits persist revision history and reset derived reviews', async () => {
+  const { repository, service } = buildService();
+
+  const created = await service.createNote('u1', {
+    title: 'bearish channel follow-up',
+    body: 'Nvidia demand is weak as GPU supply slows.',
+    visibility: 'team',
+    observedAt: '2026-05-06',
+    tickers: ['NVDA'],
+    manualThemes: ['AI infrastructure'],
+    kpis: ['demand']
+  });
+  const createdNote = created.visibleNotes.find(note => note.title === 'bearish channel follow-up');
+  assert(createdNote);
+  const bearishClaim = created.claims.find(claim => claim.noteId === createdNote.id && claim.text.includes('weak'));
+  const relation = created.relations.find(item => item.a.noteId === createdNote.id || item.b.noteId === createdNote.id);
+  assert(bearishClaim);
+  assert(relation);
+
+  await service.updateClaim('u1', bearishClaim.id, {
+    reviewStatus: 'edited',
+    reviewNote: 'Analyst normalized the weak read.'
+  });
+  await service.updateRelation('u1', relation.id, {
+    reviewStatus: 'reclassified',
+    type: 'historical_tension',
+    reviewNote: 'Prior channel read was noisy.'
+  });
+
+  const updated = await service.updateNote('u1', createdNote.id, {
+    body: 'Nvidia demand is strong as GPU supply improves.',
+    tickers: ['NVDA', 'MSFT']
+  });
+
+  const savedNote = updated.visibleNotes.find(note => note.id === createdNote.id);
+  assert.equal(savedNote?.body, 'Nvidia demand is strong as GPU supply improves.');
+  assert.deepEqual(savedNote?.tickers, ['NVDA', 'MSFT']);
+
+  const history = await service.listNoteHistory('u1', createdNote.id);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].previousBody, 'Nvidia demand is weak as GPU supply slows.');
+  assert.deepEqual(history[0].changedFields.sort(), ['body', 'tickers']);
+
+  const refreshedClaim = updated.claims.find(claim => claim.noteId === createdNote.id);
+  assert.equal(refreshedClaim?.reviewStatus, 'machine');
+  assert.equal(refreshedClaim?.reviewNote, undefined);
+  assert(!updated.relations.some(item => item.id === relation.id && item.reviewStatus === 'reclassified'));
+  assert(repository.auditEvents.some(event => event.action === 'note.updated'));
+  assert(repository.auditEvents.some(event => event.action === 'note.revision.created'));
+});
+
+test('note history respects prior revision visibility', async () => {
+  const { service } = buildService();
+
+  const created = await service.createNote('u1', {
+    title: 'private thesis',
+    body: 'Nvidia demand is weak as GPU supply slows.',
+    visibility: 'private',
+    observedAt: '2026-05-06'
+  });
+  const createdNote = created.visibleNotes.find(note => note.title === 'private thesis');
+  assert(createdNote);
+
+  await service.updateNote('u1', createdNote.id, {
+    body: 'Nvidia demand is strong as GPU supply improves.',
+    visibility: 'public'
+  });
+
+  assert.equal((await service.listNoteHistory('u1', createdNote.id)).length, 1);
+  assert.equal((await service.listNoteHistory('u2', createdNote.id)).length, 0);
+  assert.equal((await service.listNoteHistory('u3', createdNote.id)).length, 1);
+});
+
+test('title-only note edits preserve derived claim and relation review state', async () => {
+  const { service } = buildService();
+
+  const created = await service.createNote('u1', {
+    title: 'weak read',
+    body: 'Nvidia demand is weak as GPU supply slows.',
+    visibility: 'team',
+    observedAt: '2026-05-06'
+  });
+  const createdNote = created.visibleNotes.find(note => note.title === 'weak read');
+  assert(createdNote);
+  const bearishClaim = created.claims.find(claim => claim.noteId === createdNote.id);
+  const relation = created.relations.find(item => item.a.noteId === createdNote.id || item.b.noteId === createdNote.id);
+  assert(bearishClaim);
+  assert(relation);
+
+  await service.updateClaim('u1', bearishClaim.id, {
+    reviewStatus: 'analyst_confirmed',
+    reviewNote: 'Still valid.'
+  });
+  await service.updateRelation('u1', relation.id, {
+    reviewStatus: 'reclassified',
+    type: 'historical_tension',
+    reviewNote: 'Context changed.'
+  });
+
+  const updated = await service.updateNote('u1', createdNote.id, {
+    title: 'renamed weak read'
+  });
+
+  assert(updated.visibleNotes.some(note => note.id === createdNote.id && note.title === 'renamed weak read'));
+  assert(updated.claims.some(claim => (
+    claim.id === bearishClaim.id
+    && claim.reviewStatus === 'analyst_confirmed'
+    && claim.reviewNote === 'Still valid.'
+  )));
+  assert(updated.relations.some(item => (
+    item.id === relation.id
+    && item.reviewStatus === 'reclassified'
+    && item.reviewNote === 'Context changed.'
+  )));
+});
+
+test('only a note author can edit the note body or metadata', async () => {
+  const { service } = buildService();
+
+  await assert.rejects(
+    () => service.updateNote('u3', 'n1', { title: 'PM rewrite' }),
+    /Only the note author can edit/
+  );
+});
+
+test('note drafts persist per viewer and can be cleared', async () => {
+  const { repository, service } = buildService();
+
+  const saved = await service.upsertNoteDraft('u1', {
+    selectedNoteId: 'n1',
+    title: 'Recovered draft',
+    body: 'Nvidia draft evidence before save.',
+    visibility: 'private',
+    observedAt: '2026-05-07',
+    tickers: ['NVDA'],
+    manualThemes: ['AI infrastructure'],
+    kpis: ['demand']
+  });
+  assert.equal(saved.userId, 'u1');
+  assert.equal(saved.orgId, 'org1');
+
+  const freshService = createWorkspaceService(repository);
+  const draft = await freshService.getNoteDraft('u1');
+  assert.equal(draft?.title, 'Recovered draft');
+  assert.equal(draft?.selectedNoteId, 'n1');
+  assert.deepEqual(draft?.tickers, ['NVDA']);
+
+  await freshService.deleteNoteDraft('u1');
+  assert.equal(await freshService.getNoteDraft('u1'), undefined);
+});
+
 test('claim edits recompute relations and preserve review status', async () => {
   const { repository, service } = buildService();
   await service.materializeGraph('org1');
@@ -200,4 +351,63 @@ test('workspace export is permission-aware and import restores demo review state
     && item.reviewNote === 'Same theme, different read.'
   )));
   assert(targetRepository.auditEvents.some(event => event.action === 'workspace.imported'));
+});
+
+test('workspace export and import preserve dismissed relation decisions', async () => {
+  const source = buildService();
+  await source.service.materializeGraph('org1');
+  const pmSnapshot = await source.service.getWorkspace('u3');
+  const relation = pmSnapshot.relations.find(item => item.type === 'contradiction');
+  assert(relation);
+
+  await source.service.updateRelation('u3', relation.id, {
+    reviewStatus: 'dismissed' satisfies RelationReviewStatus,
+    reviewNote: 'Dismissed for restore regression.'
+  });
+
+  const exported = await source.service.exportWorkspace('u3');
+  assert(exported.reviewedRelations.some(item => item.id === relation.id && item.reviewStatus === 'dismissed'));
+
+  const targetRepository = createMemoryWorkspaceRepository();
+  targetRepository.seed({ organizationId: 'org2', users, notes: [] });
+  const targetService = createWorkspaceService(targetRepository);
+
+  const restored = await targetService.importWorkspace('u3', exported satisfies WorkspaceExport);
+
+  assert(!restored.relations.some(item => item.id === relation.id));
+  assert(targetRepository.relations.some(item => (
+    item.id === relation.id
+    && item.orgId === 'org2'
+    && item.reviewStatus === 'dismissed'
+    && item.reviewNote === 'Dismissed for restore regression.'
+  )));
+});
+
+test('workspace import does not apply reviewed relation state to pre-existing notes', async () => {
+  const targetRepository = createMemoryWorkspaceRepository();
+  targetRepository.seed({ organizationId: 'org1', users, notes });
+  const targetService = createWorkspaceService(targetRepository);
+  await targetService.materializeGraph('org1');
+  const existingSnapshot = await targetService.getWorkspace('u3');
+  const existingRelation = existingSnapshot.relations.find(item => item.type === 'contradiction');
+  assert(existingRelation);
+
+  const maliciousExport: WorkspaceExport = {
+    kind: 'mycelium.workspace.v1',
+    exportedAt: new Date().toISOString(),
+    snapshot: existingSnapshot,
+    reviewedRelations: [{
+      ...existingRelation,
+      reviewStatus: 'dismissed',
+      reviewNote: 'Should not apply to existing workspace.'
+    }]
+  };
+
+  await targetService.importWorkspace('u3', maliciousExport);
+
+  assert(targetRepository.relations.some(item => (
+    item.id === existingRelation.id
+    && item.reviewStatus === 'open'
+    && item.reviewNote === undefined
+  )));
 });

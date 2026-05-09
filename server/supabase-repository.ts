@@ -4,6 +4,8 @@ import type { FastifyRequest } from 'fastify';
 import type { Claim, RelationType, User } from '../src/engine';
 import type {
   AuditEvent,
+  NoteDraft,
+  NoteRevision,
   WorkspaceClaim,
   WorkspaceNote,
   WorkspaceRelation,
@@ -70,6 +72,42 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
     async insertNote(note) {
       const teamId = note.teamId ?? await findTeamId(client, note.orgId, note.team);
       const { error } = await client.from('notes').insert(mapNoteToRow({ ...note, teamId }));
+      if (error) throw error;
+    },
+    async updateNote(note) {
+      const { error } = await client.from('notes').update(mapNoteToRow(note)).eq('id', note.id);
+      if (error) throw error;
+    },
+    async insertNoteRevision(revision) {
+      const { error } = await client.from('note_revisions').insert(mapNoteRevisionToRow(revision));
+      if (error) throw error;
+    },
+    async listNoteRevisions(orgId, noteId) {
+      const { data, error } = await client
+        .from('note_revisions')
+        .select('*')
+        .eq('org_id', orgId)
+        .eq('note_id', noteId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapNoteRevisionFromRow);
+    },
+    async getNoteDraft(orgId, userId) {
+      const { data, error } = await client
+        .from('note_drafts')
+        .select('*')
+        .eq('org_id', orgId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) throw error;
+      return data ? mapNoteDraftFromRow(data) : undefined;
+    },
+    async upsertNoteDraft(draft) {
+      const { error } = await client.from('note_drafts').upsert(mapNoteDraftToRow(draft), { onConflict: 'org_id,user_id' });
+      if (error) throw error;
+    },
+    async deleteNoteDraft(orgId, userId) {
+      const { error } = await client.from('note_drafts').delete().eq('org_id', orgId).eq('user_id', userId);
       if (error) throw error;
     },
     async listClaims(orgId) {
@@ -207,6 +245,78 @@ function mapNoteToRow(note: WorkspaceNote) {
     manual_themes: note.manualThemes ?? [],
     kpis: note.kpis ?? [],
     processing_status: 'processed'
+  };
+}
+
+function mapNoteRevisionFromRow(row: Record<string, any>): NoteRevision {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    noteId: row.note_id,
+    editorId: row.editor_id,
+    editorName: row.editor_name,
+    previousTitle: row.previous_title,
+    previousBody: row.previous_body,
+    previousVisibility: row.previous_visibility,
+    previousSourceType: row.previous_source_type,
+    previousObservedAt: row.previous_observed_at,
+    previousTickers: row.previous_tickers ?? [],
+    previousManualThemes: row.previous_manual_themes ?? [],
+    previousKpis: row.previous_kpis ?? [],
+    changedFields: row.changed_fields ?? [],
+    createdAt: row.created_at
+  };
+}
+
+function mapNoteRevisionToRow(revision: NoteRevision) {
+  return {
+    id: revision.id.startsWith('revision-') ? undefined : revision.id,
+    org_id: revision.orgId,
+    note_id: revision.noteId,
+    editor_id: revision.editorId,
+    editor_name: revision.editorName,
+    previous_title: revision.previousTitle,
+    previous_body: revision.previousBody,
+    previous_visibility: revision.previousVisibility,
+    previous_source_type: revision.previousSourceType,
+    previous_observed_at: revision.previousObservedAt,
+    previous_tickers: revision.previousTickers,
+    previous_manual_themes: revision.previousManualThemes,
+    previous_kpis: revision.previousKpis,
+    changed_fields: revision.changedFields,
+    created_at: revision.createdAt
+  };
+}
+
+function mapNoteDraftFromRow(row: Record<string, any>): NoteDraft {
+  return {
+    orgId: row.org_id,
+    userId: row.user_id,
+    selectedNoteId: row.selected_note_id,
+    title: row.title,
+    body: row.body,
+    visibility: row.visibility,
+    observedAt: row.observed_at,
+    tickers: row.tickers ?? [],
+    manualThemes: row.manual_themes ?? [],
+    kpis: row.kpis ?? [],
+    updatedAt: row.updated_at
+  };
+}
+
+function mapNoteDraftToRow(draft: NoteDraft) {
+  return {
+    org_id: draft.orgId,
+    user_id: draft.userId,
+    selected_note_id: draft.selectedNoteId,
+    title: draft.title,
+    body: draft.body,
+    visibility: draft.visibility,
+    observed_at: draft.observedAt,
+    tickers: draft.tickers,
+    manual_themes: draft.manualThemes,
+    kpis: draft.kpis,
+    updated_at: draft.updatedAt
   };
 }
 

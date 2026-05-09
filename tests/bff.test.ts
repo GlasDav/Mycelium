@@ -105,6 +105,133 @@ test('BFF creates notes and patches claim/relation reviews', async () => {
   }));
 });
 
+test('BFF updates notes, exposes history, and reloads persisted review state', async () => {
+  const { app } = buildTestApp();
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/notes',
+    headers: { authorization: 'Bearer u1' },
+    payload: {
+      title: 'weak follow-up',
+      body: 'Nvidia demand is weak as GPU supply slows.',
+      visibility: 'team',
+      observedAt: '2026-05-02'
+    }
+  });
+  assert.equal(created.statusCode, 200);
+  const createdBody = created.json();
+  const createdNote = createdBody.visibleNotes.find((item: { title: string }) => item.title === 'weak follow-up');
+  const claim = createdBody.claims.find((item: { noteId: string }) => item.noteId === createdNote.id);
+  const relation = createdBody.relations.find((item: { id: string }) => item.id);
+  assert(createdNote);
+  assert(claim);
+  assert(relation);
+
+  await app.inject({
+    method: 'PATCH',
+    url: `/api/claims/${encodeURIComponent(claim.id)}`,
+    headers: { authorization: 'Bearer u1' },
+    payload: { reviewStatus: 'analyst_confirmed', reviewNote: 'Confirmed before rename.' }
+  });
+  await app.inject({
+    method: 'PATCH',
+    url: `/api/relations/${encodeURIComponent(relation.id)}`,
+    headers: { authorization: 'Bearer u1' },
+    payload: { reviewStatus: 'reclassified', type: 'historical_tension', reviewNote: 'Rename should preserve this.' }
+  });
+
+  const forbidden = await app.inject({
+    method: 'PATCH',
+    url: `/api/notes/${encodeURIComponent(createdNote.id)}`,
+    headers: { authorization: 'Bearer u2' },
+    payload: { title: 'PM rewrite' }
+  });
+  assert.equal(forbidden.statusCode, 403);
+
+  const updated = await app.inject({
+    method: 'PATCH',
+    url: `/api/notes/${encodeURIComponent(createdNote.id)}`,
+    headers: { authorization: 'Bearer u1' },
+    payload: { title: 'renamed weak follow-up' }
+  });
+  assert.equal(updated.statusCode, 200);
+
+  const history = await app.inject({
+    method: 'GET',
+    url: `/api/notes/${encodeURIComponent(createdNote.id)}/history`,
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(history.statusCode, 200);
+  assert.equal(history.json().history[0].previousTitle, 'weak follow-up');
+
+  const reloaded = await app.inject({
+    method: 'GET',
+    url: '/api/workspace',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(reloaded.statusCode, 200);
+  const reloadBody = reloaded.json();
+  assert(reloadBody.visibleNotes.some((item: { id: string; title: string }) => item.id === createdNote.id && item.title === 'renamed weak follow-up'));
+  assert(reloadBody.claims.some((item: { id: string; reviewStatus: string; reviewNote: string }) => item.id === claim.id && item.reviewStatus === 'analyst_confirmed' && item.reviewNote === 'Confirmed before rename.'));
+  assert(reloadBody.relations.some((item: { id: string; reviewStatus: string; reviewNote: string }) => item.id === relation.id && item.reviewStatus === 'reclassified' && item.reviewNote === 'Rename should preserve this.'));
+});
+
+test('BFF note draft routes persist and clear the recoverable workbench draft', async () => {
+  const { app } = buildTestApp();
+
+  const unauthorized = await app.inject({ method: 'GET', url: '/api/note-draft' });
+  assert.equal(unauthorized.statusCode, 401);
+
+  const empty = await app.inject({
+    method: 'GET',
+    url: '/api/note-draft',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(empty.statusCode, 200);
+  assert.equal(empty.json().draft, null);
+
+  const saved = await app.inject({
+    method: 'PUT',
+    url: '/api/note-draft',
+    headers: { authorization: 'Bearer u1' },
+    payload: {
+      selectedNoteId: 'n1',
+      title: 'Draft title',
+      body: 'Draft note body',
+      visibility: 'private',
+      observedAt: '2026-05-07',
+      tickers: ['NVDA'],
+      manualThemes: ['AI infrastructure'],
+      kpis: ['demand']
+    }
+  });
+  assert.equal(saved.statusCode, 200);
+  assert.equal(saved.json().draft.title, 'Draft title');
+
+  const loaded = await app.inject({
+    method: 'GET',
+    url: '/api/note-draft',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(loaded.statusCode, 200);
+  assert.deepEqual(loaded.json().draft.tickers, ['NVDA']);
+
+  const deleted = await app.inject({
+    method: 'DELETE',
+    url: '/api/note-draft',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(deleted.statusCode, 200);
+
+  const afterDelete = await app.inject({
+    method: 'GET',
+    url: '/api/note-draft',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(afterDelete.json().draft, null);
+});
+
 test('BFF exports and imports workspace JSON with auth required', async () => {
   const source = buildTestApp();
 

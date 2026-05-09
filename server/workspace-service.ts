@@ -61,6 +61,38 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export interface NoteRevision {
+  id: string;
+  orgId: string;
+  noteId: string;
+  editorId: string;
+  editorName: string;
+  previousTitle: string;
+  previousBody: string;
+  previousVisibility: Visibility;
+  previousSourceType: string;
+  previousObservedAt?: string;
+  previousTickers: string[];
+  previousManualThemes: string[];
+  previousKpis: string[];
+  changedFields: string[];
+  createdAt: string;
+}
+
+export interface NoteDraft {
+  orgId: string;
+  userId: string;
+  selectedNoteId?: string;
+  title: string;
+  body: string;
+  visibility: Visibility;
+  observedAt?: string;
+  tickers: string[];
+  manualThemes: string[];
+  kpis: string[];
+  updatedAt: string;
+}
+
 export interface WorkspaceSummary {
   subject: string;
   stance: string;
@@ -95,6 +127,7 @@ export interface WorkspaceExport {
   kind: 'mycelium.workspace.v1';
   exportedAt: string;
   snapshot: WorkspaceSnapshot;
+  reviewedRelations: WorkspaceRelation[];
 }
 
 export interface CreateNoteInput {
@@ -106,6 +139,27 @@ export interface CreateNoteInput {
   appliesToStart?: string;
   appliesToEnd?: string;
   horizon?: Horizon;
+  tickers?: string[];
+  manualThemes?: string[];
+  kpis?: string[];
+}
+
+export interface UpdateNoteInput {
+  title?: string;
+  body?: string;
+  visibility?: Visibility;
+  observedAt?: string;
+  tickers?: string[];
+  manualThemes?: string[];
+  kpis?: string[];
+}
+
+export interface UpsertNoteDraftInput {
+  selectedNoteId?: string;
+  title?: string;
+  body?: string;
+  visibility?: Visibility;
+  observedAt?: string;
   tickers?: string[];
   manualThemes?: string[];
   kpis?: string[];
@@ -139,6 +193,12 @@ export interface WorkspaceRepository {
   listUsers(orgId: string): Promise<WorkspaceUser[]>;
   listNotes(orgId: string): Promise<WorkspaceNote[]>;
   insertNote(note: WorkspaceNote): Promise<void>;
+  updateNote(note: WorkspaceNote): Promise<void>;
+  insertNoteRevision(revision: NoteRevision): Promise<void>;
+  listNoteRevisions(orgId: string, noteId: string): Promise<NoteRevision[]>;
+  getNoteDraft(orgId: string, userId: string): Promise<NoteDraft | undefined>;
+  upsertNoteDraft(draft: NoteDraft): Promise<void>;
+  deleteNoteDraft(orgId: string, userId: string): Promise<void>;
   listClaims(orgId: string): Promise<WorkspaceClaim[]>;
   replaceClaims(orgId: string, claims: WorkspaceClaim[]): Promise<void>;
   updateClaim(claim: WorkspaceClaim): Promise<void>;
@@ -235,10 +295,13 @@ export function createWorkspaceService(
   }
 
   async function exportWorkspace(viewerId: string): Promise<WorkspaceExport> {
+    const viewer = await requireViewer(viewerId);
+    const snapshot = await getWorkspace(viewerId);
     return {
       kind: 'mycelium.workspace.v1',
       exportedAt: new Date().toISOString(),
-      snapshot: await getWorkspace(viewerId)
+      snapshot,
+      reviewedRelations: await listAccessibleRelations(viewer)
     };
   }
 
@@ -251,8 +314,8 @@ export function createWorkspaceService(
     const importedNoteIds = new Set<string>();
 
     for (const exportedNote of snapshot.visibleNotes) {
-      importedNoteIds.add(exportedNote.id);
       if (existingNoteIds.has(exportedNote.id)) continue;
+      importedNoteIds.add(exportedNote.id);
       const author = usersById.get(exportedNote.authorId) ?? viewer;
       await repository.insertNote({
         ...exportedNote,
@@ -270,13 +333,19 @@ export function createWorkspaceService(
 
     await materializeGraph(viewer.orgId, viewer.id);
     await restoreImportedClaimState(viewer, snapshot, importedNoteIds);
-    await restoreImportedRelationState(viewer, snapshot);
+    await restoreImportedRelationState(viewer, input.reviewedRelations ?? snapshot.relations, importedNoteIds);
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'workspace.imported', 'organization', viewer.orgId, {
       noteCount: importedNoteIds.size,
       claimCount: snapshot.claims.length,
       relationCount: snapshot.relations.length
     }));
     return getWorkspace(viewerId);
+  }
+
+  async function listAccessibleRelations(viewer: WorkspaceUser): Promise<WorkspaceRelation[]> {
+    return (await repository.listRelations(viewer.orgId)).filter(relation => (
+      canAccess(viewer, relation.a) && canAccess(viewer, relation.b)
+    ));
   }
 
   async function createNote(viewerId: string, input: CreateNoteInput): Promise<WorkspaceSnapshot> {
@@ -314,6 +383,135 @@ export function createWorkspaceService(
     }));
     await materializeGraph(viewer.orgId, viewer.id);
     return getWorkspace(viewerId);
+  }
+
+  async function updateNote(viewerId: string, noteId: string, input: UpdateNoteInput): Promise<WorkspaceSnapshot> {
+    const viewer = await requireViewer(viewerId);
+    const note = (await repository.listNotes(viewer.orgId)).find(item => item.id === noteId);
+    if (!note || !canAccess(viewer, note)) throw new Error(`Note ${noteId} is not accessible`);
+    if (note.authorId !== viewer.id) throw new Error('Only the note author can edit this note');
+
+    const changedFields = noteChangedFields(note, input);
+    if (!changedFields.length) return getWorkspace(viewerId);
+
+    const now = new Date().toISOString();
+    await repository.insertNoteRevision({
+      id: `revision-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      orgId: viewer.orgId,
+      noteId: note.id,
+      editorId: viewer.id,
+      editorName: viewer.name,
+      previousTitle: note.title,
+      previousBody: note.body,
+      previousVisibility: note.visibility,
+      previousSourceType: note.sourceType,
+      previousObservedAt: note.observedAt,
+      previousTickers: note.tickers ?? [],
+      previousManualThemes: note.manualThemes ?? [],
+      previousKpis: note.kpis ?? [],
+      changedFields,
+      createdAt: now
+    });
+
+    const updated: WorkspaceNote = {
+      ...note,
+      title: input.title?.trim() || note.title,
+      body: Object.prototype.hasOwnProperty.call(input, 'body') ? input.body ?? '' : note.body,
+      visibility: input.visibility ?? note.visibility,
+      observedAt: Object.prototype.hasOwnProperty.call(input, 'observedAt') ? input.observedAt : note.observedAt,
+      tickers: input.tickers ?? note.tickers ?? [],
+      manualThemes: input.manualThemes ?? note.manualThemes ?? [],
+      kpis: input.kpis ?? note.kpis ?? [],
+      updatedAt: now
+    };
+
+    await repository.updateNote(updated);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.revision.created', 'note', note.id, {
+      changedFields
+    }));
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.updated', 'note', note.id, {
+      changedFields
+    }));
+
+    if (requiresDerivedReviewReset(changedFields)) {
+      await resetDerivedReviewsForNote(viewer.orgId, note.id, now);
+      await materializeGraph(viewer.orgId, viewer.id);
+    }
+
+    return getWorkspace(viewerId);
+  }
+
+  async function getNoteDraft(viewerId: string): Promise<NoteDraft | undefined> {
+    const viewer = await requireViewer(viewerId);
+    return repository.getNoteDraft(viewer.orgId, viewer.id);
+  }
+
+  async function upsertNoteDraft(viewerId: string, input: UpsertNoteDraftInput): Promise<NoteDraft> {
+    const viewer = await requireViewer(viewerId);
+    const now = new Date().toISOString();
+    const draft: NoteDraft = {
+      orgId: viewer.orgId,
+      userId: viewer.id,
+      selectedNoteId: input.selectedNoteId || undefined,
+      title: input.title ?? '',
+      body: input.body ?? '',
+      visibility: input.visibility ?? 'team',
+      observedAt: input.observedAt,
+      tickers: input.tickers ?? [],
+      manualThemes: input.manualThemes ?? [],
+      kpis: input.kpis ?? [],
+      updatedAt: now
+    };
+    await repository.upsertNoteDraft(draft);
+    return draft;
+  }
+
+  async function deleteNoteDraft(viewerId: string): Promise<void> {
+    const viewer = await requireViewer(viewerId);
+    await repository.deleteNoteDraft(viewer.orgId, viewer.id);
+  }
+
+  async function listNoteHistory(viewerId: string, noteId: string): Promise<NoteRevision[]> {
+    const viewer = await requireViewer(viewerId);
+    const note = (await repository.listNotes(viewer.orgId)).find(item => item.id === noteId);
+    if (!note || !canAccess(viewer, note)) throw new Error(`Note ${noteId} is not accessible`);
+    return (await repository.listNoteRevisions(viewer.orgId, noteId)).filter(revision => {
+      return canAccess(viewer, {
+        visibility: revision.previousVisibility,
+        team: note.team,
+        authorId: note.authorId
+      });
+    });
+  }
+
+  async function resetDerivedReviewsForNote(orgId: string, noteId: string, updatedAt: string): Promise<void> {
+    const claims = await repository.listClaims(orgId);
+    const affectedClaimIds = new Set(claims.filter(claim => claim.noteId === noteId).map(claim => claim.id));
+    if (!affectedClaimIds.size) return;
+
+    await repository.replaceClaims(orgId, claims.map(claim => {
+      if (!affectedClaimIds.has(claim.id)) return claim;
+      return {
+        ...claim,
+        reviewStatus: 'machine',
+        reviewNote: undefined,
+        reviewerId: undefined,
+        updatedAt
+      };
+    }));
+
+    const relations = await repository.listRelations(orgId);
+    await repository.replaceRelations(orgId, relations.map(relation => {
+      if (!affectedClaimIds.has(relation.a.id) && !affectedClaimIds.has(relation.b.id)) return relation;
+      return {
+        ...relation,
+        type: relation.originalType,
+        reviewStatus: 'open',
+        reviewNote: undefined,
+        reviewerId: undefined,
+        updatedAt
+      };
+    }));
   }
 
   async function updateClaim(viewerId: string, claimId: string, input: UpdateClaimInput): Promise<WorkspaceSnapshot> {
@@ -410,12 +608,16 @@ export function createWorkspaceService(
     await materializeGraph(viewer.orgId, viewer.id);
   }
 
-  async function restoreImportedRelationState(viewer: WorkspaceUser, snapshot: WorkspaceSnapshot): Promise<void> {
-    const exportedRelations = new Map(snapshot.relations.map(relation => [relationPairKey(relation.a.id, relation.b.id), relation]));
+  async function restoreImportedRelationState(viewer: WorkspaceUser, relationsToRestore: WorkspaceRelation[], importedNoteIds: Set<string>): Promise<void> {
+    const exportedRelations = new Map(relationsToRestore
+      .filter(relation => importedNoteIds.has(relation.a.noteId) && importedNoteIds.has(relation.b.noteId))
+      .map(relation => [relationPairKey(relation.a.id, relation.b.id), relation]));
     if (!exportedRelations.size) return;
 
     const currentRelations = await repository.listRelations(viewer.orgId);
     const restoredRelations = currentRelations.map(relation => {
+      if (!importedNoteIds.has(relation.a.noteId) || !importedNoteIds.has(relation.b.noteId)) return relation;
+      if (!canAccess(viewer, relation.a) || !canAccess(viewer, relation.b)) return relation;
       const exportedRelation = exportedRelations.get(relationPairKey(relation.a.id, relation.b.id));
       if (!exportedRelation) return relation;
       return {
@@ -433,7 +635,20 @@ export function createWorkspaceService(
     await repository.replaceRelations(viewer.orgId, restoredRelations);
   }
 
-  return { materializeGraph, getWorkspace, exportWorkspace, importWorkspace, createNote, updateClaim, updateRelation };
+  return {
+    materializeGraph,
+    getWorkspace,
+    exportWorkspace,
+    importWorkspace,
+    createNote,
+    updateNote,
+    getNoteDraft,
+    upsertNoteDraft,
+    deleteNoteDraft,
+    listNoteHistory,
+    updateClaim,
+    updateRelation
+  };
 }
 
 function readWorkspaceExport(input: WorkspaceExport): WorkspaceExport {
@@ -443,6 +658,26 @@ function readWorkspaceExport(input: WorkspaceExport): WorkspaceExport {
   return input;
 }
 
+function noteChangedFields(note: WorkspaceNote, input: UpdateNoteInput): string[] {
+  const changed: string[] = [];
+  if (Object.prototype.hasOwnProperty.call(input, 'title') && (input.title?.trim() || note.title) !== note.title) changed.push('title');
+  if (Object.prototype.hasOwnProperty.call(input, 'body') && (input.body ?? '') !== note.body) changed.push('body');
+  if (Object.prototype.hasOwnProperty.call(input, 'visibility') && input.visibility !== note.visibility) changed.push('visibility');
+  if (Object.prototype.hasOwnProperty.call(input, 'observedAt') && input.observedAt !== note.observedAt) changed.push('observedAt');
+  if (Object.prototype.hasOwnProperty.call(input, 'tickers') && !sameStringArray(input.tickers ?? [], note.tickers ?? [])) changed.push('tickers');
+  if (Object.prototype.hasOwnProperty.call(input, 'manualThemes') && !sameStringArray(input.manualThemes ?? [], note.manualThemes ?? [])) changed.push('manualThemes');
+  if (Object.prototype.hasOwnProperty.call(input, 'kpis') && !sameStringArray(input.kpis ?? [], note.kpis ?? [])) changed.push('kpis');
+  return changed;
+}
+
+function requiresDerivedReviewReset(changedFields: string[]): boolean {
+  return changedFields.some(field => field !== 'title');
+}
+
+function sameStringArray(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 export function createMemoryWorkspaceRepository() {
   class MemoryWorkspaceRepository implements WorkspaceRepository {
     users: WorkspaceUser[] = [];
@@ -450,6 +685,8 @@ export function createMemoryWorkspaceRepository() {
     claims: WorkspaceClaim[] = [];
     relations: WorkspaceRelation[] = [];
     auditEvents: AuditEvent[] = [];
+    noteRevisions: NoteRevision[] = [];
+    noteDrafts: NoteDraft[] = [];
 
     seed(input: { organizationId: string; users: User[]; notes: Note[] }) {
       this.users = input.users.map(user => ({ ...user, orgId: input.organizationId, email: `${slug(user.name)}@example.test` }));
@@ -468,12 +705,35 @@ export function createMemoryWorkspaceRepository() {
       this.claims = [];
       this.relations = [];
       this.auditEvents = [];
+      this.noteRevisions = [];
+      this.noteDrafts = [];
     }
 
     async getUser(userId: string) { return this.users.find(user => user.id === userId); }
     async listUsers(orgId: string) { return this.users.filter(user => user.orgId === orgId); }
     async listNotes(orgId: string) { return this.notes.filter(note => note.orgId === orgId); }
     async insertNote(note: WorkspaceNote) { this.notes.unshift(note); }
+    async updateNote(note: WorkspaceNote) {
+      this.notes = this.notes.map(item => item.id === note.id ? note : item);
+    }
+    async insertNoteRevision(revision: NoteRevision) {
+      this.noteRevisions.unshift(revision);
+    }
+    async listNoteRevisions(orgId: string, noteId: string) {
+      return this.noteRevisions.filter(revision => revision.orgId === orgId && revision.noteId === noteId);
+    }
+    async getNoteDraft(orgId: string, userId: string) {
+      return this.noteDrafts.find(draft => draft.orgId === orgId && draft.userId === userId);
+    }
+    async upsertNoteDraft(draft: NoteDraft) {
+      this.noteDrafts = [
+        draft,
+        ...this.noteDrafts.filter(item => item.orgId !== draft.orgId || item.userId !== draft.userId)
+      ];
+    }
+    async deleteNoteDraft(orgId: string, userId: string) {
+      this.noteDrafts = this.noteDrafts.filter(draft => draft.orgId !== orgId || draft.userId !== userId);
+    }
     async listClaims(orgId: string) { return this.claims.filter(claim => claim.orgId === orgId); }
     async replaceClaims(orgId: string, claims: WorkspaceClaim[]) {
       this.claims = [...this.claims.filter(claim => claim.orgId !== orgId), ...claims];

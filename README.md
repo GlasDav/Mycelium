@@ -74,14 +74,15 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
 - Left-rail page navigation separates claim review, relationship map, and a full-width note archive so each surface has its own workspace.
 - Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, plus search, sort, date, stock/ticker, theme, KPI, and visibility filters.
 - True note metadata for observed date, visibility, stocks/tickers, themes, and KPIs, persisted through the BFF and Supabase. Applies-to windows and horizon are inferred for extracted claims and edited during claim review rather than entered on the note form.
+- Server-backed recoverable workbench drafts, explicit saved-note editing, author-only note update enforcement, and read-only note revision history.
 - Supabase Auth-backed sign-in/sign-up flow with organization/profile/team bootstrap.
 - Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
 - Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, and can serve the built React app as one deployable Node service.
-- Authenticated workspace JSON export/import routes for demo restore workflows.
+- Authenticated workspace JSON export/import routes for demo restore workflows, including dismissed relation review decisions.
 - Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview.
 - Claim direction classification with citation snippets, approve/reject/edit review state, analyst review notes, and persisted relation review controls.
 - Temporal relationship detection across accessible notes, with dates explaining why an opposing read is a true contradiction vs a trend reversal.
@@ -128,7 +129,7 @@ PORT=5174
 
 The local Supabase config uses `55321`-series host ports instead of the default `5432x` range to avoid Windows/Docker reserved-port conflicts.
 
-The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes with stock/theme/KPI metadata arrays, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies.
+The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes with stock/theme/KPI metadata arrays, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies. The follow-up `supabase/migrations/202605090001_note_persistence_spine.sql` migration adds note drafts, note revision history, and author-only note update RLS.
 
 ### Run locally
 
@@ -159,13 +160,13 @@ This runs a production build/typecheck and the full deterministic test suite.
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
 - `src/engine.ts` — deterministic extraction, temporal relation detection, synthesis, and alerts.
-- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, workspace JSON export/import, claim/relation review behavior, and extraction provider boundary.
-- `server/app.ts` — Fastify BFF routes for workspace, workspace export/import, notes, claim review, relation review, audit events, and auth bootstrap.
+- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, workspace JSON export/import, note editing/history/drafts, claim/relation review behavior, and extraction provider boundary.
+- `server/app.ts` — Fastify BFF routes for workspace, workspace export/import, notes, note draft recovery, note history, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
-- `supabase/migrations/202605060001_production_foundation.sql` — production-shaped Postgres schema and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, observed/visibility controls, stock/theme/KPI metadata, notes sidebar, page-level review/map/archive navigation, slash-command markdown editing, live extraction, claim editing, relationship review, relation detail drawer, alerts, and archive.
+- `supabase/migrations/202605060001_production_foundation.sql` and `supabase/migrations/202605090001_note_persistence_spine.sql` — production-shaped Postgres schema, persistence spine tables, and RLS policies.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/visibility controls, stock/theme/KPI metadata, notes sidebar, page-level review/map/archive navigation, slash-command markdown editing, live extraction, claim editing, relationship review, relation detail drawer, alerts, and archive.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, workspace export/import, note filtering, page layout, markdown commands, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, direct temporal helpers, schema contract, workspace service behavior, note update/draft/history persistence, workspace export/import, note filtering, page layout, markdown commands, and BFF routes.
 
 - `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
 
@@ -173,6 +174,6 @@ This runs a production build/typecheck and the full deterministic test suite.
 
 - Extraction is deterministic and transparent rather than LLM-backed. The interfaces are small enough to replace with model providers later.
 - Supabase local development requires Docker Desktop to be running.
-- The first extraction provider remains deterministic and transparent. The server-side provider interface is ready for later model-backed extraction without changing UI or persistence contracts.
+- The first extraction provider remains deterministic and transparent. Evidence-bearing saved-note edits reset derived claim/relation review state so stale analyst decisions do not silently attach to changed evidence.
 - The current automated RLS test is a migration/schema contract test. Run `npm run supabase:start` and `npm run supabase:db:reset` in an environment with Docker Desktop running for live Supabase migration verification.
 - Note import is text paste only; PDF/DOCX parsing and RMS integrations are deferred.
