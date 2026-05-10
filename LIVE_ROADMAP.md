@@ -41,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 110 tests.
+- [x] Validation passing: build + 123 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -87,6 +87,15 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - pending signup invites without email delivery,
   - canonical Personal/Team/Organisation note location and access scope,
   - author-only personal notes that contribute only to the author's private graph.
+- [x] Deterministic engine stage split added behind the stable `src/engine.ts` facade:
+  - focused modules now cover types, lexicons, access, temporal helpers, entity extraction, claim extraction, relation candidates/classification, synthesis, alerts, and pipeline orchestration,
+  - existing app/server/test imports continue to use the public facade.
+- [x] Candidate retrieval abstraction added:
+  - `detectRelations` now accepts an injectable candidate retriever before temporal classification,
+  - the default deterministic retriever preserves current relation candidate selection and output behavior.
+- [x] Conservative topic/KPI matching added:
+  - deterministic same-subject candidate matching now recognizes business-driver families beyond shared words,
+  - topic matching is internal and matching-only, with no claim KPI enrichment, schema changes, LLM calls, or vector search.
 
 ### Current MVP Validation
 
@@ -104,6 +113,9 @@ Expected result:
   - overlapping contradiction,
   - non-overlapping 12-month trend reversal,
   - stale evidence,
+  - table-driven temporal eval fixtures for contradiction/reversal/tension/corroboration/agreement/stale cases,
+  - deterministic and injected relation candidate retrieval,
+  - conservative topic/KPI candidate matching,
   - permission-aware temporal graph filtering,
   - migration/RLS schema contract including normalized entity links,
   - Fastify BFF route auth,
@@ -200,7 +212,7 @@ Goal: make the map the product’s “aha” moment.
 
 Goal: improve extraction/relation quality while keeping explainability.
 
-- [ ] Split deterministic engine into explicit stages/interfaces:
+- [x] Split deterministic engine into explicit stages/interfaces:
   - ingestion,
   - entity extraction,
   - claim extraction,
@@ -210,7 +222,7 @@ Goal: improve extraction/relation quality while keeping explainability.
   - synthesis,
   - alerting.
 - [x] Add unit tests around temporal helper functions directly.
-- [ ] Improve topic/KPI matching beyond shared words.
+- [x] Improve topic/KPI matching beyond shared words.
 - [ ] Add stock/security and industry ontology layer:
   - issuer/company aliases,
   - ticker/security identifiers,
@@ -225,10 +237,10 @@ Goal: improve extraction/relation quality while keeping explainability.
   - distinguish “person changed view over time” from “two people disagree.”
 - [ ] Add confidence scoring by extraction quality, source-person identity confidence, and relation evidence strength.
 
-Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Security-master providers, industry hierarchy, watchlist/portfolio membership, fuzzy source-person identity resolution, and identity-confidence workflows remain deferred.
-- [ ] Add candidate retrieval abstraction for future vector search/RAG.
+Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Conservative topic/KPI relation matching is internal to deterministic candidate selection and does not enrich claim metadata. Security-master providers, industry hierarchy, watchlist/portfolio membership, fuzzy source-person identity resolution, and identity-confidence workflows remain deferred.
+- [x] Add candidate retrieval abstraction for future vector search/RAG.
 - [ ] Add optional LLM extraction interface with deterministic fallback.
-- [ ] Add eval fixtures for known contradiction/reversal/stale examples.
+- [x] Add eval fixtures for known contradiction/reversal/stale examples.
 
 ### P4 — Backend + Security Foundation
 

@@ -19,6 +19,11 @@ import {
   type User
 } from '../src/engine';
 import { linkedEntity } from '../src/entity-links';
+import {
+  deterministicCandidateRetriever,
+  relationCandidates,
+  type CandidateRetriever
+} from '../src/engine/relation-candidates';
 
 const analyst: User = { id: 'a', name: 'Analyst', role: 'Analyst', team: 'Semis' };
 const pm: User = { id: 'p', name: 'PM', role: 'PM', team: 'Portfolio' };
@@ -269,6 +274,171 @@ test('detectRelations uses supplied as-of date when classifying stale evidence',
   const relation = detectRelations([oldBull, newBull], '2026-09-01')[0];
 
   assert.equal(relation.type, 'stale_evidence');
+});
+
+test('deterministic candidate retriever preserves current relation candidate selection', () => {
+  const claims = [
+    claim({ id: 'candidate-bull', noteId: 'candidate-bull-note', direction: 'positive' }),
+    claim({ id: 'candidate-bear', noteId: 'candidate-bear-note', direction: 'negative', text: 'Nvidia demand is weak as GPU supply slows.' }),
+    claim({ id: 'candidate-msft', noteId: 'candidate-msft-note', subject: 'Microsoft', text: 'Microsoft Azure demand is strong.', themes: ['Enterprise software'] })
+  ];
+
+  const legacyCandidates = relationCandidates(claims).map(candidate => ({
+    a: candidate.a.id,
+    b: candidate.b.id,
+    sharedWords: candidate.sharedWords,
+    sharedMetadata: candidate.sharedMetadata
+  }));
+  const retrievedCandidates = deterministicCandidateRetriever.retrieve(claims).map(candidate => ({
+    a: candidate.a.id,
+    b: candidate.b.id,
+    sharedWords: candidate.sharedWords,
+    sharedMetadata: candidate.sharedMetadata
+  }));
+
+  assert.deepEqual(retrievedCandidates, legacyCandidates);
+});
+
+test('relation candidates include same-subject topic-only business driver matches', () => {
+  const backlogBull = claim({
+    id: 'topic-backlog-bull',
+    noteId: 'topic-backlog-bull-note',
+    direction: 'positive',
+    text: 'Nvidia backlog expands.',
+    evidence: 'Nvidia backlog expands.',
+    themes: [],
+    tickers: [],
+    industries: [],
+    kpis: [],
+    watchlistTags: []
+  });
+  const cancellationsBear = claim({
+    id: 'topic-cancellations-bear',
+    noteId: 'topic-cancellations-bear-note',
+    direction: 'negative',
+    text: 'Nvidia cancellations rise.',
+    evidence: 'Nvidia cancellations rise.',
+    themes: [],
+    tickers: [],
+    industries: [],
+    kpis: [],
+    watchlistTags: []
+  });
+
+  const [candidate] = relationCandidates([backlogBull, cancellationsBear]);
+
+  assert(candidate);
+  assert(candidate.sharedWords < 2);
+  assert.equal(candidate.sharedMetadata, 0);
+  assert.deepEqual(candidate.sharedTopicFamilies, ['demand_orders']);
+  assert.equal(candidate.topicScore, 2);
+  assert.equal(candidate.classificationScore, candidate.sharedWords + candidate.sharedMetadata + candidate.topicScore);
+});
+
+test('topic-only candidates flow through temporal relation classification', () => {
+  const backlogBull = claim({
+    id: 'topic-relation-backlog-bull',
+    noteId: 'topic-relation-backlog-bull-note',
+    direction: 'positive',
+    text: 'Nvidia backlog expands.',
+    evidence: 'Nvidia backlog expands.',
+    themes: [],
+    tickers: [],
+    industries: [],
+    kpis: [],
+    watchlistTags: []
+  });
+  const cancellationsBear = claim({
+    id: 'topic-relation-cancellations-bear',
+    noteId: 'topic-relation-cancellations-bear-note',
+    direction: 'negative',
+    text: 'Nvidia cancellations rise.',
+    evidence: 'Nvidia cancellations rise.',
+    themes: [],
+    tickers: [],
+    industries: [],
+    kpis: [],
+    watchlistTags: []
+  });
+
+  const [relation] = detectRelations([backlogBull, cancellationsBear], '2026-05-01');
+
+  assert.equal(relation.type, 'contradiction');
+  assert.equal(relation.overlapDays, 120);
+});
+
+test('legacy relation candidates keep their current classification score input', () => {
+  const legacyBull = claim({
+    id: 'legacy-score-bull',
+    noteId: 'legacy-score-bull-note',
+    direction: 'positive'
+  });
+  const legacyBear = claim({
+    id: 'legacy-score-bear',
+    noteId: 'legacy-score-bear-note',
+    direction: 'negative',
+    text: 'Nvidia demand is weak as GPU supply slows.',
+    evidence: 'Nvidia demand is weak as GPU supply slows.'
+  });
+
+  const [candidate] = relationCandidates([legacyBull, legacyBear]);
+
+  assert(candidate);
+  assert.equal(candidate.classificationScore, candidate.sharedWords + candidate.sharedMetadata);
+});
+
+test('topic matching does not enrich extracted KPI metadata', () => {
+  const note: Note = {
+    ...base,
+    id: 'topic-metadata',
+    title: 'topic metadata',
+    body: 'Nvidia backlog faces cancellations pressure.'
+  };
+
+  const [extracted] = extractClaims(note, '2026-05-01');
+
+  assert(extracted);
+  assert(!extracted.kpis?.includes('backlog'));
+  assert(!extracted.kpis?.includes('cancellations'));
+});
+
+test('detectRelations accepts an injected candidate retriever before classifying candidates', () => {
+  const lowKeywordBull = claim({
+    id: 'forced-bull',
+    noteId: 'forced-bull-note',
+    direction: 'positive',
+    text: 'Nvidia thesis brightens.',
+    evidence: 'Nvidia thesis brightens.',
+    themes: [],
+    tickers: [],
+    industries: [],
+    kpis: [],
+    watchlistTags: []
+  });
+  const lowKeywordBear = claim({
+    id: 'forced-bear',
+    noteId: 'forced-bear-note',
+    direction: 'negative',
+    text: 'Nvidia diligence worsens.',
+    evidence: 'Nvidia diligence worsens.',
+    themes: [],
+    tickers: [],
+    industries: [],
+    kpis: [],
+    watchlistTags: []
+  });
+  const retriever: CandidateRetriever = {
+    retrieve(claims) {
+      assert.deepEqual(claims.map(item => item.id), ['forced-bull', 'forced-bear']);
+      return [{ a: lowKeywordBull, b: lowKeywordBear, sharedWords: 0, sharedMetadata: 0 }];
+    }
+  };
+
+  assert.equal(detectRelations([lowKeywordBull, lowKeywordBear], '2026-05-01').length, 0);
+  const [relation] = detectRelations([lowKeywordBull, lowKeywordBear], '2026-05-01', retriever);
+
+  assert.equal(relation.type, 'contradiction');
+  assert.equal(relation.score, 0.76);
 });
 
 test('relations expose source-person context without changing temporal relation types', () => {
