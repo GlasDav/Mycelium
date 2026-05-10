@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config as loadDotenv } from 'dotenv';
 import type { FastifyRequest } from 'fastify';
-import type { Claim, RelationType, User } from '../src/engine';
+import { accessScopeFromVisibility, type Claim, type RelationType, type TeamStatus, type User } from '../src/engine';
 import {
   legacyArraysToLinkedEntities,
   mergeLinkedEntities,
@@ -11,6 +11,8 @@ import {
 } from '../src/entity-links';
 import type {
   AuditEvent,
+  OrganizationInvite,
+  OrganizationTeam,
   NoteDraft,
   NoteRevision,
   WorkspaceClaim,
@@ -60,16 +62,69 @@ export function createSupabaseClients(config: SupabaseServerConfig) {
 
 export function createSupabaseWorkspaceRepository(client: SupabaseClient): WorkspaceRepository {
   return {
+    async getOrganization(orgId) {
+      const { data, error } = await client.from('organizations').select('*').eq('id', orgId).maybeSingle();
+      if (error) throw error;
+      return data ? { id: data.id, name: data.name, domain: data.domain } : undefined;
+    },
     async getUser(userId) {
       const { data, error } = await client.from('profiles').select('*').eq('id', userId).maybeSingle();
       if (error) throw error;
       if (!data) return undefined;
       return hydrateUser(client, data);
     },
+    async updateUser(user) {
+      const { error } = await client.from('profiles').update({
+        role: user.role,
+        org_role: user.orgRole,
+        status: user.status,
+        primary_team_id: user.primaryTeamId ?? null,
+        updated_at: new Date().toISOString()
+      }).eq('id', user.id);
+      if (error) throw error;
+    },
     async listUsers(orgId) {
       const { data, error } = await client.from('profiles').select('*').eq('org_id', orgId);
       if (error) throw error;
       return Promise.all((data ?? []).map(row => hydrateUser(client, row)));
+    },
+    async listTeams(orgId) {
+      const { data, error } = await client.from('teams').select('*').eq('org_id', orgId).order('name');
+      if (error) throw error;
+      return (data ?? []).map(mapTeamFromRow);
+    },
+    async insertTeam(team) {
+      const { error } = await client.from('teams').insert(mapTeamToRow(team));
+      if (error) throw error;
+    },
+    async updateTeam(team) {
+      const { error } = await client.from('teams').update(mapTeamToRow(team)).eq('id', team.id);
+      if (error) throw error;
+    },
+    async replaceTeamMemberships(orgId, userId, teamIds) {
+      const { error: deleteError } = await client.from('team_memberships').delete().eq('org_id', orgId).eq('user_id', userId);
+      if (deleteError) throw deleteError;
+      if (!teamIds.length) return;
+      const { error } = await client.from('team_memberships').insert(teamIds.map(teamId => ({
+        org_id: orgId,
+        team_id: teamId,
+        user_id: userId,
+        role: 'member'
+      })));
+      if (error) throw error;
+    },
+    async listInvites(orgId) {
+      const { data, error } = await client.from('organization_invites').select('*').eq('org_id', orgId).order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapInviteFromRow);
+    },
+    async insertInvite(invite) {
+      const { error } = await client.from('organization_invites').insert(mapInviteToRow(invite));
+      if (error) throw error;
+    },
+    async updateInvite(invite) {
+      const { error } = await client.from('organization_invites').update(mapInviteToRow(invite)).eq('id', invite.id);
+      if (error) throw error;
     },
     async listNotes(orgId) {
       const [notesResult, noteLinks] = await Promise.all([
@@ -80,7 +135,7 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
       return (notesResult.data ?? []).map(row => mapNoteFromRow(row, noteLinks.get(row.id)));
     },
     async insertNote(note) {
-      const teamId = note.teamId ?? await findTeamId(client, note.orgId, note.team);
+      const teamId = note.accessScope === 'team' ? note.teamId ?? await findTeamId(client, note.orgId, note.team ?? '') : undefined;
       const { error } = await client.from('notes').insert(mapNoteToRow({ ...note, teamId }));
       if (error) throw error;
       await syncEntityLinks(client, note.orgId, 'note', note.id, note.linkedEntities);
@@ -131,7 +186,10 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
       return (claimsResult.data ?? []).map(row => mapClaimFromRow(row, claimLinks.get(row.id)));
     },
     async replaceClaims(orgId, claims) {
-      const rows = await Promise.all(claims.map(async claim => mapClaimToRow({ ...claim, teamId: claim.teamId ?? await findTeamId(client, claim.orgId, claim.team) })));
+      const rows = await Promise.all(claims.map(async claim => mapClaimToRow({
+        ...claim,
+        teamId: claim.accessScope === 'team' ? claim.teamId ?? await findTeamId(client, claim.orgId, claim.team ?? '') : undefined
+      })));
       if (rows.length) {
         const { error } = await client.from('claims').upsert(rows, { onConflict: 'id' });
         if (error) throw error;
@@ -186,20 +244,88 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
 async function hydrateUser(client: SupabaseClient, profile: Record<string, any>): Promise<WorkspaceUser> {
   const { data } = await client
     .from('team_memberships')
-    .select('team_id, teams(name)')
+    .select('team_id, role, teams(name,status)')
     .eq('user_id', profile.id)
-    .limit(1)
-    .maybeSingle();
-  const team = data?.teams as { name?: string } | { name?: string }[] | undefined;
-  const teamName = team && !Array.isArray(team) && team.name ? team.name : 'Research';
+    .order('created_at', { ascending: true });
+  const memberships = (data ?? []).map((row: Record<string, any>) => {
+    const team = Array.isArray(row.teams) ? row.teams[0] : row.teams;
+    return {
+      teamId: row.team_id,
+      teamName: team?.name ?? 'Research',
+      role: row.role ?? 'member',
+      status: (team?.status ?? 'active') as TeamStatus
+    };
+  });
+  const primaryTeamId = profile.primary_team_id ?? memberships[0]?.teamId;
+  const primaryTeam = memberships.find(team => team.teamId === primaryTeamId) ?? memberships[0];
   return {
     id: profile.id,
     orgId: profile.org_id,
     email: profile.email,
     name: profile.name,
     role: profile.role as User['role'],
-    team: teamName,
-    teamId: data?.team_id
+    orgRole: profile.org_role ?? 'member',
+    status: profile.status ?? 'active',
+    team: primaryTeam?.teamName ?? 'Research',
+    teamId: primaryTeam?.teamId,
+    primaryTeamId,
+    teamMemberships: memberships
+  };
+}
+
+function mapTeamFromRow(row: Record<string, any>): OrganizationTeam {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    name: row.name,
+    sectorFocus: row.sector_focus,
+    defaultPermissions: row.default_permissions,
+    status: row.status ?? 'active',
+    createdAt: row.created_at
+  };
+}
+
+function mapTeamToRow(team: OrganizationTeam) {
+  return {
+    id: team.id,
+    org_id: team.orgId,
+    name: team.name,
+    sector_focus: team.sectorFocus,
+    default_permissions: team.defaultPermissions ?? 'team',
+    status: team.status,
+    created_at: team.createdAt
+  };
+}
+
+function mapInviteFromRow(row: Record<string, any>): OrganizationInvite {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    email: row.email,
+    role: row.role,
+    orgRole: row.org_role,
+    teamIds: row.team_ids ?? [],
+    status: row.status,
+    invitedBy: row.invited_by,
+    createdAt: row.created_at,
+    acceptedAt: row.accepted_at,
+    cancelledAt: row.cancelled_at
+  };
+}
+
+function mapInviteToRow(invite: OrganizationInvite) {
+  return {
+    id: invite.id,
+    org_id: invite.orgId,
+    email: invite.email,
+    role: invite.role,
+    org_role: invite.orgRole,
+    team_ids: invite.teamIds,
+    status: invite.status,
+    invited_by: invite.invitedBy,
+    created_at: invite.createdAt,
+    accepted_at: invite.acceptedAt,
+    cancelled_at: invite.cancelledAt
   };
 }
 
@@ -372,6 +498,7 @@ function mapNoteFromRow(row: Record<string, any>, linkedEntities: LinkedEntity[]
     team: row.team_name,
     teamId: row.team_id,
     visibility: row.visibility,
+    accessScope: row.access_scope ?? accessScopeFromVisibility(row.visibility),
     sourceType: row.source_type,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -396,6 +523,7 @@ function mapNoteToRow(note: WorkspaceNote) {
     title: note.title,
     body: note.body,
     visibility: note.visibility,
+    access_scope: note.accessScope,
     source_type: note.sourceType,
     created_at: note.createdAt,
     updated_at: note.updatedAt,
@@ -469,6 +597,8 @@ function mapNoteDraftFromRow(row: Record<string, any>): NoteDraft {
     title: row.title,
     body: row.body,
     visibility: row.visibility,
+    accessScope: row.access_scope ?? accessScopeFromVisibility(row.visibility),
+    teamId: row.team_id,
     observedAt: row.observed_at,
     tickers: row.tickers ?? [],
     manualThemes: row.manual_themes ?? [],
@@ -485,6 +615,8 @@ function mapNoteDraftToRow(draft: NoteDraft) {
     title: draft.title,
     body: draft.body,
     visibility: draft.visibility,
+    access_scope: draft.accessScope,
+    team_id: draft.teamId,
     observed_at: draft.observedAt,
     tickers: draft.tickers,
     manual_themes: draft.manualThemes,
@@ -516,6 +648,7 @@ function mapClaimFromRow(row: Record<string, any>, linkedEntities: LinkedEntity[
     team: row.team_name,
     teamId: row.team_id,
     visibility: row.visibility,
+    accessScope: row.access_scope ?? accessScopeFromVisibility(row.visibility),
     reviewStatus: row.review_status,
     reviewNote: row.review_note,
     reviewerId: row.reviewer_id,
@@ -533,6 +666,7 @@ function mapClaimToRow(claim: WorkspaceClaim) {
     team_id: claim.teamId,
     team_name: claim.team,
     visibility: claim.visibility,
+    access_scope: claim.accessScope,
     subject: claim.subject,
     claim_text: claim.text,
     direction: claim.direction,

@@ -5,8 +5,8 @@ import { buildApp } from '../server/app';
 import type { Note, User } from '../src/engine';
 
 const users: User[] = [
-  { id: 'u1', name: 'Maya Chen', role: 'Analyst', team: 'Semis' },
-  { id: 'u2', name: 'Priya Shah', role: 'PM', team: 'Portfolio' }
+  { id: 'u1', name: 'Maya Chen', role: 'Analyst', team: 'Semis', teamId: 'team-semis', primaryTeamId: 'team-semis', orgRole: 'member', status: 'active', teamMemberships: [{ teamId: 'team-semis', teamName: 'Semis', role: 'member', status: 'active' }] },
+  { id: 'u2', name: 'Priya Shah', role: 'PM', team: 'Portfolio', teamId: 'team-portfolio', primaryTeamId: 'team-portfolio', orgRole: 'admin', status: 'active', teamMemberships: [{ teamId: 'team-portfolio', teamName: 'Portfolio', role: 'member', status: 'active' }] }
 ];
 
 const notes: Note[] = [
@@ -16,7 +16,9 @@ const notes: Note[] = [
     body: 'Nvidia demand is strong and GPU supply is tight.',
     authorId: 'u1',
     team: 'Semis',
+    teamId: 'team-semis',
     visibility: 'team',
+    accessScope: 'team',
     sourceType: 'Channel check',
     createdAt: '2026-05-01',
     observedAt: '2026-05-01',
@@ -370,4 +372,104 @@ test('BFF exports and imports workspace JSON with auth required', async () => {
   assert.equal(importedBody.viewer.id, 'u1');
   assert.deepEqual(importedBody.visibleNotes.map((note: { id: string }) => note.id), ['n1']);
   assert(importedBody.claims.some((claim: { noteId: string }) => claim.noteId === 'n1'));
+});
+
+test('BFF exposes organization admin lifecycle routes and rejects non-admin callers', async () => {
+  const { app } = buildTestApp();
+
+  const forbidden = await app.inject({
+    method: 'GET',
+    url: '/api/admin/organization',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(forbidden.statusCode, 403);
+
+  const organization = await app.inject({
+    method: 'GET',
+    url: '/api/admin/organization',
+    headers: { authorization: 'Bearer u2' }
+  });
+  assert.equal(organization.statusCode, 200);
+  assert(organization.json().members.some((member: { id: string }) => member.id === 'u1'));
+
+  const createdTeam = await app.inject({
+    method: 'POST',
+    url: '/api/admin/teams',
+    headers: { authorization: 'Bearer u2' },
+    payload: { name: 'Healthcare' }
+  });
+  assert.equal(createdTeam.statusCode, 200);
+  const teamId = createdTeam.json().id;
+
+  const renamedTeam = await app.inject({
+    method: 'PATCH',
+    url: `/api/admin/teams/${teamId}`,
+    headers: { authorization: 'Bearer u2' },
+    payload: { name: 'Health Care' }
+  });
+  assert.equal(renamedTeam.statusCode, 200);
+  assert.equal(renamedTeam.json().name, 'Health Care');
+
+  const archivedTeam = await app.inject({
+    method: 'DELETE',
+    url: `/api/admin/teams/${teamId}`,
+    headers: { authorization: 'Bearer u2' }
+  });
+  assert.equal(archivedTeam.statusCode, 200);
+  assert.equal(archivedTeam.json().status, 'archived');
+
+  const invite = await app.inject({
+    method: 'POST',
+    url: '/api/admin/invites',
+    headers: { authorization: 'Bearer u2' },
+    payload: {
+      email: 'new.analyst@example.test',
+      role: 'Analyst',
+      orgRole: 'member',
+      teamIds: ['team-semis']
+    }
+  });
+  assert.equal(invite.statusCode, 200);
+
+  const cancelledInvite = await app.inject({
+    method: 'PATCH',
+    url: `/api/admin/invites/${invite.json().id}`,
+    headers: { authorization: 'Bearer u2' },
+    payload: { status: 'cancelled' }
+  });
+  assert.equal(cancelledInvite.statusCode, 200);
+  assert.equal(cancelledInvite.json().status, 'cancelled');
+
+  const updatedMember = await app.inject({
+    method: 'PATCH',
+    url: '/api/admin/members/u1',
+    headers: { authorization: 'Bearer u2' },
+    payload: { orgRole: 'admin' }
+  });
+  assert.equal(updatedMember.statusCode, 200);
+  assert.equal(updatedMember.json().orgRole, 'admin');
+
+  const teams = await app.inject({
+    method: 'PUT',
+    url: '/api/admin/members/u1/teams',
+    headers: { authorization: 'Bearer u2' },
+    payload: { teamIds: ['team-semis', 'team-portfolio'] }
+  });
+  assert.equal(teams.statusCode, 200);
+  assert(teams.json().teamMemberships.some((team: { teamId: string }) => team.teamId === 'team-portfolio'));
+
+  const deactivated = await app.inject({
+    method: 'PATCH',
+    url: '/api/admin/members/u1',
+    headers: { authorization: 'Bearer u2' },
+    payload: { status: 'deactivated' }
+  });
+  assert.equal(deactivated.statusCode, 200);
+
+  const blockedWorkspace = await app.inject({
+    method: 'GET',
+    url: '/api/workspace',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(blockedWorkspace.statusCode, 403);
 });

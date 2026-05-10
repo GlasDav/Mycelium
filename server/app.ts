@@ -5,9 +5,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   CreateNoteInput,
+  AdminOrganizationSnapshot,
   DashboardRange,
   DashboardScope,
   DashboardSnapshot,
+  OrganizationInvite,
+  OrganizationTeam,
   NoteDraft,
   NoteRevision,
   UpdateClaimInput,
@@ -18,6 +21,7 @@ import type {
   WorkspaceOptions,
   WorkspaceSnapshot
 } from './workspace-service';
+import type { OrgRole, Role, TeamStatus, User, UserStatus } from '../src/engine';
 
 export interface WorkspaceServiceApi {
   getWorkspace(viewerId: string, options?: WorkspaceOptions): Promise<WorkspaceSnapshot>;
@@ -32,6 +36,14 @@ export interface WorkspaceServiceApi {
   listNoteHistory(viewerId: string, noteId: string): Promise<NoteRevision[]>;
   updateClaim(viewerId: string, claimId: string, input: UpdateClaimInput): Promise<WorkspaceSnapshot>;
   updateRelation(viewerId: string, relationId: string, input: UpdateRelationInput): Promise<WorkspaceSnapshot>;
+  getAdminOrganization(viewerId: string): Promise<AdminOrganizationSnapshot>;
+  createOrganizationTeam(viewerId: string, input: { name: string; sectorFocus?: string }): Promise<OrganizationTeam>;
+  updateOrganizationTeam(viewerId: string, teamId: string, input: { name?: string; sectorFocus?: string; status?: TeamStatus }): Promise<OrganizationTeam>;
+  archiveOrganizationTeam(viewerId: string, teamId: string): Promise<OrganizationTeam>;
+  createOrganizationInvite(viewerId: string, input: { email: string; role: Role; orgRole: OrgRole; teamIds?: string[] }): Promise<OrganizationInvite>;
+  cancelOrganizationInvite(viewerId: string, inviteId: string): Promise<OrganizationInvite>;
+  updateOrganizationMember(viewerId: string, memberId: string, input: { role?: User['role']; orgRole?: OrgRole; status?: UserStatus; primaryTeamId?: string | null }): Promise<User>;
+  replaceOrganizationMemberTeams(viewerId: string, memberId: string, teamIds: string[]): Promise<User>;
 }
 
 export interface BuildAppOptions {
@@ -115,6 +127,47 @@ export function buildApp(options: BuildAppOptions) {
     return options.service.updateRelation(viewerId, request.params.id, request.body);
   });
 
+  app.get('/api/admin/organization', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.getAdminOrganization(viewerId);
+  });
+
+  app.post<{ Body: { name: string; sectorFocus?: string } }>('/api/admin/teams', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.createOrganizationTeam(viewerId, request.body);
+  });
+
+  app.patch<{ Params: { id: string }; Body: { name?: string; sectorFocus?: string; status?: TeamStatus } }>('/api/admin/teams/:id', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.updateOrganizationTeam(viewerId, request.params.id, request.body);
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/admin/teams/:id', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.archiveOrganizationTeam(viewerId, request.params.id);
+  });
+
+  app.post<{ Body: { email: string; role: Role; orgRole: OrgRole; teamIds?: string[] } }>('/api/admin/invites', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.createOrganizationInvite(viewerId, request.body);
+  });
+
+  app.patch<{ Params: { id: string }; Body: { status?: 'cancelled' } }>('/api/admin/invites/:id', async request => {
+    const viewerId = await requireViewerId(options, request);
+    if (request.body.status && request.body.status !== 'cancelled') throw new Error('Only invite cancellation is supported');
+    return options.service.cancelOrganizationInvite(viewerId, request.params.id);
+  });
+
+  app.patch<{ Params: { id: string }; Body: { role?: Role; orgRole?: OrgRole; status?: UserStatus; primaryTeamId?: string | null } }>('/api/admin/members/:id', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.updateOrganizationMember(viewerId, request.params.id, request.body);
+  });
+
+  app.put<{ Params: { id: string }; Body: { teamIds?: string[] } }>('/api/admin/members/:id/teams', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.replaceOrganizationMemberTeams(viewerId, request.params.id, request.body.teamIds ?? []);
+  });
+
   app.get('/api/audit-events', async request => {
     const viewerId = await requireViewerId(options, request);
     const workspace = await options.service.getWorkspace(viewerId);
@@ -122,7 +175,15 @@ export function buildApp(options: BuildAppOptions) {
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    const statusCode = error.statusCode ?? (error.message.includes('not accessible') || error.message.includes('not available') || error.message.includes('Only the note author') ? 403 : 500);
+    const statusCode = error.statusCode ?? (
+      error.message.includes('not accessible')
+      || error.message.includes('not available')
+      || error.message.includes('Only the note author')
+      || error.message.includes('administrator')
+      || error.message.includes('deactivated')
+      ? 403
+      : 500
+    );
     reply.status(statusCode).send({ error: error.message });
   });
 

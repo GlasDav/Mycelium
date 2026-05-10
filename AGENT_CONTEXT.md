@@ -1,6 +1,6 @@
 # Mycelium — Agent Context
 
-_Last updated: 2026-05-09_
+_Last updated: 2026-05-10_
 
 This is the live orientation file for agents working on Mycelium. Read this before changing product, UX, engine, roadmap, or docs.
 
@@ -16,9 +16,9 @@ The repo contains a production-shaped MVP foundation:
 - Fastify backend-for-frontend serving `/api/*` and the production React bundle.
 - Supabase Auth/Postgres/RLS project files and raw migrations.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
-- Supabase auth trigger bootstraps organizations, profiles, teams, memberships, and demo notes for new local accounts.
+- Supabase auth trigger bootstraps the first organization admin, profile, team membership, and demo notes for a new local organization; later same-domain users require pending organization invites.
 - Server-side graph materialization for notes, claims, relations, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
-- Minimal note-taking-first research workspace UI with auth, observed-date/visibility/read-only-team controls, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- Minimal note-taking-first research workspace UI with auth, observed-date/location controls for Personal, Team, and Organisation notes, team selection for active memberships, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive/admin, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, organization admin lifecycle controls, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
 - Tests covering extraction, direct temporal helper behavior, historical as-of workspace snapshots, schema/RLS contract, normalized entity links, BFF routing including scoped dashboard aggregates and workspace as-of queries, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, map timeline/lane/density UI contracts, note metadata persistence, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
 
@@ -51,7 +51,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, action-backed empty states, current-note claim/relation intelligence on Notes, scoped dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline, current/historical lanes, author/team/metadata filters, density controls, relation detail drawer, and separate notes/dashboard/map/archive page bodies.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, Personal/Team/Organisation note location controls, organization admin page, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, action-backed empty states, current-note claim/relation intelligence on Notes, scoped dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline, current/historical lanes, author/team/metadata filters, density controls, relation detail drawer, and separate notes/dashboard/map/archive/admin page bodies.
 - `src/entity-links.ts` owns shared normalized entity/link metadata helpers, legacy array compatibility, key normalization, and derived metadata arrays.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
@@ -63,9 +63,9 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Backend
 
 - `server/index.ts` is the single-service Node entrypoint.
-- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace including `asOf` historical projections, scoped dashboard aggregates, workspace export/import, notes, note drafts, note history, claims, relations, and audit events.
-- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, known-by-date historical as-of graph projections, role-gated dashboard aggregation, workspace JSON export/import, normalized linked metadata compatibility, note editing/history, server drafts, source-person memory summaries, review state, audit events, and the extraction provider contract.
-- `server/supabase-repository.ts` adapts the workspace service to Supabase, including normalized research entity and note/claim entity link persistence.
+- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace including `asOf` historical projections, scoped dashboard aggregates, organization admin lifecycle, workspace export/import, notes, note drafts, note history, claims, relations, and audit events.
+- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, Personal/Team/Organisation access scopes, multi-team membership, organization admin lifecycle, known-by-date historical as-of graph projections, role-gated dashboard aggregation, workspace JSON export/import, normalized linked metadata compatibility, note editing/history, server drafts, source-person memory summaries, review state, audit events, and the extraction provider contract.
+- `server/supabase-repository.ts` adapts the workspace service to Supabase, including organization admin/invite/team lifecycle persistence and normalized research entity and note/claim entity link persistence.
 
 ### Supabase
 
@@ -74,6 +74,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, team memberships, notes with `tickers`, `manual_themes`, and `kpis` metadata arrays, claims, relations, audit events, extraction jobs, auth trigger, helper functions, indexes, and RLS policies.
 - `supabase/migrations/202605090001_note_persistence_spine.sql` adds server-backed workbench drafts, note revision history, and author-only note update RLS.
 - `supabase/migrations/202605090002_normalized_research_entities.sql` adds `research_entities`, note/claim entity link tables, draft/revision linked-entity JSON, access-following RLS policies, and supporting indexes.
+- `supabase/migrations/202605100001_organization_admin_structure.sql` adds org admin/member status, active/archived teams, pending signup invites, nullable team links for personal/organization notes, canonical note/claim `access_scope`, and invite-aware auth bootstrap.
 
 ### Intelligence Engine
 
@@ -100,7 +101,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `tests/schema.test.ts` checks the migration/RLS contract, including normalized entity/link tables.
 - `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, role-gated dashboard aggregation, workspace export/import restore, note update/history/drafts, normalized entity links, source-person memory summaries, claim edit/reject, relation dismissal/reclassification.
 - `tests/bff.test.ts` checks Fastify API auth, scoped dashboard routes, note update/history/draft routes, normalized metadata round trips, export/import, and route behavior.
-- `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting across securities, industries/themes, KPIs, watchlists, participants, visibility, and dates.
+- `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting across securities, industries/themes, KPIs, watchlists, participants, access scope/location, team, and dates.
 - `tests/markdown-tools.test.ts` checks markdown toolbar and slash-command transforms.
 - `tests/demo-guide.test.ts`, `tests/empty-states.test.ts`, `tests/main-ui-source.test.ts`, and `tests/layout-css.test.ts` check guide helper storage/content, empty-state copy/actions, note-capture/sidebar metadata, current-note Notes scope, dashboard controls/layout, source-person coverage UI, map filters, page navigation, archive width, and layout contracts.
 - `tests/engine.test.ts` — core deterministic behavior.
@@ -130,7 +131,8 @@ Each claim should carry:
 - `appliesToStart` / `appliesToEnd` — validity/decision window.
 - `horizon` — `point_in_time`, `near_term`, `quarter`, `year`, or `unknown`.
 - `freshness` — `fresh`, `aging`, or `stale`.
-- provenance: `noteId`, `authorId`, `team`, `visibility`, evidence snippet.
+- provenance: `noteId`, `authorId`, `team`, `accessScope`, evidence snippet.
+- access scope: `organization`, `team`, or `personal`; personal notes are author-only and can still contribute to that author's private workspace graph.
 
 Current implementation note: securities, industries, themes, KPIs, watchlists, and source people now flow through normalized `LinkedEntity` metadata and Supabase note/claim entity link rows. Legacy `tickers`, `manualThemes`, and `kpis` arrays remain derived compatibility fields.
 
@@ -182,14 +184,15 @@ Identity confidence still matters: the current implementation uses explicit/manu
 
 ## Current UX Shape
 
-The app has four main left-rail page modes:
+The app has five main left-rail page modes:
 
 1. **Notes** — capture/edit the current note, preview extracted entities/claims, and review only saved claims/relations tied to the current note.
 2. **Dashboard** — scoped workspace/team/org research intelligence with timeframe controls, metric cards, relation/freshness charts, signals, top metadata, and source-person coverage.
 3. **Relationship map** — graph-like relation view with labels, server-backed as-of timeline, current/historical lanes, density controls, and temporal explanation.
 4. **Note archive** — permission-aware visible notes.
+5. **Organisation admin** — org-admin-only controls for teams, invitations, member roles, admin status, deactivation, and team assignments.
 
-The left rail switches whole page bodies instead of toggling secondary tabs inside one crowded main page. Notes is clean and current-note only, Dashboard owns broad research/account metadata, Map focuses on relations and subject navigation, and Archive renders filtered notes at full main-content width.
+The left rail switches whole page bodies instead of toggling secondary tabs inside one crowded main page. Notes is clean and current-note only, Dashboard owns broad research/account metadata, Map focuses on relations and subject navigation, Archive renders filtered notes at full main-content width, and Organisation admin owns team/member/invite management without changing research-note permissions.
 
 Design principles:
 
@@ -204,11 +207,11 @@ Design principles:
 
 ## Current Validation Status
 
-As of 2026-05-09:
+As of 2026-05-10:
 
 - `npm run validate` passes.
 - Build passes.
-- 102/102 tests pass.
+- 110/110 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs

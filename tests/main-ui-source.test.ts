@@ -43,12 +43,42 @@ test('note workbench does not ask for source or claim validity metadata', () => 
   assert.doesNotMatch(capture, /<span>Applies to<\/span>/);
   assert.doesNotMatch(capture, /<span>Horizon<\/span>/);
   assert.match(capture, /<span>Observed<\/span>/);
-  assert.match(capture, /<span>Visibility<\/span>/);
-  assert.match(capture, /<span>Team<\/span>/);
+  assert.match(capture, /<span>Location<\/span>/);
+  assert.match(capture, /<option value="personal">Personal<\/option>/);
+  assert.match(capture, /<option value="team">Team<\/option>/);
+  assert.match(capture, /<option value="organization">Organisation<\/option>/);
+  assert.match(capture, /accessScope === 'team'/);
+  assert.match(capture, /activeTeamMemberships/);
   assert.match(capture, /label="Securities\/Tickers"/);
   assert.match(capture, /label="Industries\/Sectors"/);
   assert.match(capture, /label="Watchlists"/);
   assert.match(capture, /label="Participants"/);
+});
+
+test('organization admin page is gated to org admins and exposes lifecycle controls', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive' \| 'admin'/);
+  assert.match(appReturn, /user\.orgRole === 'admin'/);
+  assert.match(appReturn, /setViewMode\('admin'\)/);
+  assert.match(appReturn, /viewMode === 'admin' && <AdminPage/);
+  assert.match(source, /function AdminPage/);
+  assert.match(source, /loadAdminOrganization/);
+  assert.match(source, /createAdminTeam/);
+  assert.match(source, /updateAdminTeam/);
+  assert.match(source, /archiveAdminTeam/);
+  assert.match(source, /createAdminInvite/);
+  assert.match(source, /cancelAdminInvite/);
+  assert.match(source, /updateAdminMember/);
+  assert.match(source, /replaceAdminMemberTeams/);
+  assert.match(source, /Organisation admin/);
+  assert.match(source, /Invite/);
+  assert.match(source, /Deactivate/);
+  assert.match(source, /Archive/);
 });
 
 test('notes sidebar filters do not include source metadata controls', () => {
@@ -64,6 +94,8 @@ test('notes sidebar filters do not include source metadata controls', () => {
   assert.match(sidebar, /label="Industry"/);
   assert.match(sidebar, /label="Watchlist"/);
   assert.match(sidebar, /label="Participant"/);
+  assert.match(sidebar, /label="Location"/);
+  assert.match(sidebar, /accessScope/);
 });
 
 test('markdown editor exposes display editing only with undo and redo controls', () => {
@@ -167,7 +199,7 @@ test('left rail modes render notes, dashboard, map, and archive page bodies', ()
   assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
   const appReturn = source.slice(appReturnStart, appReturnEnd);
 
-  assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive'/);
+  assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive' \| 'admin'/);
   assert.match(appReturn, /className=\{`shell page-shell \$\{viewMode\}-page`\}/);
   assert.match(appReturn, /setViewMode\('notes'\)/);
   assert.match(appReturn, /setViewMode\('dashboard'\)/);
@@ -176,6 +208,7 @@ test('left rail modes render notes, dashboard, map, and archive page bodies', ()
   assert.match(appReturn, /viewMode === 'dashboard' && <DashboardPage/);
   assert.match(appReturn, /viewMode === 'map' && <MapPage/);
   assert.match(appReturn, /viewMode === 'archive' && <ArchivePage/);
+  assert.match(appReturn, /viewMode === 'admin' && <AdminPage/);
   assert.doesNotMatch(appReturn, /className="mode-tabs"/);
 });
 

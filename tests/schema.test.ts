@@ -7,7 +7,8 @@ const migrationPath = join(process.cwd(), 'supabase', 'migrations', '20260506000
 const migrationFiles = [
   '202605060001_production_foundation.sql',
   '202605090001_note_persistence_spine.sql',
-  '202605090002_normalized_research_entities.sql'
+  '202605090002_normalized_research_entities.sql',
+  '202605100001_organization_admin_structure.sql'
 ];
 const migrationsSql = migrationFiles
   .map(file => readFileSync(join(process.cwd(), 'supabase', 'migrations', file), 'utf8'))
@@ -89,4 +90,30 @@ test('normalized research entity migration adds entity and link tables with acce
   assert.match(sql, /create policy claim_entity_links_select/i);
   assert.match(sql, /app\.can_access_note\(n\.org_id,\s*n\.visibility,\s*n\.team_id,\s*n\.author_id\)/i);
   assert.match(sql, /app\.can_access_note\(c\.org_id,\s*c\.visibility,\s*c\.team_id,\s*c\.author_id\)/i);
+});
+
+test('organization admin migration adds access scopes, lifecycle state, and invitation tables', () => {
+  const sql = migrationsSql;
+
+  assert.match(sql, /alter table public\.profiles[\s\S]*add column if not exists org_role/i);
+  assert.match(sql, /org_role[\s\S]*check\s*\(\s*org_role\s+in\s*\('admin',\s*'member'\)\s*\)/i);
+  assert.match(sql, /alter table public\.profiles[\s\S]*add column if not exists status/i);
+  assert.match(sql, /status[\s\S]*check\s*\(\s*status\s+in\s*\('active',\s*'deactivated'\)\s*\)/i);
+  assert.match(sql, /alter table public\.teams[\s\S]*add column if not exists status/i);
+  assert.match(sql, /create table if not exists public\.organization_invites/i);
+  assert.match(sql, /status\s+text\s+not null\s+default 'pending'[\s\S]*check\s*\(\s*status\s+in\s*\('pending',\s*'accepted',\s*'cancelled'\)\s*\)/i);
+  assert.match(sql, /team_ids\s+uuid\[\]\s+not null\s+default '\{\}'/i);
+  assert.match(sql, /alter table public\.notes[\s\S]*add column if not exists access_scope/i);
+  assert.match(sql, /alter table public\.claims[\s\S]*add column if not exists access_scope/i);
+  assert.match(sql, /alter table public\.notes[\s\S]*alter column team_id drop not null/i);
+  assert.match(sql, /alter table public\.claims[\s\S]*alter column team_id drop not null/i);
+  assert.match(sql, /create or replace function app\.is_org_admin/i);
+  assert.match(sql, /create or replace function app\.is_active_org_member/i);
+  assert.match(sql, /create or replace function app\.can_access_note\(\s*target_org uuid,\s*target_access_scope text,\s*target_team uuid,\s*target_author uuid/i);
+  assert.match(sql, /target_access_scope = 'personal'[\s\S]*target_author = auth\.uid\(\)/i);
+  assert.match(sql, /target_access_scope = 'team'[\s\S]*team_memberships/i);
+  assert.match(sql, /target_access_scope = 'organization'/i);
+  assert.match(sql, /create policy organization_invites_select_admin/i);
+  assert.match(sql, /public\.handle_new_user\(\)[\s\S]*organization_invites/i);
+  assert.match(sql, /No pending invitation/i);
 });

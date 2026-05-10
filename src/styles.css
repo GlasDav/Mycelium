@@ -372,6 +372,121 @@ button {
   align-content: start;
 }
 
+.admin-workspace {
+  max-width: 1180px;
+}
+
+.admin-panel,
+.admin-section,
+.admin-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-section h2,
+.admin-section h3 {
+  margin: 0;
+}
+
+.admin-create-row,
+.admin-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.admin-create-row {
+  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+}
+
+.admin-row {
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.admin-row > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-inline-edit,
+.admin-member-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-inline-edit {
+  grid-template-columns: minmax(160px, 220px) auto auto;
+}
+
+.admin-member-row {
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.admin-member-controls {
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
+  align-items: end;
+}
+
+.admin-team-checks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-team-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.admin-create-row label,
+.admin-member-controls label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-create-row span,
+.admin-member-controls span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-create-row input,
+.admin-create-row select,
+.admin-inline-edit input,
+.admin-member-controls select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 10px 11px;
+  font: inherit;
+}
+
+.admin-create-row select[multiple] {
+  min-height: 42px;
+}
+
 .archive-count {
   margin: 2px 0 8px;
   color: var(--muted);

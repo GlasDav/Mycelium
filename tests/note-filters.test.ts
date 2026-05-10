@@ -14,6 +14,7 @@ const base = {
   authorName: 'Maya Chen',
   team: 'Semis',
   visibility: 'team' as const,
+  accessScope: 'team' as const,
   sourceType: 'Channel check',
   createdAt: '2026-05-01',
   updatedAt: '2026-05-01T00:00:00.000Z',
@@ -43,6 +44,7 @@ const notes: WorkspaceNote[] = [
     body: 'Services pricing remains robust.',
     team: 'Consumer',
     visibility: 'public',
+    accessScope: 'organization',
     sourceType: 'Supplier call',
     observedAt: '2026-05-04',
     tickers: ['AAPL'],
@@ -84,6 +86,7 @@ test('deriveNoteFilterOptions returns sorted metadata options', () => {
   assert.deepEqual(options.sourcePeople, ['Dana Lee', 'Mei Tan']);
   assert.equal('sourceTypes' in options, false);
   assert.deepEqual(options.visibilities, ['public', 'team']);
+  assert.deepEqual(options.accessScopes, ['organization', 'team']);
 });
 
 test('filterAndSortNotes filters by metadata, dates, visibility, and search', () => {
@@ -98,10 +101,16 @@ test('filterAndSortNotes filters by metadata, dates, visibility, and search', ()
     dateFrom: '2026-05-05',
     dateTo: '2026-05-07',
     visibility: 'team',
+    accessScope: 'team',
     sort: 'newest'
   };
 
   assert.deepEqual(filterAndSortNotes(notes, filters).map(note => note.id), ['n1']);
+});
+
+test('filterAndSortNotes filters by canonical access scope independently from legacy visibility', () => {
+  assert.deepEqual(filterAndSortNotes(notes, { accessScope: 'organization' }).map(note => note.id), ['n2']);
+  assert.deepEqual(filterAndSortNotes(notes, { accessScope: 'team' }).map(note => note.id), ['n3', 'n1']);
 });
 
 test('filterAndSortNotes filters new metadata facets independently', () => {

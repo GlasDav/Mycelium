@@ -1,4 +1,4 @@
-import type { Visibility } from './engine';
+import { accessScopeFromVisibility, type AccessScope, type Visibility } from './engine';
 import { metadataArraysFromLinkedEntities, type LinkedEntity, type MetadataArrays } from './entity-links';
 
 export type NoteSort = 'newest' | 'oldest' | 'title';
@@ -7,6 +7,7 @@ export interface NoteFilterable {
   title: string;
   body: string;
   visibility: Visibility;
+  accessScope?: AccessScope;
   createdAt: string;
   observedAt?: string;
   tickers?: string[];
@@ -29,6 +30,7 @@ export interface NoteFilters {
   dateFrom?: string;
   dateTo?: string;
   visibility?: Visibility | '';
+  accessScope?: AccessScope | '';
   sort?: NoteSort;
 }
 
@@ -40,6 +42,7 @@ export interface NoteFilterOptions {
   watchlists?: string[];
   sourcePeople?: string[];
   visibilities: Visibility[];
+  accessScopes: AccessScope[];
 }
 
 export function normalizeTags(values: string[] = []): string[] {
@@ -66,7 +69,8 @@ export function deriveNoteFilterOptions(notes: NoteFilterable[]): NoteFilterOpti
     industries: sortedUnique(notes.flatMap(note => metadataForNote(note).industries)),
     watchlists: sortedUnique(notes.flatMap(note => metadataForNote(note).watchlistTags)),
     sourcePeople: sortedUnique(notes.flatMap(note => metadataForNote(note).sourcePeople)),
-    visibilities: sortedUnique(notes.map(note => note.visibility)) as Visibility[]
+    visibilities: sortedUnique(notes.map(note => note.visibility)) as Visibility[],
+    accessScopes: sortedUnique(notes.map(note => note.accessScope ?? accessScopeFromVisibility(note.visibility))) as AccessScope[]
   };
 }
 
@@ -84,7 +88,8 @@ export function filterAndSortNotes<T extends NoteFilterable>(notes: T[], filters
       && matchesTag(metadata.sourcePeople, filters.sourcePerson)
       && (!filters.dateFrom || noteDate >= filters.dateFrom)
       && (!filters.dateTo || noteDate <= filters.dateTo)
-      && (!filters.visibility || note.visibility === filters.visibility);
+      && (!filters.visibility || note.visibility === filters.visibility)
+      && (!filters.accessScope || (note.accessScope ?? accessScopeFromVisibility(note.visibility)) === filters.accessScope);
   });
 
   return [...filtered].sort((a, b) => compareNotes(a, b, filters.sort ?? 'newest'));

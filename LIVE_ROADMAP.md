@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-09_
+_Last updated: 2026-05-10_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -18,7 +18,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Working local Vite/React/TypeScript MVP built.
 - [x] Initial polished dark editorial UX pass inspired by Notion, Granola, and Obsidian.
 - [x] Minimal note-taking-first UI pass with headerless aligned workbench, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
-- [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, and visibility filters.
+- [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, access scope/location, and team filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
 - [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
 - [x] Left-rail page navigation now renders separate notes, dashboard, relationship map, and full-width archive pages instead of crowding every surface into the front page.
@@ -41,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 102 tests.
+- [x] Validation passing: build + 110 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -73,7 +73,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - note/claim links for securities, industries, themes, KPIs, watchlists, companies, and source people,
   - source-person relation context and workspace person-memory summaries.
 - [x] Expanded metadata UX added:
-  - read-only team display,
+  - Personal/Team/Organisation location controls and active team selection,
   - securities/tickers, industries/sectors, themes, KPIs, watchlists, and participants controls,
   - addable live extraction suggestions,
   - archive/sidebar/map filters for normalized metadata,
@@ -81,6 +81,12 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Richer empty states added:
   - action-backed no-notes/no-filter/no-graph/no-claims/no-relations/no-person-memory states,
   - pure helper tests for guide content/storage and empty-state copy/actions.
+- [x] Organisation-first workspace structure added:
+  - org admin/member status and active/deactivated profiles,
+  - multi-team memberships with active/archived teams,
+  - pending signup invites without email delivery,
+  - canonical Personal/Team/Organisation note location and access scope,
+  - author-only personal notes that contribute only to the author's private graph.
 
 ### Current MVP Validation
 
@@ -110,6 +116,7 @@ Expected result:
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
+  - organization admin lifecycle, invite/team/member tests, multi-team access scopes, and personal-note graph privacy.
 
 ## Priority Ladder
 
@@ -132,8 +139,8 @@ Goal: make the app feel like a real product a design partner could use with samp
 - [x] Add export/import for workspace JSON so demos survive reloads.
 - [x] Improve note capture metadata controls:
   - observed date,
-  - visibility,
-  - team,
+  - Personal/Team/Organisation location and access scope,
+  - active team selection for team-scoped notes,
   - linked stocks/securities/tickers,
   - linked industries/sectors/themes,
   - company/watchlist tags,
@@ -245,6 +252,7 @@ Goal: move from in-browser mock to production-shaped architecture.
 - [x] Add tenant isolation assumptions and migration/RLS contract tests.
 - [x] Add deployment path for private alpha: `npm run build` + `npm start` serves API and React from one Node process.
 - [x] Add entity/security/industry/source-person tables and links.
+- [x] Add organization administration for org admin/member status, active/archived teams, pending invites, active team assignments, and deactivation guards.
 - [ ] Add live Supabase RLS integration tests once Docker Desktop is available in the environment.
 
 ### P5 — Real Input Sources + Transcription
@@ -276,7 +284,7 @@ Goal: make capture effortless at the edge — immediately after meetings, calls,
   - voice memo,
   - photo/document attachment,
   - company/theme/watchlist tags,
-  - visibility/team selector.
+  - Personal/Team/Organisation location and team selector.
 - [ ] Add mobile transcription flow for voice memos and recorded meetings.
 - [ ] Add offline-first queue for flights, conferences, and field research.
 - [ ] Add push notifications for high-signal contradictions, trend reversals, and review requests.
@@ -310,7 +318,7 @@ Suggested tasks:
 
 1. Add production persistence layer. **Done.**
 2. Add claim/relation review state. **Done.**
-3. Keep the note-first capture workbench focused on observed date, visibility, and linked metadata while claim windows and horizon are inferred and reviewed on claims. **Done.**
+3. Keep the note-first capture workbench focused on observed date, location/access scope, active team selection, and linked metadata while claim windows and horizon are inferred and reviewed on claims. **Done.**
 4. Add stock/ticker and industry linking controls. **Done.**
 5. Add source-person/participant field and person-level history view. **Done.**
 6. Add relation detail drawer. **Done.**

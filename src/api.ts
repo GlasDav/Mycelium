@@ -1,10 +1,13 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  AdminOrganizationSnapshot,
   ClaimReviewStatus,
   CreateNoteInput,
   DashboardRange,
   DashboardScope,
   DashboardSnapshot,
+  OrganizationInvite,
+  OrganizationTeam,
   NoteDraft,
   NoteRevision,
   RelationReviewStatus,
@@ -15,7 +18,7 @@ import type {
   WorkspaceOptions,
   WorkspaceSnapshot
 } from '../server/workspace-service';
-import type { RelationType } from './engine';
+import type { OrgRole, Role, TeamStatus, UserStatus, RelationType } from './engine';
 
 export interface AuthBootstrap {
   supabaseUrl: string;
@@ -123,6 +126,73 @@ export async function updateRelation(
     method: 'PATCH',
     headers: { ...authHeaders(session), 'content-type': 'application/json' },
     body: JSON.stringify(input)
+  });
+  return readJson(response);
+}
+
+export async function loadAdminOrganization(session: Session): Promise<AdminOrganizationSnapshot> {
+  const response = await fetch('/api/admin/organization', { headers: authHeaders(session) });
+  return readJson(response);
+}
+
+export async function createAdminTeam(session: Session, input: { name: string; sectorFocus?: string }): Promise<OrganizationTeam> {
+  const response = await fetch('/api/admin/teams', {
+    method: 'POST',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  return readJson(response);
+}
+
+export async function updateAdminTeam(session: Session, id: string, input: { name?: string; sectorFocus?: string; status?: TeamStatus }): Promise<OrganizationTeam> {
+  const response = await fetch(`/api/admin/teams/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  return readJson(response);
+}
+
+export async function archiveAdminTeam(session: Session, id: string): Promise<OrganizationTeam> {
+  const response = await fetch(`/api/admin/teams/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders(session)
+  });
+  return readJson(response);
+}
+
+export async function createAdminInvite(session: Session, input: { email: string; role: Role; orgRole: OrgRole; teamIds?: string[] }): Promise<OrganizationInvite> {
+  const response = await fetch('/api/admin/invites', {
+    method: 'POST',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  return readJson(response);
+}
+
+export async function cancelAdminInvite(session: Session, id: string): Promise<OrganizationInvite> {
+  const response = await fetch(`/api/admin/invites/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'cancelled' })
+  });
+  return readJson(response);
+}
+
+export async function updateAdminMember(session: Session, id: string, input: { role?: Role; orgRole?: OrgRole; status?: UserStatus; primaryTeamId?: string | null }) {
+  const response = await fetch(`/api/admin/members/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  return readJson(response);
+}
+
+export async function replaceAdminMemberTeams(session: Session, id: string, teamIds: string[]) {
+  const response = await fetch(`/api/admin/members/${encodeURIComponent(id)}/teams`, {
+    method: 'PUT',
+    headers: { ...authHeaders(session), 'content-type': 'application/json' },
+    body: JSON.stringify({ teamIds })
   });
   return readJson(response);
 }

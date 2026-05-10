@@ -1,5 +1,6 @@
 import {
   canAccess,
+  accessScopeFromVisibility,
   claimObservedBy,
   detectRelations,
   extractClaims,
@@ -8,6 +9,7 @@ import {
   projectClaimAsOf,
   synthesize,
   type Alert,
+  type AccessScope,
   type Claim,
   type Direction,
   type Horizon,
@@ -15,6 +17,10 @@ import {
   type Relation,
   type RelationType,
   type User,
+  type OrgRole,
+  type TeamMembership,
+  type TeamStatus,
+  type UserStatus,
   type Visibility
 } from '../src/engine';
 import {
@@ -36,12 +42,17 @@ export interface WorkspaceUser extends User {
   orgId: string;
   email?: string;
   teamId?: string;
+  primaryTeamId?: string;
+  orgRole: OrgRole;
+  status: UserStatus;
+  teamMemberships: TeamMembership[];
 }
 
 export interface WorkspaceNote extends Note {
   orgId: string;
   authorName: string;
   teamId?: string;
+  accessScope: AccessScope;
   updatedAt: string;
   linkedEntities: LinkedEntity[];
   tickers: string[];
@@ -57,6 +68,7 @@ export interface WorkspaceClaim extends Claim {
   orgId: string;
   authorName: string;
   teamId?: string;
+  accessScope: AccessScope;
   reviewStatus: ClaimReviewStatus;
   reviewNote?: string;
   reviewerId?: string;
@@ -121,6 +133,8 @@ export interface NoteDraft {
   title: string;
   body: string;
   visibility: Visibility;
+  accessScope: AccessScope;
+  teamId?: string;
   observedAt?: string;
   tickers: string[];
   manualThemes: string[];
@@ -236,6 +250,45 @@ export interface DashboardOptions {
   teamId?: string;
 }
 
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  domain?: string;
+}
+
+export interface OrganizationTeam {
+  id: string;
+  orgId: string;
+  name: string;
+  sectorFocus?: string;
+  defaultPermissions?: string;
+  status: TeamStatus;
+  createdAt: string;
+}
+
+export type OrganizationInviteStatus = 'pending' | 'accepted' | 'cancelled';
+
+export interface OrganizationInvite {
+  id: string;
+  orgId: string;
+  email: string;
+  role: User['role'];
+  orgRole: OrgRole;
+  teamIds: string[];
+  status: OrganizationInviteStatus;
+  invitedBy: string;
+  createdAt: string;
+  acceptedAt?: string;
+  cancelledAt?: string;
+}
+
+export interface AdminOrganizationSnapshot {
+  organization: OrganizationSummary;
+  teams: OrganizationTeam[];
+  members: WorkspaceUser[];
+  invites: OrganizationInvite[];
+}
+
 export interface WorkspaceOptions {
   asOf?: string;
 }
@@ -263,7 +316,9 @@ export interface WorkspaceExport {
 export interface CreateNoteInput {
   title?: string;
   body: string;
-  visibility: Visibility;
+  visibility?: Visibility;
+  accessScope?: AccessScope;
+  teamId?: string;
   sourceType?: string;
   observedAt?: string;
   appliesToStart?: string;
@@ -283,6 +338,8 @@ export interface UpdateNoteInput {
   title?: string;
   body?: string;
   visibility?: Visibility;
+  accessScope?: AccessScope;
+  teamId?: string;
   observedAt?: string;
   tickers?: string[];
   manualThemes?: string[];
@@ -299,6 +356,8 @@ export interface UpsertNoteDraftInput {
   title?: string;
   body?: string;
   visibility?: Visibility;
+  accessScope?: AccessScope;
+  teamId?: string;
   observedAt?: string;
   tickers?: string[];
   manualThemes?: string[];
@@ -341,8 +400,17 @@ export interface ExtractionProvider {
 }
 
 export interface WorkspaceRepository {
+  getOrganization(orgId: string): Promise<OrganizationSummary | undefined>;
   getUser(userId: string): Promise<WorkspaceUser | undefined>;
+  updateUser(user: WorkspaceUser): Promise<void>;
   listUsers(orgId: string): Promise<WorkspaceUser[]>;
+  listTeams(orgId: string): Promise<OrganizationTeam[]>;
+  insertTeam(team: OrganizationTeam): Promise<void>;
+  updateTeam(team: OrganizationTeam): Promise<void>;
+  replaceTeamMemberships(orgId: string, userId: string, teamIds: string[]): Promise<void>;
+  listInvites(orgId: string): Promise<OrganizationInvite[]>;
+  insertInvite(invite: OrganizationInvite): Promise<void>;
+  updateInvite(invite: OrganizationInvite): Promise<void>;
   listNotes(orgId: string): Promise<WorkspaceNote[]>;
   insertNote(note: WorkspaceNote): Promise<void>;
   updateNote(note: WorkspaceNote): Promise<void>;
@@ -374,6 +442,13 @@ export function createWorkspaceService(
   async function requireViewer(viewerId: string): Promise<WorkspaceUser> {
     const viewer = await repository.getUser(viewerId);
     if (!viewer) throw new Error(`Unknown viewer ${viewerId}`);
+    if (viewer.status === 'deactivated') throw new Error(`User ${viewerId} is deactivated`);
+    return viewer;
+  }
+
+  async function requireAdmin(viewerId: string): Promise<WorkspaceUser> {
+    const viewer = await requireViewer(viewerId);
+    if (viewer.orgRole !== 'admin') throw new Error('Only organization administrators can manage organization structure');
     return viewer;
   }
 
@@ -537,13 +612,16 @@ export function createWorkspaceService(
       if (existingNoteIds.has(exportedNote.id)) continue;
       importedNoteIds.add(exportedNote.id);
       const author = usersById.get(exportedNote.authorId) ?? viewer;
+      const accessScope = exportedNote.accessScope ?? accessScopeFromVisibility(exportedNote.visibility);
       await repository.insertNote({
         ...withDerivedMetadata(exportedNote),
         orgId: viewer.orgId,
         authorId: author.id,
         authorName: author.name,
-        team: author.team,
-        teamId: author.teamId,
+        accessScope,
+        visibility: accessScope === 'organization' ? 'public' : accessScope === 'personal' ? 'private' : 'team',
+        team: accessScope === 'team' ? author.team : undefined,
+        teamId: accessScope === 'team' ? author.teamId : undefined,
         updatedAt: exportedNote.updatedAt ?? new Date().toISOString()
       });
     }
@@ -570,6 +648,7 @@ export function createWorkspaceService(
     const now = new Date().toISOString();
     const date = now.slice(0, 10);
     const metadata = metadataFromInput(input);
+    const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId);
     const note: WorkspaceNote = {
       id: `n-${Date.now()}-${slug(input.body.slice(0, 32))}`,
       orgId: viewer.orgId,
@@ -577,9 +656,10 @@ export function createWorkspaceService(
       body: input.body,
       authorId: viewer.id,
       authorName: viewer.name,
-      team: viewer.team,
-      teamId: viewer.teamId,
-      visibility: input.visibility,
+      team: access.teamName,
+      teamId: access.teamId,
+      visibility: access.visibility,
+      accessScope: access.accessScope,
       sourceType: input.sourceType?.trim() || 'Typed note',
       createdAt: date,
       updatedAt: now,
@@ -593,6 +673,8 @@ export function createWorkspaceService(
     await repository.insertNote(note);
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.created', 'note', note.id, {
       visibility: note.visibility,
+      accessScope: note.accessScope,
+      teamId: note.teamId,
       tickers: note.tickers,
       manualThemes: note.manualThemes,
       kpis: note.kpis,
@@ -639,11 +721,15 @@ export function createWorkspaceService(
     });
 
     const metadata = metadataFromInput(input, note.linkedEntities);
+    const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId, note);
     const updated: WorkspaceNote = {
       ...note,
       title: input.title?.trim() || note.title,
       body: Object.prototype.hasOwnProperty.call(input, 'body') ? input.body ?? '' : note.body,
-      visibility: input.visibility ?? note.visibility,
+      visibility: access.visibility,
+      accessScope: access.accessScope,
+      team: access.teamName,
+      teamId: access.teamId,
       observedAt: Object.prototype.hasOwnProperty.call(input, 'observedAt') ? input.observedAt : note.observedAt,
       ...metadata,
       updatedAt: now
@@ -674,13 +760,16 @@ export function createWorkspaceService(
     const viewer = await requireViewer(viewerId);
     const now = new Date().toISOString();
     const metadata = metadataFromInput(input);
+    const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId);
     const draft: NoteDraft = {
       orgId: viewer.orgId,
       userId: viewer.id,
       selectedNoteId: input.selectedNoteId || undefined,
       title: input.title ?? '',
       body: input.body ?? '',
-      visibility: input.visibility ?? 'team',
+      visibility: access.visibility,
+      accessScope: access.accessScope,
+      teamId: access.teamId,
       observedAt: input.observedAt,
       ...metadata,
       updatedAt: now
@@ -701,7 +790,9 @@ export function createWorkspaceService(
     return (await repository.listNoteRevisions(viewer.orgId, noteId)).filter(revision => {
       return canAccess(viewer, {
         visibility: revision.previousVisibility,
+        accessScope: accessScopeFromVisibility(revision.previousVisibility),
         team: note.team,
+        teamId: note.teamId,
         authorId: note.authorId
       });
     });
@@ -802,6 +893,131 @@ export function createWorkspaceService(
     return getWorkspace(viewerId);
   }
 
+  async function getAdminOrganization(viewerId: string): Promise<AdminOrganizationSnapshot> {
+    const viewer = await requireAdmin(viewerId);
+    return adminSnapshot(viewer.orgId);
+  }
+
+  async function createOrganizationTeam(viewerId: string, input: { name: string; sectorFocus?: string }): Promise<OrganizationTeam> {
+    const viewer = await requireAdmin(viewerId);
+    const name = input.name.trim();
+    if (!name) throw new Error('Team name is required');
+    const now = new Date().toISOString();
+    const team: OrganizationTeam = {
+      id: `team-${slug(name)}-${Date.now()}`,
+      orgId: viewer.orgId,
+      name,
+      sectorFocus: input.sectorFocus?.trim() || name,
+      defaultPermissions: 'team',
+      status: 'active',
+      createdAt: now
+    };
+    await repository.insertTeam(team);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'team.created', 'team', team.id, { name: team.name }));
+    return team;
+  }
+
+  async function updateOrganizationTeam(viewerId: string, teamId: string, input: { name?: string; sectorFocus?: string; status?: TeamStatus }): Promise<OrganizationTeam> {
+    const viewer = await requireAdmin(viewerId);
+    const team = await requireTeam(viewer.orgId, teamId);
+    const updated: OrganizationTeam = {
+      ...team,
+      name: input.name?.trim() || team.name,
+      sectorFocus: Object.prototype.hasOwnProperty.call(input, 'sectorFocus') ? input.sectorFocus?.trim() : team.sectorFocus,
+      status: input.status ?? team.status
+    };
+    await repository.updateTeam(updated);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'team.updated', 'team', updated.id, { status: updated.status }));
+    return updated;
+  }
+
+  async function archiveOrganizationTeam(viewerId: string, teamId: string): Promise<OrganizationTeam> {
+    return updateOrganizationTeam(viewerId, teamId, { status: 'archived' });
+  }
+
+  async function createOrganizationInvite(
+    viewerId: string,
+    input: { email: string; role: User['role']; orgRole: OrgRole; teamIds?: string[] }
+  ): Promise<OrganizationInvite> {
+    const viewer = await requireAdmin(viewerId);
+    const email = input.email.trim().toLowerCase();
+    if (!email) throw new Error('Invite email is required');
+    await assertActiveTeams(viewer.orgId, input.teamIds ?? []);
+    const existing = (await repository.listInvites(viewer.orgId)).find(invite => invite.email === email && invite.status !== 'cancelled');
+    if (existing) throw new Error(`Invite for ${email} is already ${existing.status}`);
+    const now = new Date().toISOString();
+    const invite: OrganizationInvite = {
+      id: `invite-${Date.now()}-${slug(email)}`,
+      orgId: viewer.orgId,
+      email,
+      role: input.role,
+      orgRole: input.orgRole,
+      teamIds: input.teamIds ?? [],
+      status: 'pending',
+      invitedBy: viewer.id,
+      createdAt: now
+    };
+    await repository.insertInvite(invite);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'invite.created', 'organization_invite', invite.id, { email }));
+    return invite;
+  }
+
+  async function cancelOrganizationInvite(viewerId: string, inviteId: string): Promise<OrganizationInvite> {
+    const viewer = await requireAdmin(viewerId);
+    const invite = (await repository.listInvites(viewer.orgId)).find(item => item.id === inviteId);
+    if (!invite) throw new Error(`Invite ${inviteId} not found`);
+    if (invite.status !== 'pending') throw new Error(`Invite ${inviteId} is already ${invite.status}`);
+    const updated: OrganizationInvite = { ...invite, status: 'cancelled', cancelledAt: new Date().toISOString() };
+    await repository.updateInvite(updated);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'invite.cancelled', 'organization_invite', invite.id, { email: invite.email }));
+    return updated;
+  }
+
+  async function updateOrganizationMember(
+    viewerId: string,
+    memberId: string,
+    input: { role?: User['role']; orgRole?: OrgRole; status?: UserStatus; primaryTeamId?: string | null }
+  ): Promise<WorkspaceUser> {
+    const viewer = await requireAdmin(viewerId);
+    const member = await repository.getUser(memberId);
+    if (!member || member.orgId !== viewer.orgId) throw new Error(`Member ${memberId} not found`);
+    if (input.primaryTeamId) await assertActiveTeams(viewer.orgId, [input.primaryTeamId]);
+    const hasPrimaryTeamInput = Object.prototype.hasOwnProperty.call(input, 'primaryTeamId');
+    const updated: WorkspaceUser = {
+      ...member,
+      role: input.role ?? member.role,
+      orgRole: input.orgRole ?? member.orgRole,
+      status: input.status ?? member.status,
+      primaryTeamId: hasPrimaryTeamInput ? input.primaryTeamId ?? undefined : member.primaryTeamId
+    };
+    await assertRetainsActiveAdmin(viewer.orgId, member.id, updated);
+    await repository.updateUser(updated);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'member.updated', 'profile', member.id, {
+      role: updated.role,
+      orgRole: updated.orgRole,
+      status: updated.status
+    }));
+    return (await repository.getUser(member.id)) ?? updated;
+  }
+
+  async function replaceOrganizationMemberTeams(viewerId: string, memberId: string, teamIds: string[]): Promise<WorkspaceUser> {
+    const viewer = await requireAdmin(viewerId);
+    const member = await repository.getUser(memberId);
+    if (!member || member.orgId !== viewer.orgId) throw new Error(`Member ${memberId} not found`);
+    await assertActiveTeams(viewer.orgId, teamIds);
+    await repository.replaceTeamMemberships(viewer.orgId, memberId, teamIds);
+    const refreshed = await repository.getUser(memberId);
+    if (!refreshed) throw new Error(`Member ${memberId} not found`);
+    const primaryTeamId = teamIds.includes(refreshed.primaryTeamId ?? '') ? refreshed.primaryTeamId : teamIds[0];
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'member.teams.updated', 'profile', member.id, { teamIds }));
+    if (primaryTeamId !== refreshed.primaryTeamId) {
+      const updated = { ...refreshed, primaryTeamId, teamId: primaryTeamId, team: refreshed.teamMemberships.find(team => team.teamId === primaryTeamId)?.teamName ?? refreshed.team };
+      await repository.updateUser(updated);
+      return (await repository.getUser(memberId)) ?? updated;
+    }
+    return refreshed;
+  }
+
   async function restoreImportedClaimState(
     viewer: WorkspaceUser,
     snapshot: WorkspaceSnapshot,
@@ -865,6 +1081,65 @@ export function createWorkspaceService(
     await repository.replaceRelations(viewer.orgId, restoredRelations);
   }
 
+  async function adminSnapshot(orgId: string): Promise<AdminOrganizationSnapshot> {
+    const organization = await repository.getOrganization(orgId) ?? { id: orgId, name: 'Organization' };
+    const [teams, members, invites] = await Promise.all([
+      repository.listTeams(orgId),
+      repository.listUsers(orgId),
+      repository.listInvites(orgId)
+    ]);
+    return { organization, teams, members, invites };
+  }
+
+  async function requireTeam(orgId: string, teamId: string): Promise<OrganizationTeam> {
+    const team = (await repository.listTeams(orgId)).find(item => item.id === teamId);
+    if (!team) throw new Error(`Team ${teamId} not found`);
+    return team;
+  }
+
+  async function assertActiveTeams(orgId: string, teamIds: string[]): Promise<void> {
+    const uniqueIds = [...new Set(teamIds.filter(Boolean))];
+    const teams = await repository.listTeams(orgId);
+    const active = new Set(teams.filter(team => team.status === 'active').map(team => team.id));
+    const missing = uniqueIds.find(teamId => !active.has(teamId));
+    if (missing) throw new Error(`Team ${missing} is not active`);
+  }
+
+  async function assertRetainsActiveAdmin(orgId: string, targetUserId: string, updatedTarget: WorkspaceUser): Promise<void> {
+    const users = await repository.listUsers(orgId);
+    const activeAdminCount = users.filter(user => {
+      const candidate = user.id === targetUserId ? updatedTarget : user;
+      return candidate.status === 'active' && candidate.orgRole === 'admin';
+    }).length;
+    if (activeAdminCount === 0) throw new Error('Cannot remove the last active organization admin');
+  }
+
+  async function resolveNoteAccess(
+    viewer: WorkspaceUser,
+    requestedAccessScope?: AccessScope,
+    requestedVisibility?: Visibility,
+    requestedTeamId?: string,
+    existing?: WorkspaceNote
+  ): Promise<{ accessScope: AccessScope; visibility: Visibility; teamId?: string; teamName?: string }> {
+    const accessScope = requestedAccessScope ?? (requestedVisibility ? accessScopeFromVisibility(requestedVisibility) : existing?.accessScope ?? 'personal');
+    const visibility = accessScope === 'organization' ? 'public' : accessScope === 'personal' ? 'private' : 'team';
+    if (accessScope !== 'team') return { accessScope, visibility };
+
+    const teamId = requestedTeamId ?? existing?.teamId ?? viewer.primaryTeamId ?? viewer.teamId ?? viewer.teamMemberships[0]?.teamId;
+    if (!teamId) throw new Error('A team is required for team notes');
+    const team = viewer.teamMemberships.find(item => item.teamId === teamId && item.status !== 'archived');
+    const canUseTeam = Boolean(team) || viewer.role === 'PM' || viewer.role === 'Compliance';
+    if (!canUseTeam) throw new Error(`Team ${teamId} is not available to this user`);
+    const orgTeam = team ?? (await requireTeam(viewer.orgId, teamId));
+    if (orgTeam.status === 'archived') throw new Error(`Team ${teamId} is archived`);
+    return {
+      accessScope,
+      visibility,
+      teamId,
+      teamName: 'teamName' in orgTeam ? orgTeam.teamName : orgTeam.name
+    };
+  }
+
   return {
     materializeGraph,
     getDashboard,
@@ -878,7 +1153,15 @@ export function createWorkspaceService(
     deleteNoteDraft,
     listNoteHistory,
     updateClaim,
-    updateRelation
+    updateRelation,
+    getAdminOrganization,
+    createOrganizationTeam,
+    updateOrganizationTeam,
+    archiveOrganizationTeam,
+    createOrganizationInvite,
+    cancelOrganizationInvite,
+    updateOrganizationMember,
+    replaceOrganizationMemberTeams
   };
 }
 
@@ -982,7 +1265,8 @@ function dashboardScopeAvailability(viewer: WorkspaceUser): DashboardScopeAvaila
 
 function dashboardTeams(users: WorkspaceUser[]): DashboardTeamOption[] {
   return uniqueBy(
-    users.map(user => ({ id: user.teamId, name: user.team })),
+    users.flatMap(user => user.teamMemberships.map(team => ({ id: team.teamId, name: team.teamName, status: team.status })))
+      .filter(team => team.status !== 'archived'),
     team => team.id ?? team.name.toLowerCase()
   ).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -994,24 +1278,22 @@ function selectedDashboardTeam(viewer: WorkspaceUser, users: WorkspaceUser[], te
     if (!found) throw new Error(`Unknown dashboard team ${teamId}`);
     return found;
   }
-  return { id: viewer.teamId, name: viewer.team };
+  return { id: viewer.primaryTeamId ?? viewer.teamId, name: viewer.team };
 }
 
 function dashboardNoteInScope(viewer: WorkspaceUser, note: WorkspaceNote, scope: DashboardScope, selectedTeam: DashboardTeamOption): boolean {
   if (scope === 'workspace') return canAccess(viewer, note);
-  if (scope === 'org') return viewer.role === 'PM' || viewer.role === 'Compliance';
-  return sameDashboardTeam(note, selectedTeam)
-    && (note.visibility !== 'private' || viewer.role === 'PM' || viewer.role === 'Compliance' || canAccess(viewer, note));
+  if (scope === 'org') return (viewer.role === 'PM' || viewer.role === 'Compliance') && note.accessScope !== 'personal';
+  return note.accessScope === 'team' && sameDashboardTeam(note, selectedTeam) && canAccess(viewer, note);
 }
 
 function dashboardClaimInScope(viewer: WorkspaceUser, claim: WorkspaceClaim, scope: DashboardScope, selectedTeam: DashboardTeamOption): boolean {
   if (scope === 'workspace') return canAccess(viewer, claim);
-  if (scope === 'org') return viewer.role === 'PM' || viewer.role === 'Compliance';
-  return sameDashboardTeam(claim, selectedTeam)
-    && (claim.visibility !== 'private' || viewer.role === 'PM' || viewer.role === 'Compliance' || canAccess(viewer, claim));
+  if (scope === 'org') return (viewer.role === 'PM' || viewer.role === 'Compliance') && claim.accessScope !== 'personal';
+  return claim.accessScope === 'team' && sameDashboardTeam(claim, selectedTeam) && canAccess(viewer, claim);
 }
 
-function sameDashboardTeam(item: { team: string; teamId?: string }, selectedTeam: DashboardTeamOption): boolean {
+function sameDashboardTeam(item: { team?: string; teamId?: string }, selectedTeam: DashboardTeamOption): boolean {
   return selectedTeam.id ? item.teamId === selectedTeam.id : item.team === selectedTeam.name;
 }
 
@@ -1046,6 +1328,8 @@ function noteChangedFields(note: WorkspaceNote, input: UpdateNoteInput): string[
   if (Object.prototype.hasOwnProperty.call(input, 'title') && (input.title?.trim() || note.title) !== note.title) changed.push('title');
   if (Object.prototype.hasOwnProperty.call(input, 'body') && (input.body ?? '') !== note.body) changed.push('body');
   if (Object.prototype.hasOwnProperty.call(input, 'visibility') && input.visibility !== note.visibility) changed.push('visibility');
+  if (Object.prototype.hasOwnProperty.call(input, 'accessScope') && input.accessScope !== note.accessScope) changed.push('accessScope');
+  if (Object.prototype.hasOwnProperty.call(input, 'teamId') && input.teamId !== note.teamId) changed.push('teamId');
   if (Object.prototype.hasOwnProperty.call(input, 'observedAt') && input.observedAt !== note.observedAt) changed.push('observedAt');
   if (Object.prototype.hasOwnProperty.call(input, 'tickers') && !sameStringArray(input.tickers ?? [], note.tickers ?? [])) changed.push('tickers');
   if (Object.prototype.hasOwnProperty.call(input, 'manualThemes') && !sameStringArray(input.manualThemes ?? [], note.manualThemes ?? [])) changed.push('manualThemes');
@@ -1234,7 +1518,10 @@ function buildPersonMemorySummaries(claims: WorkspaceClaim[], relations: Workspa
 
 export function createMemoryWorkspaceRepository() {
   class MemoryWorkspaceRepository implements WorkspaceRepository {
+    organization: OrganizationSummary = { id: 'org1', name: 'Mycelium Capital', domain: 'example.test' };
     users: WorkspaceUser[] = [];
+    teams: OrganizationTeam[] = [];
+    invites: OrganizationInvite[] = [];
     notes: WorkspaceNote[] = [];
     claims: WorkspaceClaim[] = [];
     relations: WorkspaceRelation[] = [];
@@ -1243,13 +1530,60 @@ export function createMemoryWorkspaceRepository() {
     noteDrafts: NoteDraft[] = [];
 
     seed(input: { organizationId: string; users: User[]; notes: Note[] }) {
-      this.users = input.users.map(user => ({ ...user, orgId: input.organizationId, email: `${slug(user.name)}@example.test` }));
+      this.organization = { id: input.organizationId, name: 'Mycelium Capital', domain: 'example.test' };
+      const teamById = new Map<string, OrganizationTeam>();
+      const addTeam = (teamId: string | undefined, teamName: string | undefined) => {
+        if (!teamId && !teamName) return;
+        const id = teamId ?? `team-${slug(teamName ?? 'Research')}`;
+        if (teamById.has(id)) return;
+        teamById.set(id, {
+          id,
+          orgId: input.organizationId,
+          name: teamName ?? id,
+          sectorFocus: teamName ?? id,
+          defaultPermissions: 'team',
+          status: 'active',
+          createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString()
+        });
+      };
+      for (const user of input.users) {
+        for (const team of user.teamMemberships ?? []) addTeam(team.teamId, team.teamName);
+        addTeam(user.teamId, user.team);
+      }
+      for (const note of input.notes) addTeam(note.teamId, note.team);
+      this.teams = [...teamById.values()];
+      this.users = input.users.map((user, index) => {
+        const teamMemberships = user.teamMemberships?.length
+          ? user.teamMemberships
+          : [{ teamId: user.teamId ?? `team-${slug(user.team)}`, teamName: user.team, role: 'member', status: 'active' as const }];
+        const primaryTeamId = user.primaryTeamId ?? user.teamId ?? teamMemberships[0]?.teamId;
+        const primaryTeam = teamMemberships.find(team => team.teamId === primaryTeamId) ?? teamMemberships[0];
+        return {
+          ...user,
+          orgId: input.organizationId,
+          email: `${slug(user.name)}@example.test`,
+          orgRole: user.orgRole ?? (index === 0 ? 'admin' : 'member'),
+          status: user.status ?? 'active',
+          primaryTeamId,
+          teamId: primaryTeamId,
+          team: primaryTeam?.teamName ?? user.team,
+          teamMemberships
+        };
+      });
       this.notes = input.notes.map(note => {
         const author = this.users.find(user => user.id === note.authorId);
+        const accessScope = note.accessScope ?? accessScopeFromVisibility(note.visibility);
+        const noteTeam = accessScope === 'team'
+          ? this.teams.find(team => team.id === note.teamId && team.name === note.team)
+            ?? this.teams.find(team => team.name === note.team)
+          : undefined;
         return withDerivedMetadata({
           ...note,
           orgId: input.organizationId,
           authorName: author?.name ?? note.authorId,
+          accessScope,
+          team: noteTeam?.name,
+          teamId: noteTeam?.id,
           updatedAt: new Date(`${note.createdAt}T00:00:00.000Z`).toISOString(),
           tickers: note.tickers ?? [],
           manualThemes: note.manualThemes ?? [],
@@ -1261,10 +1595,47 @@ export function createMemoryWorkspaceRepository() {
       this.auditEvents = [];
       this.noteRevisions = [];
       this.noteDrafts = [];
+      this.invites = [];
     }
 
+    async getOrganization(orgId: string) { return this.organization.id === orgId ? this.organization : undefined; }
     async getUser(userId: string) { return this.users.find(user => user.id === userId); }
+    async updateUser(user: WorkspaceUser) {
+      this.users = this.users.map(item => item.id === user.id ? user : item);
+    }
     async listUsers(orgId: string) { return this.users.filter(user => user.orgId === orgId); }
+    async listTeams(orgId: string) { return this.teams.filter(team => team.orgId === orgId); }
+    async insertTeam(team: OrganizationTeam) { this.teams.push(team); }
+    async updateTeam(team: OrganizationTeam) {
+      this.teams = this.teams.map(item => item.id === team.id ? team : item);
+      this.users = this.users.map(user => ({
+        ...user,
+        team: user.teamId === team.id ? team.name : user.team,
+        teamMemberships: user.teamMemberships.map(membership => membership.teamId === team.id ? { ...membership, teamName: team.name, status: team.status } : membership)
+      }));
+      this.notes = this.notes.map(note => note.teamId === team.id ? { ...note, team: team.name } : note);
+      this.claims = this.claims.map(claim => claim.teamId === team.id ? { ...claim, team: team.name } : claim);
+    }
+    async replaceTeamMemberships(orgId: string, userId: string, teamIds: string[]) {
+      const teams = this.teams.filter(team => team.orgId === orgId && teamIds.includes(team.id));
+      this.users = this.users.map(user => {
+        if (user.id !== userId || user.orgId !== orgId) return user;
+        const primaryTeamId = teamIds.includes(user.primaryTeamId ?? '') ? user.primaryTeamId : teamIds[0];
+        const primaryTeam = teams.find(team => team.id === primaryTeamId) ?? teams[0];
+        return {
+          ...user,
+          primaryTeamId,
+          teamId: primaryTeamId,
+          team: primaryTeam?.name ?? user.team,
+          teamMemberships: teams.map(team => ({ teamId: team.id, teamName: team.name, role: 'member', status: team.status }))
+        };
+      });
+    }
+    async listInvites(orgId: string) { return this.invites.filter(invite => invite.orgId === orgId); }
+    async insertInvite(invite: OrganizationInvite) { this.invites.unshift(invite); }
+    async updateInvite(invite: OrganizationInvite) {
+      this.invites = this.invites.map(item => item.id === invite.id ? invite : item);
+    }
     async listNotes(orgId: string) { return this.notes.filter(note => note.orgId === orgId); }
     async insertNote(note: WorkspaceNote) { this.notes.unshift(note); }
     async updateNote(note: WorkspaceNote) {
@@ -1325,6 +1696,7 @@ function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing: 
     orgId,
     authorName: note.authorName,
     teamId: note.teamId,
+    accessScope: note.accessScope,
     text: base.text,
     subject: base.subject,
     direction: base.direction,

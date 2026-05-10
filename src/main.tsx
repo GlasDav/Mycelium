@@ -62,14 +62,22 @@ import {
 } from 'lucide-react';
 import {
   createAuthClient,
+  archiveAdminTeam,
+  cancelAdminInvite,
+  createAdminInvite,
+  createAdminTeam,
   createNote,
   deleteNoteDraft,
   loadAuthBootstrap,
+  loadAdminOrganization,
   loadDashboard,
   loadNoteDraft,
   loadNoteHistory,
   loadWorkspace,
   updateClaim,
+  replaceAdminMemberTeams,
+  updateAdminMember,
+  updateAdminTeam,
   updateNote,
   updateRelation,
   upsertNoteDraft
@@ -82,11 +90,16 @@ import {
   kpiWords,
   relationLabel,
   themeLexicon,
+  accessScopeFromVisibility,
+  visibilityFromAccessScope,
   type Claim,
+  type AccessScope,
   type Direction,
   type Entity,
   type Horizon,
   type Note,
+  type OrgRole,
+  type Role,
   type RelationType
 } from './engine';
 import {
@@ -101,10 +114,12 @@ import {
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import type {
   ClaimReviewStatus,
+  AdminOrganizationSnapshot,
   DashboardRange,
   DashboardScope,
   DashboardSnapshot,
   DashboardTopItem,
+  OrganizationTeam,
   NoteDraft,
   NoteRevision,
   UpdateClaimInput,
@@ -174,7 +189,9 @@ type FrontendNoteDraft = NoteDraft & FrontendMetadata;
 type FrontendNotePayload = {
   title?: string;
   body: string;
-  visibility: Note['visibility'];
+  accessScope: AccessScope;
+  teamId?: string;
+  visibility?: Note['visibility'];
   observedAt?: string;
 } & MetadataArrays & { linkedEntities: LinkedEntity[] };
 type FrontendDraftPayload = Partial<FrontendNotePayload> & { selectedNoteId?: string };
@@ -229,7 +246,7 @@ turndownService.addRule('fontSizeSpan', {
   replacement: (content, node) => `<span data-size="${(node as HTMLElement).getAttribute('data-size')}">${content}</span>`
 });
 
-type ViewMode = 'notes' | 'dashboard' | 'map' | 'archive';
+type ViewMode = 'notes' | 'dashboard' | 'map' | 'archive' | 'admin';
 const DEFAULT_NOTE_SOURCE_TYPE = 'Typed note';
 
 function App() {
@@ -247,7 +264,8 @@ function App() {
   const [selected, setSelected] = useState('Nvidia');
   const [noteTitle, setNoteTitle] = useState('');
   const [draft, setDraft] = useState('');
-  const [visibility, setVisibility] = useState<Note['visibility']>('team');
+  const [accessScope, setAccessScope] = useState<AccessScope>('personal');
+  const [noteTeamId, setNoteTeamId] = useState('');
   const [observedAt, setObservedAt] = useState(today());
   const [viewMode, setViewMode] = useState<ViewMode>('notes');
   const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
@@ -256,6 +274,9 @@ function App() {
   const [dashboardTeamId, setDashboardTeamId] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
+  const [adminSnapshot, setAdminSnapshot] = useState<AdminOrganizationSnapshot | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState('');
   const [tickers, setTickers] = useState<string[]>([]);
   const [manualThemes, setManualThemes] = useState<string[]>([]);
   const [kpis, setKpis] = useState<string[]>([]);
@@ -302,6 +323,7 @@ function App() {
             setMapAsOf('');
             setMapError('');
             setDashboard(null);
+            setAdminSnapshot(null);
           }
         });
         unsubscribe = () => subscription.data.subscription.unsubscribe();
@@ -352,6 +374,23 @@ function App() {
     }
   }
 
+  async function refreshAdmin(nextSession = session): Promise<AdminOrganizationSnapshot | undefined> {
+    if (!nextSession) return undefined;
+    setAdminLoading(true);
+    setAdminError('');
+    try {
+      const next = await loadAdminOrganization(nextSession);
+      setAdminSnapshot(next);
+      return next;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAdminError(message);
+      return undefined;
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
   async function refreshMapWorkspace(nextWorkspace: WorkspaceSnapshot, targetAsOf = mapAsOf) {
     if (!session || !targetAsOf || targetAsOf === nextWorkspace.asOf) {
       setMapWorkspace(null);
@@ -375,6 +414,11 @@ function App() {
     if (!session) return;
     void refreshDashboard(session);
   }, [session, dashboardScope, dashboardRange, dashboardTeamId]);
+
+  useEffect(() => {
+    if (!session || viewMode !== 'admin' || workspace?.viewer.orgRole !== 'admin') return;
+    void refreshAdmin(session);
+  }, [session, viewMode, workspace?.viewer.orgRole]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -475,7 +519,8 @@ function App() {
       setSelectedNoteId(linkedNote?.id ?? '');
       setNoteTitle(savedDraft.title);
       setDraft(savedDraft.body);
-      setVisibility(savedDraft.visibility);
+      setAccessScope(savedDraft.accessScope ?? accessScopeFromVisibility(savedDraft.visibility));
+      setNoteTeamId(savedDraft.teamId ?? linkedNote?.teamId ?? nextWorkspace.viewer.primaryTeamId ?? nextWorkspace.viewer.teamId ?? '');
       setObservedAt(savedDraft.observedAt ?? today());
       applyWorkbenchMetadata(savedDraft);
       clearedDraftSignatureRef.current = draftSignature(savedDraft);
@@ -491,7 +536,8 @@ function App() {
       selectedNoteId: selectedNoteId || undefined,
       title: noteTitle,
       body: draft,
-      visibility,
+      accessScope,
+      teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
       observedAt,
       ...currentMetadataArrays(),
       linkedEntities: currentLinkedEntities()
@@ -507,7 +553,7 @@ function App() {
     }, 700);
 
     return () => window.clearTimeout(handle);
-  }, [session, workspace, selectedNoteId, noteTitle, draft, visibility, observedAt, tickers, manualThemes, kpis, industries, companyTags, watchlistTags, sourcePeople]);
+  }, [session, workspace, selectedNoteId, noteTitle, draft, accessScope, noteTeamId, observedAt, tickers, manualThemes, kpis, industries, companyTags, watchlistTags, sourcePeople]);
 
   async function saveWorkbenchNote() {
     if (selectedNoteId) {
@@ -523,7 +569,8 @@ function App() {
       const input: FrontendNotePayload = {
         title: noteTitle.trim() || undefined,
         body: draft,
-        visibility,
+        accessScope,
+        teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -557,7 +604,8 @@ function App() {
       const input: Partial<FrontendNotePayload> = {
         title: noteTitle.trim() || undefined,
         body: draft,
-        visibility,
+        accessScope,
+        teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -569,7 +617,8 @@ function App() {
         selectedNoteId,
         title: noteTitle,
         body: draft,
-        visibility,
+        accessScope,
+        teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -626,8 +675,10 @@ function App() {
       title: noteTitle.trim() || 'Draft preview',
       body: draft,
       authorId: viewer?.id ?? 'preview',
-      team: viewer?.team ?? 'Research',
-      visibility,
+      team: activeTeamMemberships.find(team => team.teamId === effectiveNoteTeamId)?.teamName ?? viewer?.team ?? 'Research',
+      teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+      visibility: visibilityFromAccessScope(accessScope),
+      accessScope,
       sourceType: DEFAULT_NOTE_SOURCE_TYPE,
       createdAt: observedAt || today(),
       observedAt,
@@ -641,7 +692,8 @@ function App() {
     setSelectedNoteId('');
     setNoteTitle('');
     setDraft('');
-    setVisibility('team');
+    setAccessScope('personal');
+    setNoteTeamId(workspace?.viewer.primaryTeamId ?? workspace?.viewer.teamId ?? '');
     setObservedAt(date);
     resetWorkbenchMetadata();
     setNoteHistory([]);
@@ -662,6 +714,7 @@ function App() {
     setMapAsOf('');
     setMapError('');
     setDashboard(null);
+    setAdminSnapshot(null);
   }
 
   function addPreviewEntity(entity: PreviewEntity) {
@@ -699,6 +752,9 @@ function App() {
   const graph = workspace as FrontendWorkspaceSnapshot | null;
   const mapGraph = (mapAsOf && workspace && mapAsOf !== workspace.asOf && mapWorkspace ? mapWorkspace : workspace) as FrontendWorkspaceSnapshot | null;
   const user = graph?.viewer;
+  const activeTeamMemberships = user?.teamMemberships?.filter(team => team.status !== 'archived') ?? [];
+  const effectiveNoteTeamId = noteTeamId || activeTeamMemberships[0]?.teamId || '';
+  const selectedNoteTeamName = activeTeamMemberships.find(team => team.teamId === effectiveNoteTeamId)?.teamName ?? user?.team ?? 'Personal';
   const selectedNote = selectedNoteId ? graph?.visibleNotes.find(note => note.id === selectedNoteId) : undefined;
   const canEditSelectedNote = !selectedNoteId || selectedNote?.authorId === user?.id;
   const workbenchActionLabel = selectedNoteId ? 'Save note' : 'Add note';
@@ -744,6 +800,7 @@ function App() {
         <button className={viewMode === 'dashboard' ? 'active' : ''} onClick={() => setViewMode('dashboard')} title="Dashboard"><BarChart3 size={18}/></button>
         <button className={viewMode === 'map' ? 'active' : ''} onClick={() => setViewMode('map')} title="Relationship map"><GitBranch size={18}/></button>
         <button className={viewMode === 'archive' ? 'active' : ''} onClick={() => setViewMode('archive')} title="Archive"><Layers3 size={18}/></button>
+        {user.orgRole === 'admin' && <button className={viewMode === 'admin' ? 'active' : ''} onClick={() => setViewMode('admin')} title="Organisation admin"><ShieldCheck size={18}/></button>}
       </nav>
       <button className="rail-footer" type="button" onClick={signOut} title="Sign out"><LogOut size={16}/><span>{user.role}</span></button>
     </aside>
@@ -766,7 +823,8 @@ function App() {
           selectedNoteId: note.id,
           title: note.title,
           body: note.body,
-          visibility: note.visibility,
+          accessScope: note.accessScope ?? accessScopeFromVisibility(note.visibility),
+          teamId: note.teamId,
           observedAt: note.observedAt ?? note.createdAt,
           ...metadataArraysFromSource(note),
           linkedEntities: (note as FrontendWorkspaceNote).linkedEntities ?? []
@@ -774,7 +832,8 @@ function App() {
         setSelectedNoteId(note.id);
         setNoteTitle(note.title);
         setDraft(note.body);
-        setVisibility(note.visibility);
+        setAccessScope(note.accessScope ?? accessScopeFromVisibility(note.visibility));
+        setNoteTeamId(note.teamId ?? user.primaryTeamId ?? user.teamId ?? '');
         setObservedAt(note.observedAt ?? note.createdAt);
         applyWorkbenchMetadata(note as FrontendWorkspaceNote);
         setNoteHistory([]);
@@ -798,15 +857,15 @@ function App() {
             </div>
           </div>
           <div className="note-meta">
-            <span>{user.team}</span>
+            <span>{accessScope === 'team' ? selectedNoteTeamName : accessScope === 'organization' ? 'Organisation' : 'Personal'}</span>
             <span>{observedAt}</span>
           </div>
           <input className="note-title-input" value={noteTitle} onChange={event => setNoteTitle(event.target.value)} placeholder="Title..." aria-label="Note title" />
           <MarkdownEditor value={draft} onChange={setDraft} onSubmit={saveWorkbenchNote} />
           <div className="metadata-grid">
             <label><span>Observed</span><input type="date" value={observedAt} onChange={e => setObservedAt(e.target.value)} /></label>
-            <label><span>Visibility</span><select value={visibility} onChange={e => setVisibility(e.target.value as Note['visibility'])}><option value="public">public</option><option value="team">team</option><option value="private">private</option></select></label>
-            <label><span>Team</span><input value={user.team} readOnly /></label>
+            <label><span>Location</span><select value={accessScope} onChange={e => setAccessScope(e.target.value as AccessScope)}><option value="personal">Personal</option><option value="team">Team</option><option value="organization">Organisation</option></select></label>
+            {accessScope === 'team' && <label><span>Team</span><select value={effectiveNoteTeamId} onChange={e => setNoteTeamId(e.target.value)}>{activeTeamMemberships.map(team => <option key={team.teamId} value={team.teamId}>{team.teamName}</option>)}</select></label>}
           </div>
           <div className="metadata-linking">
             <MetadataChipInput label="Securities/Tickers" values={tickers} options={knownTickers()} onChange={setTickers} transform={value => value.toUpperCase()} placeholder="Add ticker" />
@@ -918,6 +977,7 @@ function App() {
       </MapPage>}
 
       {viewMode === 'archive' && <ArchivePage notes={filteredNotes} totalNotes={graph.visibleNotes.length} selectedNoteId={selectedNoteId} hasActiveFilters={activeFilterCount(noteFilters) > 0} onClearFilters={clearNoteFilters} onStartCapture={focusCapture} />}
+      {viewMode === 'admin' && <AdminPage session={session} snapshot={adminSnapshot} loading={adminLoading} error={adminError} onLoad={refreshAdmin} onError={setAdminError} />}
     </section>
   </main>;
 }
@@ -928,6 +988,143 @@ function NotesPage({ children }: { children: React.ReactNode }) {
 
 function MapPage({ children }: { children: React.ReactNode }) {
   return <div className="page-layout map-layout">{children}</div>;
+}
+
+function AdminPage({
+  session,
+  snapshot,
+  loading,
+  error,
+  onLoad,
+  onError
+}: {
+  session: Session;
+  snapshot: AdminOrganizationSnapshot | null;
+  loading: boolean;
+  error: string;
+  onLoad: () => Promise<AdminOrganizationSnapshot | undefined>;
+  onError: (value: string) => void;
+}) {
+  const [teamName, setTeamName] = useState('');
+  const [teamEdits, setTeamEdits] = useState<Record<string, string>>({});
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<Role>('Analyst');
+  const [inviteOrgRole, setInviteOrgRole] = useState<OrgRole>('member');
+  const [inviteTeamIds, setInviteTeamIds] = useState<string[]>([]);
+
+  async function run(action: () => Promise<unknown>) {
+    try {
+      onError('');
+      await action();
+      await onLoad();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const activeTeams = snapshot?.teams.filter(team => team.status === 'active') ?? [];
+  const productRoles: Role[] = ['Analyst', 'PM', 'Compliance'];
+  const orgRoles: OrgRole[] = ['member', 'admin'];
+
+  return <div className="page-layout admin-layout">
+    <section className="workspace admin-workspace">
+      <article className="panel admin-panel">
+        <div className="panel-title"><ShieldCheck/> Organisation admin</div>
+        {error && <div className="inline-error">{error}</div>}
+        {loading && <p>Loading organisation...</p>}
+        {!snapshot && !loading && <button type="button" onClick={() => void onLoad()}><Radar size={14}/> Load admin workspace</button>}
+        {snapshot && <>
+          <div className="admin-section">
+            <h2>{snapshot.organization.name}</h2>
+            <div className="admin-create-row">
+              <label><span>New team</span><input value={teamName} onChange={event => setTeamName(event.target.value)} placeholder="Team name" /></label>
+              <button type="button" onClick={() => void run(async () => {
+                if (!teamName.trim()) return;
+                await createAdminTeam(session, { name: teamName });
+                setTeamName('');
+              })}><Plus size={14}/> Create team</button>
+            </div>
+          </div>
+
+          <div className="admin-section">
+            <h3>Teams</h3>
+            <div className="admin-list">
+              {snapshot.teams.map(team => <div className="admin-row" key={team.id}>
+                <span><b>{team.name}</b><small>{team.status}</small></span>
+                <div className="admin-inline-edit">
+                  <input value={teamEdits[team.id] ?? team.name} onChange={event => setTeamEdits(previous => ({ ...previous, [team.id]: event.target.value }))} aria-label={`Rename ${team.name}`} />
+                  <button type="button" onClick={() => void run(async () => {
+                    const nextName = (teamEdits[team.id] ?? team.name).trim();
+                    if (!nextName) return;
+                    await updateAdminTeam(session, team.id, { name: nextName });
+                    setTeamEdits(previous => {
+                      const next = { ...previous };
+                      delete next[team.id];
+                      return next;
+                    });
+                  })}><Edit3 size={14}/> Rename</button>
+                  {team.status === 'active' && <button type="button" onClick={() => void run(() => archiveAdminTeam(session, team.id))}><ArchiveIcon/> Archive</button>}
+                </div>
+              </div>)}
+            </div>
+          </div>
+
+          <div className="admin-section">
+            <h3>Invite</h3>
+            <div className="admin-create-row">
+              <label><span>Email</span><input value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="analyst@example.com" /></label>
+              <label><span>Product role</span><select value={inviteRole} onChange={event => setInviteRole(event.target.value as Role)}>{productRoles.map(role => <option key={role} value={role}>{role}</option>)}</select></label>
+              <label><span>Org role</span><select value={inviteOrgRole} onChange={event => setInviteOrgRole(event.target.value as OrgRole)}>{orgRoles.map(role => <option key={role} value={role}>{role}</option>)}</select></label>
+              <label><span>Teams</span><select multiple value={inviteTeamIds} onChange={event => setInviteTeamIds(Array.from(event.currentTarget.selectedOptions).map(option => option.value))}>{activeTeams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+              <button type="button" onClick={() => void run(async () => {
+                if (!inviteEmail.trim()) return;
+                await createAdminInvite(session, { email: inviteEmail, role: inviteRole, orgRole: inviteOrgRole, teamIds: inviteTeamIds });
+                setInviteEmail('');
+                setInviteTeamIds([]);
+              })}><KeyRound size={14}/> Invite</button>
+            </div>
+            <div className="admin-list">
+              {snapshot.invites.map(invite => <div className="admin-row" key={invite.id}>
+                <span><b>{invite.email}</b><small>{invite.status}</small></span>
+                {invite.status === 'pending' && <button type="button" onClick={() => void run(() => cancelAdminInvite(session, invite.id))}><X size={14}/> Cancel</button>}
+              </div>)}
+            </div>
+          </div>
+
+          <div className="admin-section">
+            <h3>Members</h3>
+            <div className="admin-list">
+              {snapshot.members.map(member => {
+                const assignedTeamIds = new Set(member.teamMemberships.filter(team => team.status === 'active').map(team => team.teamId));
+                const primaryTeamOptions = activeTeams.filter(team => assignedTeamIds.has(team.id));
+                return <div className="admin-row admin-member-row" key={member.id}>
+                  <span><b>{member.name}</b><small>{member.email ?? member.id} · {member.status}</small></span>
+                  <div className="admin-member-controls">
+                    <label><span>Product role</span><select value={member.role} onChange={event => void run(() => updateAdminMember(session, member.id, { role: event.target.value as Role }))}>{productRoles.map(role => <option key={role} value={role}>{role}</option>)}</select></label>
+                    <label><span>Org role</span><select value={member.orgRole} onChange={event => void run(() => updateAdminMember(session, member.id, { orgRole: event.target.value as OrgRole }))}>{orgRoles.map(role => <option key={role} value={role}>{role}</option>)}</select></label>
+                    <label><span>Primary team</span><select value={member.primaryTeamId ?? ''} onChange={event => void run(() => updateAdminMember(session, member.id, { primaryTeamId: event.target.value || null }))}><option value="">None</option>{primaryTeamOptions.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+                    <div className="admin-team-checks" aria-label={`${member.name} teams`}>
+                      {activeTeams.map(team => <label key={team.id}><input type="checkbox" checked={assignedTeamIds.has(team.id)} onChange={event => {
+                        const nextTeamIds = new Set(assignedTeamIds);
+                        if (event.currentTarget.checked) nextTeamIds.add(team.id);
+                        else nextTeamIds.delete(team.id);
+                        void run(() => replaceAdminMemberTeams(session, member.id, Array.from(nextTeamIds)));
+                      }} /><span>{team.name}</span></label>)}
+                    </div>
+                    <button type="button" onClick={() => void run(() => updateAdminMember(session, member.id, { status: member.status === 'active' ? 'deactivated' : 'active' }))}>{member.status === 'active' ? <Ban size={14}/> : <Check size={14}/>} {member.status === 'active' ? 'Deactivate' : 'Reactivate'}</button>
+                  </div>
+                </div>;
+              })}
+            </div>
+          </div>
+        </>}
+      </article>
+    </section>
+  </div>;
+}
+
+function ArchiveIcon() {
+  return <Layers3 size={14}/>;
 }
 
 function DashboardPage({
@@ -1125,7 +1322,7 @@ function ArchivePage({
         <div className="panel-title"><LockKeyhole/> Permission-aware note archive</div>
         <p className="archive-count">{notes.length} of {totalNotes} visible notes</p>
         {notes.length ? notes.map(n => <article key={n.id} className={`note-card ${selectedNoteId === n.id ? 'selected' : ''}`}>
-          <div><h3>{n.title}</h3><small>{n.team} · {n.visibility} · {n.createdAt}</small></div>
+          <div><h3>{n.title}</h3><small>{noteLocationLabel(n)} · {n.createdAt}</small></div>
           <NoteMetadataChips note={n} />
           <MarkdownPreview source={n.body} />
         </article>) : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
@@ -1191,7 +1388,7 @@ function NotesSidebar({
           <FilterSelect label="KPI" value={filters.kpi ?? ''} options={options.kpis} onChange={value => onFilterChange({ kpi: value })} />
           <FilterSelect label="Watchlist" value={filters.watchlist ?? ''} options={options.watchlists} onChange={value => onFilterChange({ watchlist: value })} />
           <FilterSelect label="Participant" value={filters.sourcePerson ?? ''} options={options.sourcePeople} onChange={value => onFilterChange({ sourcePerson: value })} />
-          <FilterSelect label="Visibility" value={filters.visibility ?? ''} options={options.visibilities} onChange={value => onFilterChange({ visibility: value as NoteFilters['visibility'] })} />
+          <FilterSelect label="Location" value={filters.accessScope ?? ''} options={options.accessScopes.map(scope => ({ value: scope, label: accessScopeLabel(scope) }))} onChange={value => onFilterChange({ accessScope: value as NoteFilters['accessScope'] })} />
           <label><span>Sort</span><select value={filters.sort ?? 'newest'} onChange={event => onFilterChange({ sort: event.target.value as NoteSort })}><option value="newest">newest</option><option value="oldest">oldest</option><option value="title">title</option></select></label>
         </div>
         <div className="date-filter-grid">
@@ -1229,7 +1426,8 @@ function activeFilterCount(filters: NoteFilters) {
     filters.sourcePerson,
     filters.dateFrom,
     filters.dateTo,
-    filters.visibility
+    filters.visibility,
+    filters.accessScope
   ].filter(Boolean).length;
 }
 
@@ -1631,14 +1829,14 @@ function AuthScreen({ authClient, error, onError }: { authClient: SupabaseClient
     <section className="auth-panel panel">
       <div className="panel-title"><LogIn/> Secure workspace</div>
       <h1>Mycelium</h1>
-      <p>Sign in with Supabase Auth. New accounts create an organization, profile, team membership, and demo notes through the database trigger.</p>
+      <p>Sign in with Supabase Auth. The first account creates an organisation admin; later same-domain accounts need a pending invite.</p>
       {error && <div className="inline-error">{error}</div>}
       {message && <div className="inline-success">{message}</div>}
       <div className="auth-grid">
         <label><span>Email</span><input value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" /></label>
         <label><span>Password</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" /></label>
         <label><span>Name</span><input value={name} onChange={e => setName(e.target.value)} /></label>
-        <label><span>Organization</span><input value={organizationName} onChange={e => setOrganizationName(e.target.value)} /></label>
+        <label><span>Organisation</span><input value={organizationName} onChange={e => setOrganizationName(e.target.value)} /></label>
         <label><span>Team</span><input value={teamName} onChange={e => setTeamName(e.target.value)} /></label>
         <label><span>Role</span><select value={role} onChange={e => setRole(e.target.value)}><option>Analyst</option><option>PM</option><option>Compliance</option></select></label>
       </div>
@@ -1998,7 +2196,7 @@ function mergeEntities(primary: PreviewEntity[], manual: PreviewEntity[]): Previ
 }
 
 function emptyFilterOptions(): FrontendNoteFilterOptions {
-  return { tickers: [], themes: [], kpis: [], industries: [], watchlists: [], sourcePeople: [], visibilities: [] };
+  return { tickers: [], themes: [], kpis: [], industries: [], watchlists: [], sourcePeople: [], visibilities: [], accessScopes: [] };
 }
 
 function emptyMapFilterOptions() {
@@ -2033,7 +2231,8 @@ function draftSignature(draft: Partial<FrontendNoteDraft>) {
     selectedNoteId: draft.selectedNoteId ?? '',
     title: draft.title ?? '',
     body: draft.body ?? '',
-    visibility: draft.visibility ?? 'team',
+    accessScope: draft.accessScope ?? (draft.visibility ? accessScopeFromVisibility(draft.visibility) : 'personal'),
+    teamId: draft.teamId ?? '',
     observedAt: draft.observedAt ?? '',
     ...metadata,
     linkedEntities: draft.linkedEntities ?? legacyArraysToLinkedEntities(metadata)
@@ -2066,7 +2265,8 @@ function extendNoteFilterOptions(options: NoteFilterOptions, notes: FrontendWork
     ...options,
     industries: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).industries)),
     watchlists: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).watchlistTags)),
-    sourcePeople: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).sourcePeople))
+    sourcePeople: sortedUnique(notes.flatMap(note => metadataArraysFromSource(note).sourcePeople)),
+    accessScopes: options.accessScopes.length ? options.accessScopes : ['personal', 'team', 'organization']
   };
 }
 
@@ -2121,6 +2321,17 @@ function filterMapRelations(relations: FrontendWorkspaceRelation[], filters: Map
       && (!filters.authorId || relation.a.authorId === filters.authorId || relation.b.authorId === filters.authorId)
       && (!filters.team || relation.a.team === filters.team || relation.b.team === filters.team);
   });
+}
+
+function accessScopeLabel(scope: AccessScope): string {
+  if (scope === 'organization') return 'Organisation';
+  if (scope === 'team') return 'Team';
+  return 'Personal';
+}
+
+function noteLocationLabel(note: Pick<FrontendWorkspaceNote, 'accessScope' | 'visibility' | 'team'>): string {
+  const scope = note.accessScope ?? accessScopeFromVisibility(note.visibility);
+  return scope === 'team' ? note.team ?? 'Team' : accessScopeLabel(scope);
 }
 
 function claimMetadataWithNoteFallback(claim: FrontendWorkspaceClaim, notes: FrontendWorkspaceNote[]): MetadataArrays {

@@ -8,7 +8,11 @@ import {
 } from './entity-links';
 
 export type Visibility = 'public' | 'team' | 'private';
+export type AccessScope = 'organization' | 'team' | 'personal';
 export type Role = 'Analyst' | 'PM' | 'Compliance' | 'Guest';
+export type OrgRole = 'admin' | 'member';
+export type UserStatus = 'active' | 'deactivated';
+export type TeamStatus = 'active' | 'archived';
 export type Direction = 'positive' | 'negative' | 'neutral';
 export type Horizon = 'point_in_time' | 'near_term' | 'quarter' | 'year' | 'unknown';
 export type Freshness = 'fresh' | 'aging' | 'stale';
@@ -16,14 +20,32 @@ export type RelationType = 'contradiction' | 'update_or_trend_reversal' | 'histo
 export type SourcePersonContext = 'same_source_person' | 'different_source_people' | 'unknown';
 export type ClaimWindowStatus = 'future' | 'active' | 'expired';
 
-export interface User { id: string; name: string; role: Role; team: string; }
+export interface TeamMembership {
+  teamId: string;
+  teamName: string;
+  role: string;
+  status?: TeamStatus;
+}
+export interface User {
+  id: string;
+  name: string;
+  role: Role;
+  team: string;
+  teamId?: string;
+  primaryTeamId?: string;
+  orgRole?: OrgRole;
+  status?: UserStatus;
+  teamMemberships?: TeamMembership[];
+}
 export interface Note {
   id: string;
   title: string;
   body: string;
   authorId: string;
-  team: string;
+  team?: string;
+  teamId?: string;
   visibility: Visibility;
+  accessScope?: AccessScope;
   sourceType: string;
   createdAt: string;
   observedAt?: string;
@@ -64,7 +86,9 @@ export interface Claim {
   freshness: Freshness;
   authorId: string;
   visibility: Visibility;
-  team: string;
+  accessScope?: AccessScope;
+  team?: string;
+  teamId?: string;
 }
 export interface Relation { id: string; type: RelationType; a: Claim; b: Claim; reason: string; score: number; overlapDays: number; sourcePersonContext?: SourcePersonContext; }
 export interface Alert { id: string; severity: 'high' | 'medium' | 'low'; title: string; body: string; relation?: Relation; company?: string; }
@@ -98,11 +122,39 @@ const positive = ['accelerat', 'strong', 'improv', 'beat', 'expanding', 'tight',
 const negative = ['slow', 'weak', 'declin', 'miss', 'pressure', 'soft', 'excess', 'risk', 'downside', 'cut', 'lower', 'delay'];
 const DAY = 24 * 60 * 60 * 1000;
 
-export function canAccess(user: User, noteOrClaim: Pick<Note | Claim, 'visibility' | 'team' | 'authorId'>): boolean {
+export function accessScopeFromVisibility(visibility: Visibility): AccessScope {
+  if (visibility === 'public') return 'organization';
+  if (visibility === 'private') return 'personal';
+  return 'team';
+}
+
+export function visibilityFromAccessScope(accessScope: AccessScope): Visibility {
+  if (accessScope === 'organization') return 'public';
+  if (accessScope === 'personal') return 'private';
+  return 'team';
+}
+
+export function userTeamMemberships(user: User): TeamMembership[] {
+  const memberships = user.teamMemberships?.length
+    ? user.teamMemberships
+    : [{
+      teamId: user.teamId ?? user.team,
+      teamName: user.team,
+      role: 'member',
+      status: 'active' as TeamStatus
+    }];
+  return memberships.filter(team => team.status !== 'archived');
+}
+
+export function canAccess(user: User, noteOrClaim: Pick<Note | Claim, 'visibility' | 'accessScope' | 'team' | 'teamId' | 'authorId'>): boolean {
+  if (user.status === 'deactivated') return false;
+  const accessScope = noteOrClaim.accessScope ?? accessScopeFromVisibility(noteOrClaim.visibility);
+  if (accessScope === 'personal') return noteOrClaim.authorId === user.id;
+  if (accessScope === 'organization') return true;
   if (user.role === 'PM' || user.role === 'Compliance') return true;
-  if (noteOrClaim.visibility === 'public') return true;
-  if (noteOrClaim.visibility === 'team') return noteOrClaim.team === user.team;
-  return noteOrClaim.authorId === user.id;
+  return userTeamMemberships(user).some(team => (
+    noteOrClaim.teamId ? team.teamId === noteOrClaim.teamId : team.teamName === noteOrClaim.team
+  ));
 }
 
 export function detectEntities(text: string): Entity[] {
@@ -182,7 +234,9 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
         freshness: freshnessFor(temporal.appliesToEnd ?? temporal.observedAt, asOf),
         authorId: note.authorId,
         visibility: note.visibility,
-        team: note.team
+        accessScope: note.accessScope ?? accessScopeFromVisibility(note.visibility),
+        team: note.team,
+        teamId: note.teamId
       });
     }
   }

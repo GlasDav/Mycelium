@@ -10,10 +10,10 @@ import {
 } from '../server/workspace-service';
 
 const users: User[] = [
-  { id: 'u1', name: 'Maya Chen', role: 'Analyst', team: 'Semis' },
-  { id: 'u2', name: 'Owen Vale', role: 'Analyst', team: 'Consumer' },
-  { id: 'u3', name: 'Priya Shah', role: 'PM', team: 'Portfolio' },
-  { id: 'u4', name: 'Nora Bell', role: 'Compliance', team: 'Compliance' }
+  { id: 'u1', name: 'Maya Chen', role: 'Analyst', team: 'Semis', teamId: 'team-semis', primaryTeamId: 'team-semis', orgRole: 'member', status: 'active', teamMemberships: [{ teamId: 'team-semis', teamName: 'Semis', role: 'member', status: 'active' }] },
+  { id: 'u2', name: 'Owen Vale', role: 'Analyst', team: 'Consumer', teamId: 'team-consumer', primaryTeamId: 'team-consumer', orgRole: 'member', status: 'active', teamMemberships: [{ teamId: 'team-consumer', teamName: 'Consumer', role: 'member', status: 'active' }] },
+  { id: 'u3', name: 'Priya Shah', role: 'PM', team: 'Portfolio', teamId: 'team-portfolio', primaryTeamId: 'team-portfolio', orgRole: 'admin', status: 'active', teamMemberships: [{ teamId: 'team-portfolio', teamName: 'Portfolio', role: 'member', status: 'active' }] },
+  { id: 'u4', name: 'Nora Bell', role: 'Compliance', team: 'Compliance', teamId: 'team-compliance', primaryTeamId: 'team-compliance', orgRole: 'member', status: 'active', teamMemberships: [{ teamId: 'team-compliance', teamName: 'Compliance', role: 'member', status: 'active' }] }
 ];
 
 const base = {
@@ -51,6 +51,112 @@ test('workspace snapshots enforce permissions before graph computation', async (
   assert.equal(analyst.relations.length, 0);
   assert.deepEqual(pm.visibleNotes.map(n => n.id).sort(), ['n1', 'n2', 'n3']);
   assert(pm.relations.some(r => r.type === 'contradiction'));
+});
+
+test('workspace access scopes support organization, team, and author-only personal notes', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'team-note', title: 'team note', body: 'Nvidia demand is strong and GPU supply is tight.' },
+      { ...base, id: 'org-note', title: 'org note', visibility: 'public', accessScope: 'organization', team: undefined, teamId: undefined, body: 'Apple services revenue remains robust.' } as Note,
+      { ...base, id: 'maya-personal', title: 'maya personal', visibility: 'private', accessScope: 'personal', team: undefined, teamId: undefined, body: 'Shopify demand is recovering.' } as Note,
+      { ...base, id: 'owen-personal', title: 'owen personal', authorId: 'u2', visibility: 'private', accessScope: 'personal', team: undefined, teamId: undefined, body: 'Tesla inventory is increasing.' } as Note
+    ]
+  });
+
+  const maya = await service.getWorkspace('u1');
+  const pm = await service.getWorkspace('u3');
+
+  assert.deepEqual(maya.visibleNotes.map(note => note.id).sort(), ['maya-personal', 'org-note', 'team-note']);
+  assert.deepEqual(pm.visibleNotes.map(note => note.id).sort(), ['org-note', 'team-note']);
+});
+
+test('multi-team contributors can save team-scoped notes into any active assigned team', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users: [
+      {
+        ...users[0],
+        teamMemberships: [
+          { teamId: 'team-semis', teamName: 'Semis', role: 'member', status: 'active' },
+          { teamId: 'team-consumer', teamName: 'Consumer', role: 'member', status: 'active' }
+        ]
+      },
+      ...users.slice(1)
+    ] as User[],
+    notes: []
+  });
+
+  const snapshot = await service.createNote('u1', {
+    body: 'Apple iPhone demand is weak but Services pricing remains robust.',
+    accessScope: 'team',
+    teamId: 'team-consumer'
+  } as Parameters<typeof service.createNote>[1]);
+
+  const created = snapshot.visibleNotes.find(note => note.body.includes('Apple iPhone'));
+  assert.equal(created?.accessScope, 'team');
+  assert.equal(created?.teamId, 'team-consumer');
+  assert.equal(created?.team, 'Consumer');
+});
+
+test('personal notes contribute only to the author workspace graph and stay out of dashboards', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'team-bull', title: 'team bull', body: 'Nvidia demand is strong and GPU supply is tight.' },
+      { ...base, id: 'personal-bear', title: 'personal bear', visibility: 'private', accessScope: 'personal', team: undefined, teamId: undefined, body: 'Nvidia demand is weak as GPU supply slows.' } as Note,
+      { ...base, id: 'org-note', title: 'org read', visibility: 'public', accessScope: 'organization', team: undefined, teamId: undefined, body: 'Microsoft Azure capex growth is improving.' } as Note
+    ]
+  });
+
+  const mayaWorkspace = await service.getWorkspace('u1');
+  const pmWorkspace = await service.getWorkspace('u3');
+  const mayaTeamDashboard = await service.getDashboard('u1', { scope: 'team', range: 'all', teamId: 'team-semis' });
+  const pmOrgDashboard = await service.getDashboard('u3', { scope: 'org', range: 'all' });
+
+  assert(mayaWorkspace.relations.some(relation => relation.a.noteId === 'personal-bear' || relation.b.noteId === 'personal-bear'));
+  assert(!pmWorkspace.visibleNotes.some(note => note.id === 'personal-bear'));
+  assert(!pmWorkspace.relations.some(relation => relation.a.noteId === 'personal-bear' || relation.b.noteId === 'personal-bear'));
+  assert.equal(mayaTeamDashboard.totals.notes, 1);
+  assert.equal(pmOrgDashboard.totals.notes, 2);
+});
+
+test('organization admins manage teams, invites, memberships, and deactivation without research visibility escalation', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({ organizationId: 'org1', users, notes });
+
+  await assert.rejects(() => service.getAdminOrganization('u1'), /administrator/);
+
+  const createdTeam = await service.createOrganizationTeam('u3', { name: 'Healthcare' });
+  await service.updateOrganizationTeam('u3', createdTeam.id, { name: 'Health Care' });
+  await service.archiveOrganizationTeam('u3', createdTeam.id);
+  const invite = await service.createOrganizationInvite('u3', {
+    email: 'new.analyst@example.test',
+    role: 'Analyst',
+    orgRole: 'member',
+    teamIds: ['team-semis']
+  });
+  await service.cancelOrganizationInvite('u3', invite.id);
+  await service.updateOrganizationMember('u3', 'u1', { orgRole: 'admin' });
+  await service.replaceOrganizationMemberTeams('u3', 'u1', ['team-semis', 'team-consumer']);
+  await service.updateOrganizationMember('u3', 'u2', { status: 'deactivated' });
+
+  const admin = await service.getAdminOrganization('u3');
+  assert(admin.teams.some(team => team.id === createdTeam.id && team.status === 'archived'));
+  assert(admin.invites.some(item => item.id === invite.id && item.status === 'cancelled'));
+  assert(admin.members.find(member => member.id === 'u1')?.teamMemberships.some(team => team.teamId === 'team-consumer'));
+  await assert.rejects(() => service.getWorkspace('u2'), /deactivated/);
+  await service.updateOrganizationMember('u3', 'u1', { orgRole: 'member' });
+  await assert.rejects(() => service.updateOrganizationMember('u3', 'u3', { orgRole: 'member' }), /last active organization admin/);
 });
 
 test('workspace as-of snapshots exclude future claims and preserve permissions', async () => {
@@ -411,7 +517,7 @@ test('note history respects prior revision visibility', async () => {
 
   assert.equal((await service.listNoteHistory('u1', createdNote.id)).length, 1);
   assert.equal((await service.listNoteHistory('u2', createdNote.id)).length, 0);
-  assert.equal((await service.listNoteHistory('u3', createdNote.id)).length, 1);
+  assert.equal((await service.listNoteHistory('u3', createdNote.id)).length, 0);
 });
 
 test('title-only note edits preserve derived claim and relation review state', async () => {
