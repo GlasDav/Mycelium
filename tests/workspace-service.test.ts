@@ -415,7 +415,7 @@ test('normalized entity links persist through notes, claims, drafts, history, an
   assert(createdNote);
   assert.deepEqual(createdNote.linkedEntities?.map(entity => entity.name), ['NVDA', 'Semiconductors', 'AI infrastructure', 'Demand', 'AI Capex', 'Dana Lee']);
   assert.deepEqual(createdNote.tickers, ['NVDA']);
-  assert.deepEqual(createdNote.industries, ['Semiconductors']);
+  assert.deepEqual(createdNote.industries, ['Information Technology', 'Semiconductors']);
   assert.deepEqual(createdNote.watchlistTags, ['AI Capex']);
   assert.deepEqual(createdNote.sourcePeople, ['Dana Lee']);
 

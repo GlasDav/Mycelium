@@ -9,7 +9,8 @@ import type { Claim, Note } from './types';
 import { sortedUnique } from './utils';
 
 export function metadataForNote(note: Note): MetadataArrays {
-  return combineMetadataArrays(note, metadataArraysFromLinkedEntities(note.linkedEntities));
+  const linkedEntities = mergeLinkedEntities(note.linkedEntities, legacyArraysToLinkedEntities(note));
+  return combineMetadataArrays(note, metadataArraysFromLinkedEntities(linkedEntities));
 }
 
 export function metadataForClaim(claim: Claim): MetadataArrays {

@@ -67,6 +67,30 @@ test('extracts entities, claims, and temporal metadata from investment notes', (
   assert.equal(claims[0].freshness, 'fresh');
 });
 
+test('entity extraction recognizes ontology aliases and industry hierarchy terms', () => {
+  const entities = detectEntities('NVIDIA Corporation semis checks show Blackwell demand remains strong.');
+
+  assert(entities.some(e => e.name === 'Nvidia' && e.kind === 'company'));
+  assert(entities.some(e => e.name === 'NVDA' && e.kind === 'ticker'));
+  assert(entities.some(e => e.name === 'Semiconductors' && e.kind === 'industry'));
+});
+
+test('extracted claims include ontology-derived company, industry, and watchlist metadata', () => {
+  const note: Note = {
+    ...base,
+    id: 'ontology-derived',
+    title: 'ontology derived',
+    body: 'NVIDIA Corporation semis demand is strong.'
+  };
+
+  const [claim] = extractClaims(note, '2026-05-03');
+
+  assert.deepEqual(claim.tickers, ['NVDA']);
+  assert.deepEqual(claim.companyTags, ['Nvidia']);
+  assert.deepEqual(claim.industries, ['Information Technology', 'Semiconductors']);
+  assert.deepEqual(claim.watchlistTags, ['AI Capex']);
+});
+
 test('extracted claims inherit linked note metadata and source people', () => {
   const note: Note = {
     ...base,
@@ -86,7 +110,7 @@ test('extracted claims inherit linked note metadata and source people', () => {
   const [claim] = extractClaims(note, '2026-05-03');
 
   assert.deepEqual(claim.tickers, ['NVDA']);
-  assert.deepEqual(claim.industries, ['Semiconductors']);
+  assert.deepEqual(claim.industries, ['Information Technology', 'Semiconductors']);
   assert.deepEqual(claim.kpis, ['Demand', 'supply']);
   assert.deepEqual(claim.watchlistTags, ['AI Capex']);
   assert.deepEqual(claim.sourcePeople, ['Dana Lee']);
@@ -385,6 +409,29 @@ test('legacy relation candidates keep their current classification score input',
 
   assert(candidate);
   assert.equal(candidate.classificationScore, candidate.sharedWords + candidate.sharedMetadata);
+});
+
+test('relation candidates treat issuer aliases as the same subject', () => {
+  const canonicalBull = claim({
+    id: 'issuer-alias-bull',
+    noteId: 'issuer-alias-bull-note',
+    subject: 'Nvidia',
+    text: 'Nvidia demand is strong.',
+    tickers: ['NVDA']
+  });
+  const aliasBear = claim({
+    id: 'issuer-alias-bear',
+    noteId: 'issuer-alias-bear-note',
+    subject: 'NVIDIA Corporation',
+    direction: 'negative',
+    text: 'NVIDIA Corporation demand is weak.',
+    tickers: ['NVDA']
+  });
+
+  const [candidate] = relationCandidates([canonicalBull, aliasBear]);
+
+  assert(candidate);
+  assert.equal(candidate.sharedMetadata > 0, true);
 });
 
 test('topic matching does not enrich extracted KPI metadata', () => {

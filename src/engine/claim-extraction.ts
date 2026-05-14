@@ -1,4 +1,4 @@
-import { linkedEntity, mergeLinkedEntities } from '../entity-links';
+import { linkedEntity, mergeLinkedEntities, metadataArraysFromLinkedEntities } from '../entity-links';
 import { canAccess, accessScopeFromVisibility } from './access';
 import { detectEntities } from './entity-extraction';
 import { kpiWords, negativeDirectionWords, positiveDirectionWords } from './lexicon';
@@ -37,14 +37,17 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
       ].filter(Boolean) as string[]);
       const kpis = sortedUnique([...noteMetadata.kpis, ...entities.filter(e => e.kind === 'kpi').map(e => e.name)]);
       const companyTags = sortedUnique([...noteMetadata.companyTags, company.name]);
+      const industries = sortedUnique([...noteMetadata.industries, ...entities.filter(e => e.kind === 'industry').map(e => e.name)]);
       const linkedEntities = mergeLinkedEntities(
         noteLinks,
         [linkedEntity('company', 'subject', company.name)],
         tickers.map(ticker => linkedEntity('security', 'security', ticker.toUpperCase(), { ticker: ticker.toUpperCase() })),
+        industries.map(industry => linkedEntity('industry', 'industry', industry)),
         themes.map(theme => linkedEntity('theme', 'theme', theme)),
         kpis.map(kpi => linkedEntity('kpi', 'kpi', kpi))
       );
       const temporal = inferTemporalWindow(note, sentence, asOf);
+      const linkedMetadata = metadataArraysFromLinkedEntities(linkedEntities);
       claims.push({
         id: `${note.id}-${slug(company.name)}-${claims.length}`,
         noteId: note.id,
@@ -53,13 +56,13 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
         direction: dir,
         evidence: sentence,
         confidence: dir === 'neutral' ? 0.62 : 0.78,
-        themes,
-        tickers,
-        industries: noteMetadata.industries,
-        companyTags,
-        kpis,
-        watchlistTags: noteMetadata.watchlistTags,
-        sourcePeople: noteMetadata.sourcePeople,
+        themes: sortedUnique([...themes, ...linkedMetadata.manualThemes]),
+        tickers: sortedUnique([...tickers, ...linkedMetadata.tickers]),
+        industries: sortedUnique([...industries, ...linkedMetadata.industries]),
+        companyTags: sortedUnique([...companyTags, ...linkedMetadata.companyTags]),
+        kpis: sortedUnique([...kpis, ...linkedMetadata.kpis]),
+        watchlistTags: sortedUnique([...noteMetadata.watchlistTags, ...linkedMetadata.watchlistTags]),
+        sourcePeople: sortedUnique([...noteMetadata.sourcePeople, ...linkedMetadata.sourcePeople]),
         linkedEntities,
         createdAt: note.createdAt,
         observedAt: temporal.observedAt,

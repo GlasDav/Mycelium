@@ -79,13 +79,13 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Notes only shows the active note, live extraction, and saved claims/relations tied to the selected note; workspace/team/org pulse, signals, top metadata, and source-person coverage live on Dashboard.
 - Action-backed empty states for no notes, filtered results, empty graph subjects, missing current-note claims, missing relations, and source-person history.
 - Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, plus search, sort, date, stock/ticker, industry/theme, KPI, watchlist, participant, location, and team filters.
-- Normalized note metadata for observed date, Personal/Team/Organisation location and access scope, active team selection for team-scoped notes, stocks/securities, industries/sectors, themes, KPIs, watchlists, and participants, persisted through the BFF and Supabase. Legacy stock/theme/KPI arrays and legacy visibility imports remain as compatibility fields. Applies-to windows and horizon are inferred for extracted claims and edited during claim review rather than entered on the note form.
+- Normalized note metadata for observed date, Personal/Team/Organisation location and access scope, active team selection for team-scoped notes, stocks/securities, industries/sectors, themes, KPIs, watchlists, and participants, persisted through the BFF and Supabase. A local deterministic ontology canonicalizes the demo issuer/security aliases, derives parent sectors for known industries, and derives default demo watchlists from known securities. Legacy stock/theme/KPI arrays and legacy visibility imports remain as compatibility fields. Applies-to windows and horizon are inferred for extracted claims and edited during claim review rather than entered on the note form.
 - Server-backed recoverable workbench drafts, explicit saved-note editing, author-only note update enforcement, and read-only note revision history.
 - Supabase Auth-backed sign-in/sign-up flow where the first organization user becomes org admin and later same-domain signups require pending invites.
 - Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
 - Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, exposes scoped dashboard aggregates through `/api/dashboard`, returns historical graph projections through `/api/workspace?asOf=YYYY-MM-DD`, provides organization admin lifecycle routes, and can serve the built React app as one deployable Node service.
 - Authenticated workspace JSON export/import routes for demo restore workflows, including dismissed relation review decisions.
-- Deterministic local extraction of companies, tickers, themes, KPIs, and claims with live preview and addable metadata suggestions.
+- Deterministic local extraction of companies, tickers, industries, themes, KPIs, and claims with ontology-backed aliases, live preview, and addable metadata suggestions.
 - Claim direction classification with citation snippets, approve/reject/edit review state, analyst review notes, participant correction, and persisted relation review controls.
 - Temporal relationship detection across accessible notes, with dates and source-person context explaining why an opposing read is a true contradiction vs a trend reversal.
 - Server-side permission filtering for Analyst, PM, Compliance, org admin management rights, active/deactivated member status, multi-team membership, and author-only personal notes.
@@ -160,7 +160,8 @@ This runs a production build/typecheck and the full deterministic test suite.
 
 ### Useful files
 
-- `src/entity-links.ts` - shared normalized entity/link helpers and legacy metadata-array compatibility.
+- `src/ontology.ts` - local deterministic issuer/security/industry/watchlist ontology for canonical aliases, parent sectors, default demo watchlists, and issuer-aware relation matching.
+- `src/entity-links.ts` - shared normalized entity/link helpers, ontology-backed canonicalization, derived metadata arrays, and legacy metadata-array compatibility.
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
 - `src/engine.ts` — deterministic extraction, temporal relation detection, synthesis, and alerts.
@@ -180,6 +181,6 @@ This runs a production build/typecheck and the full deterministic test suite.
 - Extraction is deterministic and transparent rather than LLM-backed. The interfaces are small enough to replace with model providers later.
 - Supabase local development requires Docker Desktop to be running.
 - The first extraction provider remains deterministic and transparent. Evidence-bearing saved-note edits reset derived claim/relation review state so stale analyst decisions do not silently attach to changed evidence.
-- Normalized research entities use deterministic/manual keys in this MVP. Security-master integration, industry hierarchy, fuzzy source-person identity resolution, and identity-confidence workflows are deferred.
+- Normalized research entities use deterministic/manual keys plus a small local ontology for the demo issuer/security set, parent industry sectors, and default demo watchlists. External security-master integration, portfolio-specific membership sync, fuzzy source-person identity resolution, and identity-confidence workflows are deferred.
 - The current automated RLS test is a migration/schema contract test. Run `npm run supabase:start` and `npm run supabase:db:reset` in an environment with Docker Desktop running for live Supabase migration verification.
 - Note import is text paste only; PDF/DOCX parsing and RMS integrations are deferred.

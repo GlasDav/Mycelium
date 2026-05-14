@@ -1,6 +1,6 @@
 # Mycelium — Agent Context
 
-_Last updated: 2026-05-10_
+_Last updated: 2026-05-14_
 
 This is the live orientation file for agents working on Mycelium. Read this before changing product, UX, engine, roadmap, or docs.
 
@@ -18,9 +18,10 @@ The repo contains a production-shaped MVP foundation:
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps the first organization admin, profile, team membership, and demo notes for a new local organization; later same-domain users require pending organization invites.
 - Server-side graph materialization for notes, claims, relations, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
+- Deterministic local ontology v1 for core demo issuers/securities, ticker aliases, issuer aliases, industry/sector hierarchy, and default watchlist membership; no external security-master provider required.
 - Minimal note-taking-first research workspace UI with auth, observed-date/location controls for Personal, Team, and Organisation notes, team selection for active memberships, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive/admin, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, organization admin lifecycle controls, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
-- Tests covering extraction, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract, normalized entity links, BFF routing including scoped dashboard aggregates and workspace as-of queries, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, map timeline/lane/density UI contracts, note metadata persistence, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
+- Tests covering extraction, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract, normalized entity links, BFF routing including scoped dashboard aggregates and workspace as-of queries, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, map timeline/lane/density UI contracts, note metadata persistence, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -52,7 +53,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Frontend
 
 - `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, Personal/Team/Organisation note location controls, organization admin page, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, action-backed empty states, current-note claim/relation intelligence on Notes, scoped dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline, current/historical lanes, author/team/metadata filters, density controls, relation detail drawer, and separate notes/dashboard/map/archive/admin page bodies.
-- `src/entity-links.ts` owns shared normalized entity/link metadata helpers, legacy array compatibility, key normalization, and derived metadata arrays.
+- `src/ontology.ts` owns the deterministic local issuer/security/industry/watchlist ontology used by extraction, linked-entity canonicalization, derived sector/watchlist metadata, and issuer-aware relation candidate matching.
+- `src/entity-links.ts` owns shared normalized entity/link metadata helpers, legacy array compatibility, key normalization, ontology-backed canonicalization, and derived metadata arrays.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
@@ -89,6 +91,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
   - synthesis, alerts, source-person memory, and pipeline orchestration.
 - The current engine is still deterministic and preserves the existing exported API; `detectRelations` now accepts an injectable candidate retriever while defaulting to deterministic candidate selection.
 - Relation candidate selection now includes conservative topic/KPI business-driver matching for same-subject claims across demand/orders, supply/inventory, capex/budget, pricing/margin, growth/revenue, and adoption/churn wording. This matcher is internal and matching-only: it does not enrich extracted claim KPI metadata or change persisted graph schemas.
+- Relation candidate selection treats ontology-resolved issuer aliases as the same subject, so manually edited subjects such as `Nvidia` and `NVIDIA Corporation` can still compare when the issuer identity matches.
 - Optional LLM extraction remains future P3 work.
 
 ### Data
@@ -135,7 +138,7 @@ Each claim should carry:
 - provenance: `noteId`, `authorId`, `team`, `accessScope`, evidence snippet.
 - access scope: `organization`, `team`, or `personal`; personal notes are author-only and can still contribute to that author's private workspace graph.
 
-Current implementation note: securities, industries, themes, KPIs, watchlists, and source people now flow through normalized `LinkedEntity` metadata and Supabase note/claim entity link rows. Legacy `tickers`, `manualThemes`, and `kpis` arrays remain derived compatibility fields.
+Current implementation note: securities, industries, themes, KPIs, watchlists, and source people now flow through normalized `LinkedEntity` metadata and Supabase note/claim entity link rows. Legacy `tickers`, `manualThemes`, and `kpis` arrays remain derived compatibility fields. The local ontology canonicalizes known issuer/security aliases, derives parent sector names for known industries, and derives default watchlist tags for the demo coverage set.
 
 ### Relation Types
 
@@ -171,6 +174,8 @@ Notes are explicitly linkable to stocks/securities and industries/sectors, even 
 - one note can mention multiple stocks and industries;
 - one claim can attach to a specific security, issuer, KPI, and industry;
 - synthesis and map filters work by company, ticker/security, industry/sector, theme, watchlist, participant, relation type, and freshness. Portfolio relevance remains a later watchlist/portfolio integration.
+
+Current ontology v1 is deliberately local and small: Nvidia/NVDA, Apple/AAPL, Tesla/TSLA, Shopify/SHOP, and Microsoft/MSFT plus adjacent sectors, industries, aliases, and demo watchlists. External security-master providers, GICS/custom taxonomy import, and portfolio-specific membership remain future work.
 
 ### Source-Person Memory
 
@@ -208,11 +213,11 @@ Design principles:
 
 ## Current Validation Status
 
-As of 2026-05-10:
+As of 2026-05-14:
 
 - `npm run validate` passes.
 - Build passes.
-- 123/123 tests pass.
+- 130/130 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
@@ -224,7 +229,7 @@ As of 2026-05-10:
 - No external news/filings ingestion yet.
 - Relationship topic matching is deterministic and conservative; it handles a small set of business-driver term families but does not use fuzzy semantics, embeddings, or LLM calls.
 - The map is a lane-based affordance, not a full interactive graph canvas yet.
-- Normalized research entities use deterministic/manual keys for now; no security-master provider, industry hierarchy, fuzzy person identity resolution, or identity-confidence workflow is present yet.
+- Normalized research entities use deterministic/manual keys plus the small local ontology for known issuers, securities, parent sectors, and default demo watchlists. There is still no external security-master provider, portfolio-specific membership provider, fuzzy source-person identity resolution, or identity-confidence workflow.
 
 ## Next Best Work
 
@@ -236,7 +241,7 @@ See `LIVE_ROADMAP.md`. The highest-leverage next phase is to turn the demo into 
 4. Continue dashboard polish around richer drilldowns and production role semantics as pilot data clarifies team/org reporting expectations.
 5. Add import paths for real notes, transcripts, files, and audio.
 6. Design transcription as a first-class capture path with timestamped transcript chunks, speaker diarization, correction workflow, and compliance/consent controls.
-7. Add security-master, industry hierarchy, watchlist/portfolio membership, and source-person identity confidence once real pilot data clarifies the right taxonomy.
+7. Expand beyond the local ontology with a real security-master/taxonomy provider, portfolio-specific membership, and source-person identity confidence once real pilot data clarifies the right taxonomy.
 8. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
 9. Introduce model-backed extraction behind an auditable interface only after the deterministic contract is stable.
 

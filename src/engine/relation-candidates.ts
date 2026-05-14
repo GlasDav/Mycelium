@@ -1,4 +1,5 @@
 import { intersectionCount, metadataForClaim } from './metadata';
+import { subjectsReferToSameIssuer } from '../ontology';
 import {
   sharedTopicFamilies,
   topicScoreForFamilies,
@@ -36,7 +37,7 @@ export function relationCandidates(claims: Claim[]): RelationCandidate[] {
   for (let i = 0; i < claims.length; i++) {
     for (let j = i + 1; j < claims.length; j++) {
       const a = claims[i], b = claims[j];
-      if (a.subject !== b.subject || a.noteId === b.noteId) continue;
+      if (!subjectsReferToSameIssuer(a.subject, b.subject) || a.noteId === b.noteId) continue;
       const sharedThemes = a.themes.filter(t => b.themes.includes(t));
       const sharedWords = overlapKeywords(a.text, b.text);
       const sharedMetadata = sharedMetadataCount(a, b);

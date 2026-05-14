@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-10_
+_Last updated: 2026-05-14_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -41,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 123 tests.
+- [x] Validation passing: build + 130 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -96,6 +96,12 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Conservative topic/KPI matching added:
   - deterministic same-subject candidate matching now recognizes business-driver families beyond shared words,
   - topic matching is internal and matching-only, with no claim KPI enrichment, schema changes, LLM calls, or vector search.
+- [x] Local stock/security and industry ontology v1 added:
+  - canonical issuer and ticker aliases for the demo coverage set,
+  - ontology-backed `LinkedEntity` normalization for securities, companies, industries, and watchlists,
+  - parent sector derivation for known industries,
+  - default demo watchlist membership derived from known securities/issuers,
+  - issuer-aware relation candidate matching for edited subject aliases.
 
 ### Current MVP Validation
 
@@ -116,6 +122,7 @@ Expected result:
   - table-driven temporal eval fixtures for contradiction/reversal/tension/corroboration/agreement/stale cases,
   - deterministic and injected relation candidate retrieval,
   - conservative topic/KPI candidate matching,
+  - ontology-backed issuer/security aliases, industry hierarchy, and default demo watchlists,
   - permission-aware temporal graph filtering,
   - migration/RLS schema contract including normalized entity links,
   - Fastify BFF route auth,
@@ -223,11 +230,11 @@ Goal: improve extraction/relation quality while keeping explainability.
   - alerting.
 - [x] Add unit tests around temporal helper functions directly.
 - [x] Improve topic/KPI matching beyond shared words.
-- [ ] Add stock/security and industry ontology layer:
+- [x] Add stock/security and industry ontology layer:
   - issuer/company aliases,
   - ticker/security identifiers,
   - industry/sector hierarchy,
-  - watchlist/portfolio membership,
+  - default demo watchlist membership,
   - many-to-many note ↔ stock and note ↔ industry links.
 - [x] Add source-person memory v1:
   - identify recurring people across notes/transcripts,
@@ -237,7 +244,7 @@ Goal: improve extraction/relation quality while keeping explainability.
   - distinguish “person changed view over time” from “two people disagree.”
 - [ ] Add confidence scoring by extraction quality, source-person identity confidence, and relation evidence strength.
 
-Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Conservative topic/KPI relation matching is internal to deterministic candidate selection and does not enrich claim metadata. Security-master providers, industry hierarchy, watchlist/portfolio membership, fuzzy source-person identity resolution, and identity-confidence workflows remain deferred.
+Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Conservative topic/KPI relation matching is internal to deterministic candidate selection and does not enrich claim metadata. The local ontology v1 covers the demo issuer/security set, parent industry sectors, and default demo watchlist membership without external providers or schema changes. External security-master providers, richer portfolio-specific membership, fuzzy source-person identity resolution, and identity-confidence workflows remain deferred.
 - [x] Add candidate retrieval abstraction for future vector search/RAG.
 - [ ] Add optional LLM extraction interface with deterministic fallback.
 - [x] Add eval fixtures for known contradiction/reversal/stale examples.
@@ -358,7 +365,7 @@ Suggested tasks:
 - LLM strategy: model-provider abstraction, self-hosted option, or no-LLM alpha?
 - Temporal model: analyst-specified windows, deterministic/model-inferred windows, or inferred windows with claim-level review?
 - How should stale thresholds differ by sector, source-person context, and KPI?
-- What canonical security master / industry taxonomy should the product use first: manual watchlist, GICS, custom fund sectors, or data-provider mapping?
+- What should follow the local ontology first: a provider security master, GICS/custom fund taxonomy import, or portfolio/watchlist sync from customer data?
 - Should person-level sentiment history be modeled as its own timeline, or as filtered views over the claim graph?
 
 ## Definition of Done for Major Changes
