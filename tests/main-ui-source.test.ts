@@ -227,6 +227,7 @@ test('claim review cards capture analyst review notes on every action', () => {
   assert.match(claimCard, /reviewStatus: 'analyst_rejected', reviewNote/);
   assert.match(claimCard, /sourcePeople/);
   assert.match(claimCard, /label="Participants"/);
+  assert.match(claimCard, /Extraction confidence/);
 });
 
 test('relation review cards capture analyst notes and map mode exposes a detail drawer', () => {
@@ -241,6 +242,7 @@ test('relation review cards capture analyst notes and map mode exposes a detail 
   assert.match(relationSource, /Current type/);
   assert.match(relationSource, /Original type/);
   assert.match(relationSource, /Overlap days/);
+  assert.match(relationSource, /Evidence strength/);
   assert.match(relationSource, /Review note/);
   assert.match(relationSource, /reviewStatus: 'confirmed', reviewNote/);
   assert.match(relationSource, /reviewStatus: 'dismissed', reviewNote/);

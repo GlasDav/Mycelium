@@ -84,8 +84,11 @@ test('BFF returns historical workspace snapshots from the asOf query', async () 
     headers: { authorization: 'Bearer u2' }
   });
   assert.equal(later.statusCode, 200);
-  assert(later.json().claims.some((claim: { noteId: string }) => claim.noteId === 'n2'));
-  assert(later.json().relations.some((relation: { type: string }) => relation.type === 'contradiction'));
+  const laterBody = later.json();
+  assert(laterBody.claims.some((claim: { noteId: string }) => claim.noteId === 'n2'));
+  assert(laterBody.relations.some((relation: { type: string }) => relation.type === 'contradiction'));
+  assert.equal(typeof laterBody.claims.find((claim: { noteId: string }) => claim.noteId === 'n2')?.confidence, 'number');
+  assert.equal(typeof laterBody.relations[0]?.score, 'number');
 });
 
 test('BFF rejects invalid workspace asOf query dates', async () => {

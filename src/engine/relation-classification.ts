@@ -1,3 +1,4 @@
+import { scoreRelationEvidence } from './confidence';
 import { sourcePeopleForClaim } from './metadata';
 import {
   deterministicCandidateRetriever,
@@ -32,35 +33,44 @@ export function classifyTemporalRelation(a: Claim, b: Claim, sharedWords = overl
   const newer = older === a ? b : a;
   const observationGap = Math.abs(daysBetween(a.observedAt, b.observedAt));
   const id = relationIdForClaims(a, b);
-  const baseScore = 0.6 + Math.min(0.24, sharedWords / 24);
   const sourcePersonContext = classifySourcePersonContext(a, b);
+  const score = (type: RelationType) => scoreRelationEvidence({
+    a,
+    b,
+    relationType: type,
+    matchScore: sharedWords,
+    overlapDays,
+    compatible,
+    sourcePersonContext,
+    observationGapDays: observationGap
+  });
 
   // True contradictions require opposing claims about the same topic whose valid decision windows materially overlap.
   if (opposing && overlapDays >= 30) {
-    return { id, type: 'contradiction', a, b, overlapDays, sourcePersonContext, reason: `Opposing ${a.subject} claims overlap for ${overlapDays} days (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore + 0.16 };
+    return { id, type: 'contradiction', a, b, overlapDays, sourcePersonContext, reason: `Opposing ${a.subject} claims overlap for ${overlapDays} days (${formatWindow(a)} vs ${formatWindow(b)}).`, score: score('contradiction') };
   }
 
   // If windows do not overlap and the later observation reverses the older one, the map should read this as time-series change, not bad data.
   if (opposing && overlapDays === 0 && observationGap >= 120) {
-    return { id, type: 'update_or_trend_reversal', a: older, b: newer, overlapDays, sourcePersonContext, reason: `Newer claim reverses an older read after ${observationGap} days, with non-overlapping windows (${formatWindow(older)} â†’ ${formatWindow(newer)}).`, score: baseScore + 0.1 };
+    return { id, type: 'update_or_trend_reversal', a: older, b: newer, overlapDays, sourcePersonContext, reason: `Newer claim reverses an older read after ${observationGap} days, with non-overlapping windows (${formatWindow(older)} -> ${formatWindow(newer)}).`, score: score('update_or_trend_reversal') };
   }
 
   // Short gaps, broad horizons, and tiny overlaps are ambiguous enough to keep in the tension bucket for analyst review.
   if (opposing) {
     const type: RelationType = overlapDays > 0 ? 'historical_tension' : 'open_tension';
-    return { id, type, a, b, overlapDays, sourcePersonContext, reason: `Opposing reads have ${overlapDays ? `only ${overlapDays} days of overlap` : 'no material overlap'} and ambiguous horizon/date context (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
+    return { id, type, a, b, overlapDays, sourcePersonContext, reason: `Opposing reads have ${overlapDays ? `only ${overlapDays} days of overlap` : 'no material overlap'} and ambiguous horizon/date context (${formatWindow(a)} vs ${formatWindow(b)}).`, score: score(type) };
   }
 
   if (aligned && compatible) {
-    return { id, type: 'corroboration', a, b, overlapDays, sourcePersonContext, reason: `Aligned ${a.subject} claims share compatible windows (${formatWindow(a)} and ${formatWindow(b)}).`, score: baseScore + 0.08 };
+    return { id, type: 'corroboration', a, b, overlapDays, sourcePersonContext, reason: `Aligned ${a.subject} claims share compatible windows (${formatWindow(a)} and ${formatWindow(b)}).`, score: score('corroboration') };
   }
 
   if (aligned && isStale(older, asOf)) {
-    return { id, type: 'stale_evidence', a: older, b: newer, overlapDays, sourcePersonContext, reason: `Older aligned evidence is stale as of ${asOf}: ${formatWindow(older)} is no longer likely decision-useful beside ${formatWindow(newer)}.`, score: baseScore - 0.08 };
+    return { id, type: 'stale_evidence', a: older, b: newer, overlapDays, sourcePersonContext, reason: `Older aligned evidence is stale as of ${asOf}: ${formatWindow(older)} is no longer likely decision-useful beside ${formatWindow(newer)}.`, score: score('stale_evidence') };
   }
 
   if (aligned) {
-    return { id, type: 'agreement', a, b, overlapDays, sourcePersonContext, reason: `Aligned claims reinforce the same direction, but date windows are separated (${formatWindow(a)} vs ${formatWindow(b)}).`, score: baseScore };
+    return { id, type: 'agreement', a, b, overlapDays, sourcePersonContext, reason: `Aligned claims reinforce the same direction, but date windows are separated (${formatWindow(a)} vs ${formatWindow(b)}).`, score: score('agreement') };
   }
   return null;
 }

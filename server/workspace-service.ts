@@ -1700,6 +1700,7 @@ function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing: 
     text: base.text,
     subject: base.subject,
     direction: base.direction,
+    confidence: base.confidence,
     themes: base.themes,
     observedAt: base.observedAt,
     appliesToStart: base.appliesToStart,

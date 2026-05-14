@@ -1902,7 +1902,7 @@ function ClaimCard({ claim, compact = false, participantOptions = [], onUpdate }
 
   return <article className={`claim ${claim.direction} ${status !== 'machine' ? 'reviewed' : ''} ${!compact && onUpdate ? 'editable' : ''}`}>
     <p>{claim.text}</p>
-    <small>{claim.subject} · {claim.direction} · observed {claim.observedAt} · applies {claim.appliesToStart} to {claim.appliesToEnd ?? 'open'} · {claim.freshness} · {claim.visibility} · {status}</small>
+    <small>{claim.subject} · {claim.direction} · Extraction confidence {Math.round(claim.confidence * 100)}% · observed {claim.observedAt} · applies {claim.appliesToStart} to {claim.appliesToEnd ?? 'open'} · {claim.freshness} · {claim.visibility} · {status}</small>
     {!compact && onUpdate && <div className="claim-editor">
       <label><span>Claim</span><textarea value={text} onChange={e => setText(e.target.value)} /></label>
       <div className="metadata-grid compact">
@@ -2057,7 +2057,7 @@ function RelationCard({ relation, asOf = today(), selected, onSelect, onUpdate }
   }, [relation.id, relation.type, relation.reviewNote]);
 
   return <article className={`${relation.type} ${selected ? 'selected' : ''}`}>
-    <b>{relationLabel(relation.type)} · {Math.round(relation.score * 100)}% · {relation.reviewStatus}</b>
+    <b>{relationLabel(relation.type)} · Evidence strength {Math.round(relation.score * 100)}% · {relation.reviewStatus}</b>
     <p><span>{relation.a.appliesToStart} to {relation.a.appliesToEnd ?? 'open'}</span><span className={`window-status-chip ${statuses.a}`}>{statusLabel(statuses.a)}</span> {relation.a.text}</p>
     <p><span>{relation.b.appliesToStart} to {relation.b.appliesToEnd ?? 'open'}</span><span className={`window-status-chip ${statuses.b}`}>{statusLabel(statuses.b)}</span> {relation.b.text}</p>
     <small>{relation.reason} Source-person context: {relation.sourcePersonContext ?? 'unknown'}. Snippets are shown so analysts can see why this is or is not a contradiction.</small>
@@ -2080,7 +2080,7 @@ function RelationDetailDrawer({ relation, asOf = today() }: { relation: Frontend
       <span>Current type<b>{relationLabel(relation.type)}</b></span>
       <span>Original type<b>{relationLabel(relation.originalType)}</b></span>
       <span>Overlap days<b>{relation.overlapDays}</b></span>
-      <span>Score<b>{Math.round(relation.score * 100)}%</b></span>
+      <span>Evidence strength<b>{Math.round(relation.score * 100)}%</b></span>
       <span>Review state<b>{relation.reviewStatus}</b></span>
       <span>People context<b>{relation.sourcePersonContext ?? 'unknown'}</b></span>
       <span>Review note<b>{relation.reviewNote || 'None'}</b></span>

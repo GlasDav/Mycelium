@@ -1,5 +1,6 @@
 import { linkedEntity, mergeLinkedEntities, metadataArraysFromLinkedEntities } from '../entity-links';
 import { canAccess, accessScopeFromVisibility } from './access';
+import { scoreClaimConfidence } from './confidence';
 import { detectEntities } from './entity-extraction';
 import { kpiWords, negativeDirectionWords, positiveDirectionWords } from './lexicon';
 import { linkedEntitiesForNote, metadataForNote } from './metadata';
@@ -48,21 +49,43 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
       );
       const temporal = inferTemporalWindow(note, sentence, asOf);
       const linkedMetadata = metadataArraysFromLinkedEntities(linkedEntities);
+      const text = sentence.replace(/\s+/g, ' ');
+      const claimThemes = sortedUnique([...themes, ...linkedMetadata.manualThemes]);
+      const claimTickers = sortedUnique([...tickers, ...linkedMetadata.tickers]);
+      const claimIndustries = sortedUnique([...industries, ...linkedMetadata.industries]);
+      const claimCompanyTags = sortedUnique([...companyTags, ...linkedMetadata.companyTags]);
+      const claimKpis = sortedUnique([...kpis, ...linkedMetadata.kpis]);
+      const claimWatchlistTags = sortedUnique([...noteMetadata.watchlistTags, ...linkedMetadata.watchlistTags]);
+      const claimSourcePeople = sortedUnique([...noteMetadata.sourcePeople, ...linkedMetadata.sourcePeople]);
       claims.push({
         id: `${note.id}-${slug(company.name)}-${claims.length}`,
         noteId: note.id,
         subject: company.name,
-        text: sentence.replace(/\s+/g, ' '),
+        text,
         direction: dir,
         evidence: sentence,
-        confidence: dir === 'neutral' ? 0.62 : 0.78,
-        themes: sortedUnique([...themes, ...linkedMetadata.manualThemes]),
-        tickers: sortedUnique([...tickers, ...linkedMetadata.tickers]),
-        industries: sortedUnique([...industries, ...linkedMetadata.industries]),
-        companyTags: sortedUnique([...companyTags, ...linkedMetadata.companyTags]),
-        kpis: sortedUnique([...kpis, ...linkedMetadata.kpis]),
-        watchlistTags: sortedUnique([...noteMetadata.watchlistTags, ...linkedMetadata.watchlistTags]),
-        sourcePeople: sortedUnique([...noteMetadata.sourcePeople, ...linkedMetadata.sourcePeople]),
+        confidence: scoreClaimConfidence({
+          direction: dir,
+          text,
+          evidence: sentence,
+          themes: claimThemes,
+          tickers: claimTickers,
+          industries: claimIndustries,
+          companyTags: claimCompanyTags,
+          kpis: claimKpis,
+          sourcePeople: claimSourcePeople,
+          observedAt: temporal.observedAt,
+          appliesToStart: temporal.appliesToStart,
+          appliesToEnd: temporal.appliesToEnd,
+          horizon: temporal.horizon
+        }),
+        themes: claimThemes,
+        tickers: claimTickers,
+        industries: claimIndustries,
+        companyTags: claimCompanyTags,
+        kpis: claimKpis,
+        watchlistTags: claimWatchlistTags,
+        sourcePeople: claimSourcePeople,
         linkedEntities,
         createdAt: note.createdAt,
         observedAt: temporal.observedAt,

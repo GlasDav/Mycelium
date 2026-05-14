@@ -41,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 130 tests.
+- [x] Validation passing: build + 133 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -102,6 +102,10 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - parent sector derivation for known industries,
   - default demo watchlist membership derived from known securities/issuers,
   - issuer-aware relation candidate matching for edited subject aliases.
+- [x] Confidence scoring v1 added:
+  - deterministic extraction confidence now uses direction clarity, metadata, temporal evidence, and explicit source-person links,
+  - relation score now represents bounded evidence strength using endpoint confidence, candidate match strength, temporal fit, relation type, and source-person context,
+  - the existing `claims.confidence` and `relations.score` fields remain the public/persisted contract with no schema migration.
 
 ### Current MVP Validation
 
@@ -122,6 +126,7 @@ Expected result:
   - table-driven temporal eval fixtures for contradiction/reversal/tension/corroboration/agreement/stale cases,
   - deterministic and injected relation candidate retrieval,
   - conservative topic/KPI candidate matching,
+  - deterministic extraction confidence and relation evidence scoring,
   - ontology-backed issuer/security aliases, industry hierarchy, and default demo watchlists,
   - permission-aware temporal graph filtering,
   - migration/RLS schema contract including normalized entity links,
@@ -242,9 +247,9 @@ Goal: improve extraction/relation quality while keeping explainability.
   - compare a person’s latest view against their own prior notes,
   - flag sentiment changes, thesis drift, and self-inconsistencies,
   - distinguish “person changed view over time” from “two people disagree.”
-- [ ] Add confidence scoring by extraction quality, source-person identity confidence, and relation evidence strength.
+- [x] Add confidence scoring by extraction quality, explicit source-person evidence, and relation evidence strength.
 
-Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Conservative topic/KPI relation matching is internal to deterministic candidate selection and does not enrich claim metadata. The local ontology v1 covers the demo issuer/security set, parent industry sectors, and default demo watchlist membership without external providers or schema changes. External security-master providers, richer portfolio-specific membership, fuzzy source-person identity resolution, and identity-confidence workflows remain deferred.
+Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Conservative topic/KPI relation matching is internal to deterministic candidate selection and does not enrich claim metadata. Confidence scoring is deterministic and bounded on the existing claim confidence and relation score fields. The local ontology v1 covers the demo issuer/security set, parent industry sectors, and default demo watchlist membership without external providers or schema changes. External security-master providers, richer portfolio-specific membership, fuzzy source-person identity resolution, and identity-confidence workflows beyond explicit source-person scoring evidence remain deferred.
 - [x] Add candidate retrieval abstraction for future vector search/RAG.
 - [ ] Add optional LLM extraction interface with deterministic fallback.
 - [x] Add eval fixtures for known contradiction/reversal/stale examples.

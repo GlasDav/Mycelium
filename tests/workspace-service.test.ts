@@ -319,6 +319,30 @@ test('workspace snapshots recompute current freshness after claim temporal edits
   assert.equal(edited?.freshness, 'stale');
 });
 
+test('graph materialization refreshes machine confidence and preserves reviewed confidence', async () => {
+  const { repository, service } = buildService();
+  await service.materializeGraph('org1');
+  const currentClaims = await repository.listClaims('org1');
+  const machineClaim = currentClaims.find(claim => claim.noteId === 'n1');
+  const reviewedClaim = currentClaims.find(claim => claim.noteId === 'n2');
+  assert(machineClaim);
+  assert(reviewedClaim);
+
+  repository.claims = repository.claims.map(claim => {
+    if (claim.id === machineClaim.id) return { ...claim, confidence: 0.11, reviewStatus: 'machine' };
+    if (claim.id === reviewedClaim.id) return { ...claim, confidence: 0.22, reviewStatus: 'analyst_confirmed' };
+    return claim;
+  });
+
+  await service.materializeGraph('org1');
+  const rematerializedClaims = await repository.listClaims('org1');
+  const refreshedMachineClaim = rematerializedClaims.find(claim => claim.id === machineClaim.id);
+  const preservedReviewedClaim = rematerializedClaims.find(claim => claim.id === reviewedClaim.id);
+
+  assert.notEqual(refreshedMachineClaim?.confidence, 0.11);
+  assert.equal(preservedReviewedClaim?.confidence, 0.22);
+});
+
 test('dashboard aggregates respect timeframe and role-gated scope availability', async () => {
   const repository = createMemoryWorkspaceRepository();
   const service = createWorkspaceService(repository);

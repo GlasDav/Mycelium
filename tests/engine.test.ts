@@ -24,6 +24,11 @@ import {
   relationCandidates,
   type CandidateRetriever
 } from '../src/engine/relation-candidates';
+import {
+  roundConfidence,
+  scoreClaimConfidence,
+  scoreRelationEvidence
+} from '../src/engine/confidence';
 
 const analyst: User = { id: 'a', name: 'Analyst', role: 'Analyst', team: 'Semis' };
 const pm: User = { id: 'p', name: 'PM', role: 'PM', team: 'Portfolio' };
@@ -65,6 +70,72 @@ test('extracts entities, claims, and temporal metadata from investment notes', (
   assert.equal(claims[0].appliesToStart, '2026-05-01');
   assert.equal(claims[0].appliesToEnd, '2026-08-01');
   assert.equal(claims[0].freshness, 'fresh');
+});
+
+test('confidence helpers bound scores and reward richer claim evidence', () => {
+  const sparse = scoreClaimConfidence({
+    direction: 'neutral',
+    text: 'Nvidia revenue.',
+    evidence: 'Nvidia revenue.',
+    tickers: [],
+    themes: [],
+    industries: [],
+    kpis: [],
+    companyTags: [],
+    sourcePeople: [],
+    observedAt: '2026-05-01',
+    appliesToStart: '2026-05-01',
+    horizon: 'unknown'
+  });
+  const rich = scoreClaimConfidence({
+    direction: 'positive',
+    text: 'Nvidia demand is strong and GPU supply is tight.',
+    evidence: 'Nvidia demand is strong and GPU supply is tight.',
+    tickers: ['NVDA'],
+    themes: ['AI infrastructure'],
+    industries: ['Semiconductors'],
+    kpis: ['demand'],
+    companyTags: ['Nvidia'],
+    sourcePeople: ['Dana Lee'],
+    observedAt: '2026-05-01',
+    appliesToStart: '2026-05-01',
+    appliesToEnd: '2026-08-01',
+    horizon: 'quarter'
+  });
+
+  assert.equal(roundConfidence(1.239), 1);
+  assert.equal(roundConfidence(-0.2), 0);
+  assert(rich > sparse);
+  assert(rich <= 1);
+  assert(sparse >= 0);
+  assert((rich.toString().split('.')[1]?.length ?? 0) <= 2);
+});
+
+test('relation evidence scoring rewards stronger evidence without changing relation labels', () => {
+  const weak = scoreRelationEvidence({
+    a: claim({ confidence: 0.52, sourcePeople: [] }),
+    b: claim({ confidence: 0.58, direction: 'negative', sourcePeople: [] }),
+    relationType: 'open_tension',
+    matchScore: 1,
+    overlapDays: 0,
+    compatible: false,
+    sourcePersonContext: 'unknown',
+    observationGapDays: 20
+  });
+  const strong = scoreRelationEvidence({
+    a: claim({ confidence: 0.92, sourcePeople: ['Dana Lee'] }),
+    b: claim({ confidence: 0.9, direction: 'negative', sourcePeople: ['Dana Lee'] }),
+    relationType: 'contradiction',
+    matchScore: 8,
+    overlapDays: 120,
+    compatible: true,
+    sourcePersonContext: 'same_source_person',
+    observationGapDays: 12
+  });
+
+  assert(strong > weak);
+  assert(strong <= 1);
+  assert(weak >= 0);
 });
 
 test('entity extraction recognizes ontology aliases and industry hierarchy terms', () => {
@@ -485,7 +556,8 @@ test('detectRelations accepts an injected candidate retriever before classifying
   const [relation] = detectRelations([lowKeywordBull, lowKeywordBear], '2026-05-01', retriever);
 
   assert.equal(relation.type, 'contradiction');
-  assert.equal(relation.score, 0.76);
+  assert(relation.score > 0.6);
+  assert(relation.score <= 1);
 });
 
 test('relations expose source-person context without changing temporal relation types', () => {

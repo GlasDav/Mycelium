@@ -17,11 +17,11 @@ The repo contains a production-shaped MVP foundation:
 - Supabase Auth/Postgres/RLS project files and raw migrations.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps the first organization admin, profile, team membership, and demo notes for a new local organization; later same-domain users require pending organization invites.
-- Server-side graph materialization for notes, claims, relations, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
+- Server-side graph materialization for notes, claims, relations, deterministic extraction confidence, relation evidence strength, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
 - Deterministic local ontology v1 for core demo issuers/securities, ticker aliases, issuer aliases, industry/sector hierarchy, and default watchlist membership; no external security-master provider required.
 - Minimal note-taking-first research workspace UI with auth, observed-date/location controls for Personal, Team, and Organisation notes, team selection for active memberships, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive/admin, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, organization admin lifecycle controls, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls, and responsive mobile layout. Source type is not user-facing note metadata; claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
-- Tests covering extraction, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract, normalized entity links, BFF routing including scoped dashboard aggregates and workspace as-of queries, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, map timeline/lane/density UI contracts, note metadata persistence, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
+- Tests covering extraction, confidence scoring, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract, normalized entity links, BFF routing including scoped dashboard aggregates and workspace as-of queries, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, map timeline/lane/density UI contracts, note metadata persistence, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -84,6 +84,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `src/engine/` now contains focused deterministic pipeline stages:
   - types and lexicons,
   - permission/access helpers,
+  - confidence scoring,
   - temporal window and freshness helpers,
   - entity extraction,
   - claim extraction,
@@ -91,6 +92,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
   - synthesis, alerts, source-person memory, and pipeline orchestration.
 - The current engine is still deterministic and preserves the existing exported API; `detectRelations` now accepts an injectable candidate retriever while defaulting to deterministic candidate selection.
 - Relation candidate selection now includes conservative topic/KPI business-driver matching for same-subject claims across demand/orders, supply/inventory, capex/budget, pricing/margin, growth/revenue, and adoption/churn wording. This matcher is internal and matching-only: it does not enrich extracted claim KPI metadata or change persisted graph schemas.
+- Confidence scoring is deterministic and uses the existing persisted fields: `Claim.confidence` for extraction confidence and `Relation.score` for relation evidence strength. It combines direction clarity, explicit metadata, temporal evidence, endpoint confidence, match strength, relation type, and explicit source-person context without schema/API changes.
 - Relation candidate selection treats ontology-resolved issuer aliases as the same subject, so manually edited subjects such as `Nvidia` and `NVIDIA Corporation` can still compare when the issuer identity matches.
 - Optional LLM extraction remains future P3 work.
 
@@ -186,7 +188,7 @@ Notes and claims now carry source-person/participant links, and workspace snapsh
 - credible trend reversals where the same person updates their view after conditions changed;
 - disagreement between different people separately from a person changing their own mind.
 
-Identity confidence still matters: the current implementation uses explicit/manual source-person links and simple normalized keys. Fuzzy identity resolution, aliases beyond the stored alias array, and confidence scoring are deferred.
+Source-person confidence v1 uses explicit/manual source-person links as deterministic scoring evidence on claims and relations. Fuzzy identity resolution and aliases beyond the stored alias array remain deferred.
 
 ## Current UX Shape
 
@@ -217,7 +219,7 @@ As of 2026-05-14:
 
 - `npm run validate` passes.
 - Build passes.
-- 130/130 tests pass.
+- 133/133 tests pass.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
@@ -227,9 +229,9 @@ As of 2026-05-14:
 - Note capture is typed/pasted text only, with explicit save for existing notes and server-backed draft recovery for unsaved workbench content.
 - Real Supabase Auth and Postgres/RLS schema are present; deployment still needs real hosted Supabase credentials.
 - No external news/filings ingestion yet.
-- Relationship topic matching is deterministic and conservative; it handles a small set of business-driver term families but does not use fuzzy semantics, embeddings, or LLM calls.
+- Relationship topic matching and confidence scoring are deterministic and conservative; they handle a small set of business-driver term families and bounded evidence-strength heuristics but do not use fuzzy semantics, embeddings, or LLM calls.
 - The map is a lane-based affordance, not a full interactive graph canvas yet.
-- Normalized research entities use deterministic/manual keys plus the small local ontology for known issuers, securities, parent sectors, and default demo watchlists. There is still no external security-master provider, portfolio-specific membership provider, fuzzy source-person identity resolution, or identity-confidence workflow.
+- Normalized research entities use deterministic/manual keys plus the small local ontology for known issuers, securities, parent sectors, and default demo watchlists. There is still no external security-master provider, portfolio-specific membership provider, fuzzy source-person identity resolution, or identity-confidence workflow beyond explicit/manual source-person scoring evidence.
 
 ## Next Best Work
 
