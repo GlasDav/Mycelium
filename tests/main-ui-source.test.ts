@@ -141,6 +141,92 @@ test('note workbench has a new note action and no sample prompt buttons', () => 
   assert.doesNotMatch(source, /Use sample/);
 });
 
+test('note import is an inline notes panel without adding a rail mode', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+  const notesStart = appReturn.indexOf("viewMode === 'notes' && <NotesPage");
+  const dashboardStart = appReturn.indexOf("viewMode === 'dashboard' && <DashboardPage");
+  assert(notesStart >= 0 && dashboardStart > notesStart, 'Notes page source is missing');
+  const notesPage = appReturn.slice(notesStart, dashboardStart);
+  const noteActionsStart = notesPage.indexOf('className="note-panel-actions"');
+  const noteActionsEnd = notesPage.indexOf('</div>', noteActionsStart);
+  assert(noteActionsStart >= 0 && noteActionsEnd > noteActionsStart, 'Note panel actions source is missing');
+  const noteActions = notesPage.slice(noteActionsStart, noteActionsEnd);
+
+  assert.match(source, /import \{ parsePastedNoteImport, type ParsedNoteImport \} from '\.\/note-import'/);
+  assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive' \| 'admin'/);
+  assert.match(notesPage, /noteImportOpen/);
+  assert.match(notesPage, /note-import-panel/);
+  assert.match(notesPage, /note-import-input/);
+  assert.match(notesPage, /note-import-preview/);
+  assert.match(notesPage, /note-import-actions/);
+  assert.match(notesPage, /note-import-warning/);
+  assert(noteActions.indexOf('history-note-action') < noteActions.indexOf('note-import-action'));
+  assert(noteActions.indexOf('note-import-action') < noteActions.indexOf('new-note-action'));
+});
+
+test('note import parses pasted content and applies only to workbench state', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const applyStart = source.indexOf('function applyImportedNoteToWorkbench');
+  const applyEnd = source.indexOf('async function signOut', applyStart);
+  assert(applyStart >= 0 && applyEnd > applyStart, 'Import apply handler source is missing');
+  const applySource = source.slice(applyStart, applyEnd);
+
+  assert.match(source, /parsePastedNoteImport\(noteImportText\)/);
+  assert.match(source, />Apply to workbench</);
+  assert.match(applySource, /setSelectedNoteId\(''\)/);
+  assert.match(applySource, /setNoteTitle\(imported\.title \?\? ''\)/);
+  assert.match(applySource, /setDraft\(imported\.body\)/);
+  assert.match(applySource, /setObservedAt\(imported\.observedAt \?\? today\(\)\)/);
+  assert.match(source, /function metadataFromParsedNoteImport\(imported: ParsedNoteImport\): FrontendMetadata/);
+  assert.match(source, /linkedEntities: imported\.linkedEntities/);
+  assert.match(source, /function noteImportWarningMessage/);
+  assert.match(source, /warning\.message/);
+  assert.match(applySource, /applyWorkbenchMetadata\(metadataFromParsedNoteImport\(imported\)\)/);
+  assert.match(applySource, /setNoteHistory\(\[\]\)/);
+  assert.match(applySource, /setHistoryDrawerOpen\(false\)/);
+  assert.match(applySource, /setNoteSourceType\(IMPORTED_NOTE_SOURCE_TYPE\)/);
+  assert.doesNotMatch(applySource, /createNote\(/);
+  assert.match(source, /async function saveWorkbenchNote\(\)[\s\S]*await addNote\(\)/);
+  assert.match(source, /onClick=\{saveWorkbenchNote\}/);
+});
+
+test('imported source type is saved only through new-note creation', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const draftEffectStart = source.indexOf('const draftInput: FrontendDraftPayload');
+  const draftEffectEnd = source.indexOf('async function saveWorkbenchNote', draftEffectStart);
+  const addStart = source.indexOf('async function addNote');
+  const addEnd = source.indexOf('async function saveExistingNote', addStart);
+  const saveExistingStart = source.indexOf('async function saveExistingNote');
+  const saveExistingEnd = source.indexOf('async function openNoteHistory', saveExistingStart);
+  const restoreStart = source.indexOf('async function restoreNoteDraft');
+  const restoreEnd = source.indexOf('  useEffect(() => {', restoreStart + 1);
+  const newNoteStart = source.indexOf('function startNewNote');
+  const newNoteEnd = source.indexOf('async function signOut', newNoteStart);
+  const selectStart = source.indexOf('onSelectNote={note => {');
+  const selectEnd = source.indexOf('    />', selectStart);
+
+  assert(draftEffectStart >= 0 && draftEffectEnd > draftEffectStart, 'Draft payload source is missing');
+  assert(addStart >= 0 && addEnd > addStart, 'Add note source is missing');
+  assert(saveExistingStart >= 0 && saveExistingEnd > saveExistingStart, 'Existing note save source is missing');
+  assert(restoreStart >= 0 && restoreEnd > restoreStart, 'Draft restore source is missing');
+  assert(newNoteStart >= 0 && newNoteEnd > newNoteStart, 'New note source is missing');
+  assert(selectStart >= 0 && selectEnd > selectStart, 'Note selection source is missing');
+
+  assert.match(source, /const DEFAULT_NOTE_SOURCE_TYPE = 'Typed note'/);
+  assert.match(source, /const IMPORTED_NOTE_SOURCE_TYPE = 'Meeting transcript'/);
+  assert.match(source, /const \[noteSourceType, setNoteSourceType\] = useState\(DEFAULT_NOTE_SOURCE_TYPE\)/);
+  assert.match(source.slice(addStart, addEnd), /sourceType: noteSourceType/);
+  assert.doesNotMatch(source.slice(saveExistingStart, saveExistingEnd), /sourceType/);
+  assert.doesNotMatch(source.slice(draftEffectStart, draftEffectEnd), /sourceType/);
+  assert.match(source.slice(restoreStart, restoreEnd), /setNoteSourceType\(DEFAULT_NOTE_SOURCE_TYPE\)/);
+  assert.match(source.slice(newNoteStart, newNoteEnd), /setNoteSourceType\(DEFAULT_NOTE_SOURCE_TYPE\)/);
+  assert.match(source.slice(selectStart, selectEnd), /setNoteSourceType\(DEFAULT_NOTE_SOURCE_TYPE\)/);
+});
+
 test('note workbench supports explicit saved-note editing and server draft recovery', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
 

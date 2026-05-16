@@ -562,7 +562,61 @@ textarea:focus {
 
 .primary-note {
   display: grid;
-  grid-template-rows: auto auto auto minmax(360px, 1fr) auto auto;
+  grid-template-rows: auto;
+  align-content: start;
+}
+
+.note-import-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 8px 0 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.note-import-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  max-height: 280px;
+  resize: vertical;
+  overflow: auto;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.note-import-preview {
+  min-width: 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink-2);
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.note-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.note-import-warning {
+  min-width: 0;
+  margin: 0;
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .note-panel-head {
@@ -579,7 +633,8 @@ textarea:focus {
 }
 
 .new-note-action,
-.history-note-action {
+.history-note-action,
+.note-import-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -594,7 +649,8 @@ textarea:focus {
 }
 
 .new-note-action:hover,
-.history-note-action:hover {
+.history-note-action:hover,
+.note-import-action:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }

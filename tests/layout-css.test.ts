@@ -52,6 +52,42 @@ test('notes sidebar and metadata controls have stable layout selectors', () => {
   }
 });
 
+test('note import layout selectors keep pasted imports compact', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+
+  for (const selector of [
+    '.note-import-panel',
+    '.note-import-input',
+    '.note-import-preview',
+    '.note-import-actions',
+    '.note-import-warning'
+  ]) {
+    assert.match(css, new RegExp(`${selector.replace('.', '\\.')}\\s*\\{`), `${selector} rule is missing`);
+  }
+
+  const inputMatch = css.match(/\.note-import-input\s*\{(?<body>[^}]+)\}/);
+  const actionsMatch = css.match(/\.note-import-actions\s*\{(?<body>[^}]+)\}/);
+
+  assert(inputMatch?.groups?.body, 'note-import-input rule is missing');
+  assert(actionsMatch?.groups?.body, 'note-import-actions rule is missing');
+  assert.match(inputMatch.groups.body, /width\s*:\s*100%/);
+  assert.match(inputMatch.groups.body, /min-width\s*:\s*0/);
+  assert.match(inputMatch.groups.body, /resize\s*:\s*vertical/);
+  assert.match(inputMatch.groups.body, /max-height\s*:\s*(2[4-9][0-9]|[3-5][0-9]{2})px/);
+  assert.match(actionsMatch.groups.body, /display\s*:\s*flex/);
+  assert.match(actionsMatch.groups.body, /flex-wrap\s*:\s*wrap/);
+});
+
+test('note import panel does not shift the workbench editor row or button styling', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const primaryMatch = css.match(/\.primary-note\s*\{(?<body>[^}]+)\}/);
+
+  assert(primaryMatch?.groups?.body, 'primary-note rule is missing');
+  assert.doesNotMatch(primaryMatch.groups.body, /minmax\(360px,\s*1fr\)/);
+  assert.match(css, /\.new-note-action,\s*\.history-note-action,\s*\.note-import-action\s*\{/);
+  assert.match(css, /\.new-note-action:hover,\s*\.history-note-action:hover,\s*\.note-import-action:hover\s*\{/);
+});
+
 test('sidebar note rows stay one line and vertically dense', () => {
   const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
   const rowMatch = css.match(/\.sidebar-note-row\s*\{(?<body>[^}]+)\}/);

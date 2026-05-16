@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-14_
+_Last updated: 2026-05-16_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -41,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 133 tests.
+- [x] Validation passing: build + 147 tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -106,6 +106,10 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - deterministic extraction confidence now uses direction clarity, metadata, temporal evidence, and explicit source-person links,
   - relation score now represents bounded evidence strength using endpoint confidence, candidate match strength, temporal fit, relation type, and source-person context,
   - the existing `claims.confidence` and `relations.score` fields remain the public/persisted contract with no schema migration.
+- [x] Pasted note/transcript import v1 added:
+  - Notes-only import panel parses pasted meeting notes and transcript text into title, observed date, body, participants, and linked metadata,
+  - imports apply to the unsaved workbench for analyst review instead of auto-saving,
+  - existing `/api/notes` creation handles import-shaped payloads with no new route, schema, or RLS changes.
 
 ### Current MVP Validation
 
@@ -138,6 +142,7 @@ Expected result:
   - historical workspace as-of projections and map timeline contracts.
   - note filtering and sorting helpers.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
+  - pasted note/transcript import parsing, UI contracts, and existing note-create route contracts.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
   - organization admin lifecycle, invite/team/member tests, multi-team access scopes, and personal-note graph privacy.
@@ -283,7 +288,7 @@ Goal: move from in-browser mock to production-shaped architecture.
 
 Goal: reduce friction for actual analysts by capturing research where it already happens: calls, meetings, transcripts, files, chat, and mobile notes.
 
-- [ ] Import pasted meeting notes with templates.
+- [x] Import pasted meeting notes with templates. **Done for Notes-only pasted note/transcript import v1.**
 - [ ] Add transcript/file upload path.
 - [ ] Parse DOCX/PDF/TXT/Markdown.
 - [ ] Add audio upload transcription for expert calls, company meetings, and internal research discussions.

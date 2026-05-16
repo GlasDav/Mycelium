@@ -129,6 +129,64 @@ test('personal notes contribute only to the author workspace graph and stay out 
   assert.equal(pmOrgDashboard.totals.notes, 2);
 });
 
+test('pasted transcript imports use existing note scopes for permission-safe graph materialization', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository);
+  repository.seed({
+    organizationId: 'org1',
+    users,
+    notes: [
+      { ...base, id: 'team-bull', title: 'team bull', body: 'Nvidia demand is strong and GPU supply is tight.' }
+    ]
+  });
+  const linkedEntities = [
+    { type: 'security' as const, role: 'security' as const, key: 'nvda', name: 'NVDA', externalIds: { ticker: 'NVDA' } },
+    { type: 'source_person' as const, role: 'source_person' as const, key: 'dana-lee', name: 'Dana Lee' }
+  ];
+
+  const personalSnapshot = await service.createNote('u1', {
+    title: 'personal transcript import',
+    body: 'Dana Lee: Nvidia demand is weak as GPU supply slows.',
+    sourceType: 'Meeting transcript',
+    observedAt: '2026-05-06',
+    accessScope: 'personal',
+    linkedEntities
+  });
+  const personalImport = personalSnapshot.visibleNotes.find(note => note.title === 'personal transcript import');
+  assert(personalImport);
+  assert.equal(personalImport.visibility, 'private');
+  assert.equal(personalImport.accessScope, 'personal');
+  assert.deepEqual(personalImport.sourcePeople, ['Dana Lee']);
+  assert(personalSnapshot.relations.some(relation => relation.a.noteId === personalImport.id || relation.b.noteId === personalImport.id));
+
+  const pmAfterPersonal = await service.getWorkspace('u3');
+  assert(!pmAfterPersonal.visibleNotes.some(note => note.id === personalImport.id));
+  assert(!pmAfterPersonal.relations.some(relation => relation.a.noteId === personalImport.id || relation.b.noteId === personalImport.id));
+
+  await service.createNote('u1', {
+    title: 'team transcript import',
+    body: 'Dana Lee: Nvidia demand is weak as GPU supply slows.',
+    sourceType: 'Meeting transcript',
+    observedAt: '2026-05-07',
+    accessScope: 'team',
+    teamId: 'team-semis',
+    linkedEntities
+  });
+  await service.createNote('u1', {
+    title: 'org transcript import',
+    body: 'Dana Lee: Microsoft Azure capex growth is improving.',
+    sourceType: 'Meeting transcript',
+    observedAt: '2026-05-08',
+    accessScope: 'organization',
+    linkedEntities
+  });
+
+  const pmAfterSharedImports = await service.getWorkspace('u3');
+  assert(pmAfterSharedImports.visibleNotes.some(note => note.title === 'team transcript import' && note.accessScope === 'team'));
+  assert(pmAfterSharedImports.visibleNotes.some(note => note.title === 'org transcript import' && note.accessScope === 'organization'));
+  assert(pmAfterSharedImports.claims.some(claim => claim.sourcePeople.includes('Dana Lee')));
+});
+
 test('organization admins manage teams, invites, memberships, and deactivation without research visibility escalation', async () => {
   const repository = createMemoryWorkspaceRepository();
   const service = createWorkspaceService(repository);

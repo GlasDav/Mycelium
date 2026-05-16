@@ -199,6 +199,54 @@ test('BFF creates notes and patches claim/relation reviews', async () => {
   }));
 });
 
+test('BFF accepts pasted transcript imports through the existing note create route', async () => {
+  const { app } = buildTestApp();
+  const linkedEntities = [
+    { type: 'security', role: 'security', key: 'nvda', name: 'NVDA', externalIds: { ticker: 'NVDA' } },
+    { type: 'theme', role: 'theme', key: 'ai-infrastructure', name: 'AI infrastructure' },
+    { type: 'kpi', role: 'kpi', key: 'demand', name: 'Demand' },
+    { type: 'source_person', role: 'source_person', key: 'dana-lee', name: 'Dana Lee' }
+  ];
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/notes',
+    headers: { authorization: 'Bearer u1' },
+    payload: {
+      title: 'Dana Lee transcript',
+      body: 'Dana Lee: Nvidia Blackwell demand is weak as GPU supply slows.',
+      sourceType: 'Meeting transcript',
+      observedAt: '2026-05-06',
+      accessScope: 'team',
+      teamId: 'team-semis',
+      linkedEntities
+    }
+  });
+
+  assert.equal(created.statusCode, 200);
+  const createdBody = created.json();
+  const createdNote = createdBody.visibleNotes.find((item: { title: string }) => item.title === 'Dana Lee transcript');
+  assert(createdNote);
+  assert.equal(createdNote.sourceType, 'Meeting transcript');
+  assert.equal(createdNote.observedAt, '2026-05-06');
+  assert.equal(createdNote.accessScope, 'team');
+  assert.equal(createdNote.teamId, 'team-semis');
+  assert.deepEqual(createdNote.tickers, ['NVDA']);
+  assert.deepEqual(createdNote.manualThemes, ['AI infrastructure']);
+  assert.deepEqual(createdNote.kpis, ['Demand']);
+  assert.deepEqual(createdNote.sourcePeople, ['Dana Lee']);
+  assert(createdNote.companyTags.includes('Nvidia'));
+  assert(createdNote.watchlistTags.includes('AI Capex'));
+
+  const claim = createdBody.claims.find((item: { noteId: string; text: string }) => (
+    item.noteId === createdNote.id && item.text.includes('Blackwell demand')
+  ));
+  assert(claim);
+  assert.deepEqual(claim.sourcePeople, ['Dana Lee']);
+  assert(claim.tickers.includes('NVDA'));
+  assert(claim.themes.includes('AI infrastructure'));
+});
+
 test('BFF updates notes, exposes history, and reloads persisted review state', async () => {
   const { app } = buildTestApp();
 

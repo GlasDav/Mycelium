@@ -22,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDot,
+  ClipboardPaste,
   Command,
   Edit3,
   Eye,
@@ -112,6 +113,7 @@ import {
   type NoteSort
 } from './note-filters';
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
+import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
 import type {
   ClaimReviewStatus,
   AdminOrganizationSnapshot,
@@ -152,6 +154,10 @@ type SourcePersonContext = 'same_source_person' | 'different_source_people' | 'u
 type PreviewEntityKind = Entity['kind'] | 'industry' | 'watchlist' | 'source_person';
 type PreviewEntity = { name: string; kind: PreviewEntityKind; ticker?: string };
 type FrontendMetadata = Partial<MetadataArrays> & { linkedEntities?: LinkedEntity[] };
+type NoteImportWarningForUi = string | { message: string };
+type ParsedNoteImportForUi = ParsedNoteImport & {
+  warnings: NoteImportWarningForUi[];
+};
 type FrontendWorkspaceNote = WorkspaceNote & FrontendMetadata;
 type FrontendWorkspaceClaim = WorkspaceClaim & FrontendMetadata;
 type FrontendWorkspaceRelation = Omit<WorkspaceRelation, 'a' | 'b'> & {
@@ -193,6 +199,7 @@ type FrontendNotePayload = {
   teamId?: string;
   visibility?: Note['visibility'];
   observedAt?: string;
+  sourceType?: string;
 } & MetadataArrays & { linkedEntities: LinkedEntity[] };
 type FrontendDraftPayload = Partial<FrontendNotePayload> & { selectedNoteId?: string };
 type FrontendUpdateClaimInput = UpdateClaimInput & FrontendMetadata;
@@ -248,6 +255,7 @@ turndownService.addRule('fontSizeSpan', {
 
 type ViewMode = 'notes' | 'dashboard' | 'map' | 'archive' | 'admin';
 const DEFAULT_NOTE_SOURCE_TYPE = 'Typed note';
+const IMPORTED_NOTE_SOURCE_TYPE = 'Meeting transcript';
 
 function App() {
   const [authClient, setAuthClient] = useState<SupabaseClient | null>(null);
@@ -267,6 +275,9 @@ function App() {
   const [accessScope, setAccessScope] = useState<AccessScope>('personal');
   const [noteTeamId, setNoteTeamId] = useState('');
   const [observedAt, setObservedAt] = useState(today());
+  const [noteSourceType, setNoteSourceType] = useState(DEFAULT_NOTE_SOURCE_TYPE);
+  const [noteImportOpen, setNoteImportOpen] = useState(false);
+  const [noteImportText, setNoteImportText] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('notes');
   const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>('workspace');
@@ -420,6 +431,8 @@ function App() {
     void refreshAdmin(session);
   }, [session, viewMode, workspace?.viewer.orgRole]);
 
+  const parsedNoteImport = useMemo(() => parsePastedNoteImport(noteImportText), [noteImportText]);
+
   useEffect(() => {
     if (!workspace) return;
     const previousAsOf = previousWorkspaceAsOfRef.current;
@@ -522,6 +535,7 @@ function App() {
       setAccessScope(savedDraft.accessScope ?? accessScopeFromVisibility(savedDraft.visibility));
       setNoteTeamId(savedDraft.teamId ?? linkedNote?.teamId ?? nextWorkspace.viewer.primaryTeamId ?? nextWorkspace.viewer.teamId ?? '');
       setObservedAt(savedDraft.observedAt ?? today());
+      setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
       applyWorkbenchMetadata(savedDraft);
       clearedDraftSignatureRef.current = draftSignature(savedDraft);
       setViewMode('notes');
@@ -571,6 +585,7 @@ function App() {
         body: draft,
         accessScope,
         teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+        sourceType: noteSourceType,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -583,6 +598,7 @@ function App() {
       setNoteTitle('');
       setDraft('');
       resetWorkbenchMetadata();
+      setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
       setSelectedNoteId('');
       setViewMode('notes');
       clearedDraftSignatureRef.current = '';
@@ -679,7 +695,7 @@ function App() {
       teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
       visibility: visibilityFromAccessScope(accessScope),
       accessScope,
-      sourceType: DEFAULT_NOTE_SOURCE_TYPE,
+      sourceType: noteSourceType,
       createdAt: observedAt || today(),
       observedAt,
       ...currentMetadataArrays(),
@@ -695,6 +711,7 @@ function App() {
     setAccessScope('personal');
     setNoteTeamId(workspace?.viewer.primaryTeamId ?? workspace?.viewer.teamId ?? '');
     setObservedAt(date);
+    setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
     resetWorkbenchMetadata();
     setNoteHistory([]);
     setHistoryDrawerOpen(false);
@@ -705,6 +722,22 @@ function App() {
         setAppError(error instanceof Error ? error.message : String(error));
       });
     }
+  }
+
+  function applyImportedNoteToWorkbench(parsed: ParsedNoteImport) {
+    const imported = parsed as ParsedNoteImportForUi;
+    if (!imported.body.trim()) return;
+    setSelectedNoteId('');
+    setNoteTitle(imported.title ?? '');
+    setDraft(imported.body);
+    setObservedAt(imported.observedAt ?? today());
+    applyWorkbenchMetadata(metadataFromParsedNoteImport(imported));
+    setNoteHistory([]);
+    setHistoryDrawerOpen(false);
+    setNoteSourceType(IMPORTED_NOTE_SOURCE_TYPE);
+    setNoteImportOpen(false);
+    clearedDraftSignatureRef.current = '';
+    setViewMode('notes');
   }
 
   async function signOut() {
@@ -764,6 +797,18 @@ function App() {
   const mapRelations = mapGraph ? (subjectRelations.length ? subjectRelations : mapGraph.relations) : [];
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
+  const parsedImport = parsedNoteImport as ParsedNoteImportForUi;
+  const noteImportWarnings = parsedImport.warnings ?? [];
+  const noteImportMetadata = metadataArraysFromSource(metadataFromParsedNoteImport(parsedImport));
+  const noteImportTags = [
+    ...noteImportMetadata.companyTags,
+    ...noteImportMetadata.tickers,
+    ...noteImportMetadata.industries,
+    ...noteImportMetadata.manualThemes,
+    ...noteImportMetadata.kpis,
+    ...noteImportMetadata.watchlistTags,
+    ...noteImportMetadata.sourcePeople
+  ];
   const previewEntities = mergeEntities(detectEntities(draft), [
     ...companyTags.map(name => ({ name, kind: 'company' as const })),
     ...tickers.map(name => ({ name, kind: 'ticker' as const })),
@@ -835,6 +880,7 @@ function App() {
         setAccessScope(note.accessScope ?? accessScopeFromVisibility(note.visibility));
         setNoteTeamId(note.teamId ?? user.primaryTeamId ?? user.teamId ?? '');
         setObservedAt(note.observedAt ?? note.createdAt);
+        setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
         applyWorkbenchMetadata(note as FrontendWorkspaceNote);
         setNoteHistory([]);
         setHistoryDrawerOpen(false);
@@ -853,9 +899,34 @@ function App() {
             <div className="panel-title"><FilePlus2/> Note</div>
             <div className="note-panel-actions">
               {selectedNoteId && <button type="button" className="history-note-action" onClick={openNoteHistory}><History size={14}/>History</button>}
+              <button type="button" className="note-import-action" onClick={() => setNoteImportOpen(open => !open)}><ClipboardPaste size={14}/>Import</button>
               <button type="button" className="new-note-action" onClick={startNewNote}><FilePlus2 size={14}/>New note</button>
             </div>
           </div>
+          {noteImportOpen && <section className="note-import-panel" aria-label="Import pasted note">
+            <textarea
+              className="note-import-input"
+              value={noteImportText}
+              onChange={event => setNoteImportText(event.target.value)}
+              placeholder="Paste meeting notes or transcript text"
+            />
+            <div className="note-import-preview">
+              <b>{parsedImport.title || 'Untitled import'}</b>
+              <span>{parsedImport.observedAt || 'Observed date not found'}</span>
+              <p>{parsedImport.body.trim() || 'Paste note text to preview the imported workbench draft.'}</p>
+              {noteImportTags.length > 0 && <small>{noteImportTags.slice(0, 8).join(' / ')}</small>}
+            </div>
+            {noteImportWarnings.length > 0 && <div className="note-import-warning">
+              {noteImportWarnings.map((warning, index) => {
+                const message = noteImportWarningMessage(warning);
+                return <span key={`${message}-${index}`}>{message}</span>;
+              })}
+            </div>}
+            <div className="note-import-actions">
+              <button type="button" onClick={() => applyImportedNoteToWorkbench(parsedNoteImport)} disabled={!parsedImport.body.trim()}>Apply to workbench</button>
+              <button type="button" onClick={() => setNoteImportOpen(false)}>Close</button>
+            </div>
+          </section>}
           <div className="note-meta">
             <span>{accessScope === 'team' ? selectedNoteTeamName : accessScope === 'organization' ? 'Organisation' : 'Personal'}</span>
             <span>{observedAt}</span>
@@ -2250,6 +2321,23 @@ function metadataArraysFromSource(source: FrontendMetadata = {}): MetadataArrays
     watchlistTags: normalizeTags([...(source.watchlistTags ?? []), ...linked.watchlistTags]),
     sourcePeople: normalizeTags([...(source.sourcePeople ?? []), ...linked.sourcePeople])
   };
+}
+
+function metadataFromParsedNoteImport(imported: ParsedNoteImport): FrontendMetadata {
+  return {
+    tickers: imported.tickers,
+    manualThemes: imported.manualThemes,
+    kpis: imported.kpis,
+    industries: imported.industries,
+    companyTags: imported.companyTags,
+    watchlistTags: imported.watchlistTags,
+    sourcePeople: imported.sourcePeople,
+    linkedEntities: imported.linkedEntities
+  };
+}
+
+function noteImportWarningMessage(warning: NoteImportWarningForUi): string {
+  return typeof warning === 'string' ? warning : warning.message;
 }
 
 function addTag(values: string[], value: string, transform: (value: string) => string = item => item): string[] {

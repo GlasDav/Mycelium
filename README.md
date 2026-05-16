@@ -74,7 +74,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, Notes-only pasted meeting-note/transcript import that previews parsed fields before applying them to the unsaved workbench, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
 - Left-rail page navigation separates clean current-note Notes, scoped Dashboard, relationship map, full-width note archive, and Organisation admin so each surface has its own workspace.
 - Notes only shows the active note, live extraction, and saved claims/relations tied to the selected note; workspace/team/org pulse, signals, top metadata, and source-person coverage live on Dashboard.
 - Action-backed empty states for no notes, filtered results, empty graph subjects, missing current-note claims, missing relations, and source-person history.
@@ -160,6 +160,7 @@ This runs a production build/typecheck and the full deterministic test suite.
 
 ### Useful files
 
+- `src/note-import.ts` - pure parser for pasted meeting notes and transcripts, including header extraction, transcript cleanup, conservative date handling, participant detection, and linked metadata normalization.
 - `src/ontology.ts` - local deterministic issuer/security/industry/watchlist ontology for canonical aliases, parent sectors, default demo watchlists, and issuer-aware relation matching.
 - `src/entity-links.ts` - shared normalized entity/link helpers, ontology-backed canonicalization, derived metadata arrays, and legacy metadata-array compatibility.
 
@@ -184,4 +185,4 @@ This runs a production build/typecheck and the full deterministic test suite.
 - Confidence scoring is deterministic and bounded on the existing `claims.confidence` and `relations.score` fields. It is evidence-strength guidance for review and ordering, not an automated investment or compliance decision.
 - Normalized research entities use deterministic/manual keys plus a small local ontology for the demo issuer/security set, parent industry sectors, and default demo watchlists. External security-master integration, portfolio-specific membership sync, and fuzzy source-person identity resolution are deferred.
 - The current automated RLS test is a migration/schema contract test. Run `npm run supabase:start` and `npm run supabase:db:reset` in an environment with Docker Desktop running for live Supabase migration verification.
-- Note import is text paste only; PDF/DOCX parsing and RMS integrations are deferred.
+- Note import is text paste only: pasted notes/transcripts can be parsed into the workbench, but PDF/DOCX parsing, durable transcript chunks, audio transcription, and RMS integrations are deferred.
