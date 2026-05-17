@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Note, User } from '../src/engine';
+import type { ClaimExtractionProvider, Note, User } from '../src/engine';
 import {
   createMemoryWorkspaceRepository,
   createWorkspaceService,
@@ -51,6 +51,55 @@ test('workspace snapshots enforce permissions before graph computation', async (
   assert.equal(analyst.relations.length, 0);
   assert.deepEqual(pm.visibleNotes.map(n => n.id).sort(), ['n1', 'n2', 'n3']);
   assert(pm.relations.some(r => r.type === 'contradiction'));
+});
+
+test('materializeGraph uses an injected claim extraction provider', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const providerCalls: string[] = [];
+  const injectedProvider: ClaimExtractionProvider = {
+    async extractClaims(note, context) {
+      providerCalls.push(`${note.id}:${context.asOf}`);
+      return [{
+        subject: note.body.includes('Apple') ? 'Apple' : 'Nvidia',
+        text: `${note.body.includes('Apple') ? 'Apple' : 'Nvidia'} provider demand is strong into Q3.`
+      }];
+    }
+  };
+  const service = createWorkspaceService(repository, injectedProvider);
+  repository.seed({ organizationId: 'org1', users, notes });
+
+  await service.materializeGraph('org1', 'u1');
+
+  const claims = await repository.listClaims('org1');
+  assert.deepEqual(providerCalls, ['n1:2026-05-01', 'n2:2026-05-01', 'n3:2026-05-01']);
+  assert.equal(claims.length, 3);
+  assert(claims.every(claim => claim.text.includes('provider demand is strong into Q3.')));
+  assert(claims.every(claim => claim.direction === 'positive'));
+  assert(claims.every(claim => claim.horizon === 'near_term'));
+});
+
+test('workspace extraction fallback preserves graph materialization and audit behavior', async () => {
+  const repository = createMemoryWorkspaceRepository();
+  const throwingProvider: ClaimExtractionProvider = {
+    async extractClaims() {
+      throw new Error('provider unavailable');
+    }
+  };
+  const service = createWorkspaceService(repository, throwingProvider);
+  repository.seed({ organizationId: 'org1', users, notes });
+
+  await service.materializeGraph('org1', 'u1');
+
+  const claims = await repository.listClaims('org1');
+  const relations = await repository.listRelations('org1');
+  assert(claims.some(claim => claim.noteId === 'n1'));
+  assert(relations.some(relation => relation.type === 'contradiction'));
+  assert(repository.auditEvents.some(event => (
+    event.action === 'graph.materialized'
+    && event.actorId === 'u1'
+    && event.metadata.claimCount === claims.length
+    && event.metadata.relationCount === relations.length
+  )));
 });
 
 test('workspace access scopes support organization, team, and author-only personal notes', async () => {

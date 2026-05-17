@@ -74,7 +74,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, Notes-only pasted meeting-note/transcript import that previews parsed fields before applying them to the unsaved workbench, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, Notes-only pasted meeting-note/transcript and TXT/Markdown file import that previews parsed fields before applying them to the unsaved workbench, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
 - Left-rail page navigation separates clean current-note Notes, scoped Dashboard, relationship map, full-width note archive, and Organisation admin so each surface has its own workspace.
 - Notes only shows the active note, live extraction, and saved claims/relations tied to the selected note; workspace/team/org pulse, signals, top metadata, and source-person coverage live on Dashboard.
 - Action-backed empty states for no notes, filtered results, empty graph subjects, missing current-note claims, missing relations, and source-person history.
@@ -90,7 +90,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Temporal relationship detection across accessible notes, with dates, source-person context, extraction confidence, and relation evidence strength explaining why an opposing read is a true contradiction vs a trend reversal.
 - Server-side permission filtering for Analyst, PM, Compliance, org admin management rights, active/deactivated member status, multi-team membership, and author-only personal notes.
 - Scoped dashboard views with workspace/team/org toggles, 30-day/90-day/all-time ranges, metric cards, relation mix, freshness, review backlog, signals, top companies/themes/KPIs/securities/watchlists/source people, and source-person coverage.
-- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, grey stale evidence, server-backed as-of timeline, current/historical lanes, author/team/metadata filters, density controls, and a selected-relation detail drawer.
+- Relationship-map affordance for a temporal claim graph with red contradictions, amber tensions, blue reversals, green corroboration, grey stale evidence, server-backed as-of timeline, current/historical lanes, author/team/metadata filters, density controls, explicit overflow counts, data-driven node positions, and a selected-relation detail drawer.
 - In-app alerts for contradictions, tensions, reversals, corroboration clusters, stale evidence, and research-density changes.
 - Permission-aware note archive and seed demo data so the app is useful immediately.
 
@@ -158,14 +158,26 @@ npm run validate
 
 This runs a production build/typecheck and the full deterministic test suite.
 
+Optional live Supabase smoke coverage requires Docker/local Supabase:
+
+```bash
+npm run supabase:start
+npm run supabase:db:reset
+npm run test:supabase:live
+```
+
+`npm run test:supabase:live` skips cleanly when local Supabase is not running and is not part of `npm run validate`.
+
 ### Useful files
 
 - `src/note-import.ts` - pure parser for pasted meeting notes and transcripts, including header extraction, transcript cleanup, conservative date handling, participant detection, and linked metadata normalization.
+- `src/note-import-files.ts` - client-side TXT/Markdown file validation and text import adapter for the Notes import panel.
+- `src/map-layout.ts` - pure relationship-map lane/density/layout helper for current/historical lanes, node positions, selected relation fallback, and overflow counts.
 - `src/ontology.ts` - local deterministic issuer/security/industry/watchlist ontology for canonical aliases, parent sectors, default demo watchlists, and issuer-aware relation matching.
 - `src/entity-links.ts` - shared normalized entity/link helpers, ontology-backed canonicalization, derived metadata arrays, and legacy metadata-array compatibility.
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
-- `src/engine.ts` — deterministic extraction, confidence scoring, temporal relation detection, synthesis, and alerts.
+- `src/engine.ts` — deterministic extraction, async extraction-provider fallback exports, confidence scoring, temporal relation detection, synthesis, and alerts.
 - `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, Personal/Team/Organisation access scopes, multi-team membership, organization admin lifecycle, role-gated dashboard aggregation, workspace JSON export/import, note editing/history/drafts, claim/relation review behavior, and extraction provider boundary.
 - `server/app.ts` — Fastify BFF routes for workspace, scoped dashboard aggregates, organization admin lifecycle, workspace export/import, notes, note draft recovery, note history, claim review, relation review, audit events, and auth bootstrap.
 - `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
@@ -173,16 +185,17 @@ This runs a production build/typecheck and the full deterministic test suite.
 - `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/location controls, active team selection, organization admin page, stock/theme/KPI metadata, action-backed empty states, notes sidebar, page-level notes/dashboard/map/archive/admin navigation, slash-command markdown editing, live extraction, current-note claim/relation review, dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline/lanes/filters/density/review/detail drawer, and archive.
 - `src/demo-guide.ts` and `src/empty-states.ts` — pure frontend guidance helpers for walkthrough content/storage and empty-state copy/action contracts.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, confidence scoring, direct temporal/as-of helpers, schema contract, workspace service behavior, organization admin lifecycle, multi-team access scopes, personal-note privacy, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, map timeline/layout contracts, page layout, markdown commands, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, extraction-provider fallback, confidence scoring, direct temporal/as-of helpers, schema contract, workspace service behavior, organization admin lifecycle, multi-team access scopes, personal-note privacy, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, map timeline/layout contracts, page layout, markdown commands, and BFF routes.
+- `tests/supabase-rls-live.ts` — opt-in local Supabase smoke test for auth bootstrap and invite gating.
 
 - `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
 
 ### Tradeoffs in this MVP
 
-- Extraction is deterministic and transparent rather than LLM-backed. The interfaces are small enough to replace with model providers later.
+- Extraction is deterministic and transparent by default. An async provider seam exists for future model-backed extraction, but no provider SDKs, paid APIs, secrets, or hosted model calls are wired in.
 - Supabase local development requires Docker Desktop to be running.
 - The first extraction provider remains deterministic and transparent. Evidence-bearing saved-note edits reset derived claim/relation review state so stale analyst decisions do not silently attach to changed evidence.
 - Confidence scoring is deterministic and bounded on the existing `claims.confidence` and `relations.score` fields. It is evidence-strength guidance for review and ordering, not an automated investment or compliance decision.
 - Normalized research entities use deterministic/manual keys plus a small local ontology for the demo issuer/security set, parent industry sectors, and default demo watchlists. External security-master integration, portfolio-specific membership sync, and fuzzy source-person identity resolution are deferred.
-- The current automated RLS test is a migration/schema contract test. Run `npm run supabase:start` and `npm run supabase:db:reset` in an environment with Docker Desktop running for live Supabase migration verification.
-- Note import is text paste only: pasted notes/transcripts can be parsed into the workbench, but PDF/DOCX parsing, durable transcript chunks, audio transcription, and RMS integrations are deferred.
+- Default automated RLS coverage is still migration/schema contract coverage; `npm run test:supabase:live` adds opt-in live local auth bootstrap/invite-gating coverage when Docker Desktop and Supabase are running.
+- Note import supports pasted text plus TXT/Markdown file content import into the workbench. PDF/DOCX parsing, durable transcript chunks, audio transcription, and RMS integrations are deferred.

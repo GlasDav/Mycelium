@@ -8,6 +8,8 @@ import { freshnessFor, inferTemporalWindow } from './temporal';
 import type { Claim, Direction, Note, User } from './types';
 import { maxDate, slug, sortedUnique } from './utils';
 
+export type ClaimDraftInput = Partial<Claim> & Pick<Claim, 'subject' | 'text'>;
+
 export function directionFor(sentence: string): Direction {
   const lower = sentence.toLowerCase();
   const pos = positiveDirectionWords.some(w => lower.includes(w));
@@ -102,6 +104,115 @@ export function extractClaims(note: Note, asOf = maxDate([note.createdAt, note.o
     }
   }
   return claims;
+}
+
+export function normalizeClaimDraft(note: Note, draft: ClaimDraftInput, index: number, asOf = maxDate([note.createdAt, note.observedAt])): Claim | undefined {
+  const subject = draft.subject.trim();
+  const text = draft.text.replace(/\s+/g, ' ').trim();
+  if (!subject || !text) return undefined;
+
+  const evidence = (draft.evidence?.trim() || text).replace(/\s+/g, ' ');
+  const entities = detectEntities(`${subject}. ${text} ${evidence}`);
+  const companies = entities.filter(e => e.kind === 'company');
+  const subjectCompany = companies.find(company => company.name.toLowerCase() === subject.toLowerCase()) ?? companies[0];
+  const noteMetadata = metadataForNote(note);
+  const noteLinks = linkedEntitiesForNote(note);
+  const direction = draft.direction ?? directionFor(text);
+  const temporal = inferTemporalWindow(note, text, asOf);
+
+  const themes = sortedUnique([
+    ...entities.filter(e => e.kind === 'theme').map(e => e.name),
+    ...noteMetadata.manualThemes,
+    ...(draft.themes ?? [])
+  ]);
+  const tickers = sortedUnique([
+    ...noteMetadata.tickers,
+    ...entities.filter(e => e.kind === 'ticker').map(e => e.ticker ?? e.name),
+    subjectCompany?.ticker,
+    ...(draft.tickers ?? [])
+  ].filter(Boolean) as string[]);
+  const kpis = sortedUnique([
+    ...noteMetadata.kpis,
+    ...entities.filter(e => e.kind === 'kpi').map(e => e.name),
+    ...(draft.kpis ?? [])
+  ]);
+  const companyTags = sortedUnique([
+    ...noteMetadata.companyTags,
+    subjectCompany?.name ?? subject,
+    ...(draft.companyTags ?? [])
+  ]);
+  const industries = sortedUnique([
+    ...noteMetadata.industries,
+    ...entities.filter(e => e.kind === 'industry').map(e => e.name),
+    ...(draft.industries ?? [])
+  ]);
+  const linkedEntities = mergeLinkedEntities(
+    noteLinks,
+    draft.linkedEntities,
+    [linkedEntity('company', 'subject', subjectCompany?.name ?? subject)],
+    tickers.map(ticker => linkedEntity('security', 'security', ticker.toUpperCase(), { ticker: ticker.toUpperCase() })),
+    industries.map(industry => linkedEntity('industry', 'industry', industry)),
+    themes.map(theme => linkedEntity('theme', 'theme', theme)),
+    kpis.map(kpi => linkedEntity('kpi', 'kpi', kpi))
+  );
+  const linkedMetadata = metadataArraysFromLinkedEntities(linkedEntities);
+  const claimThemes = sortedUnique([...themes, ...linkedMetadata.manualThemes]);
+  const claimTickers = sortedUnique([...tickers, ...linkedMetadata.tickers]);
+  const claimIndustries = sortedUnique([...industries, ...linkedMetadata.industries]);
+  const claimCompanyTags = sortedUnique([...companyTags, ...linkedMetadata.companyTags]);
+  const claimKpis = sortedUnique([...kpis, ...linkedMetadata.kpis]);
+  const claimWatchlistTags = sortedUnique([...noteMetadata.watchlistTags, ...(draft.watchlistTags ?? []), ...linkedMetadata.watchlistTags]);
+  const claimSourcePeople = sortedUnique([...noteMetadata.sourcePeople, ...(draft.sourcePeople ?? []), ...linkedMetadata.sourcePeople]);
+  const observedAt = draft.observedAt ?? temporal.observedAt;
+  const appliesToStart = draft.appliesToStart ?? temporal.appliesToStart;
+  const appliesToEnd = Object.prototype.hasOwnProperty.call(draft, 'appliesToEnd') ? draft.appliesToEnd : temporal.appliesToEnd;
+  const horizon = draft.horizon ?? temporal.horizon;
+  const confidence = typeof draft.confidence === 'number'
+    ? draft.confidence
+    : scoreClaimConfidence({
+      direction,
+      text,
+      evidence,
+      themes: claimThemes,
+      tickers: claimTickers,
+      industries: claimIndustries,
+      companyTags: claimCompanyTags,
+      kpis: claimKpis,
+      sourcePeople: claimSourcePeople,
+      observedAt,
+      appliesToStart,
+      appliesToEnd,
+      horizon
+    });
+
+  return {
+    id: draft.id ?? `${note.id}-${slug(subjectCompany?.name ?? subject)}-${index}`,
+    noteId: draft.noteId ?? note.id,
+    subject: subjectCompany?.name ?? subject,
+    text,
+    direction,
+    evidence,
+    confidence,
+    themes: claimThemes,
+    tickers: claimTickers,
+    industries: claimIndustries,
+    companyTags: claimCompanyTags,
+    kpis: claimKpis,
+    watchlistTags: claimWatchlistTags,
+    sourcePeople: claimSourcePeople,
+    linkedEntities,
+    createdAt: draft.createdAt ?? note.createdAt,
+    observedAt,
+    appliesToStart,
+    appliesToEnd,
+    horizon,
+    freshness: draft.freshness ?? freshnessFor(appliesToEnd ?? observedAt, asOf),
+    authorId: draft.authorId ?? note.authorId,
+    visibility: draft.visibility ?? note.visibility,
+    accessScope: draft.accessScope ?? note.accessScope ?? accessScopeFromVisibility(note.visibility),
+    team: draft.team ?? note.team,
+    teamId: draft.teamId ?? note.teamId
+  };
 }
 
 export function buildClaims(notes: Note[], user: User): Claim[] {

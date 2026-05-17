@@ -85,7 +85,6 @@ import {
 } from './api';
 import {
   companyLexicon,
-  claimWindowStatus,
   detectEntities,
   extractClaims,
   kpiWords,
@@ -114,6 +113,14 @@ import {
 } from './note-filters';
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
+import { NOTE_IMPORT_FILE_ACCEPT, readNoteImportFile } from './note-import-files';
+import {
+  buildMapLaneModel,
+  mapDensityLimits,
+  relationWindowStatuses,
+  type MapDensity,
+  type UiWindowStatus
+} from './map-layout';
 import type {
   ClaimReviewStatus,
   AdminOrganizationSnapshot,
@@ -222,15 +229,7 @@ interface MapFilters {
   authorId?: string;
   team?: string;
 }
-type MapDensity = 'low' | 'medium' | 'high';
-type WindowLane = 'current' | 'historical';
-type UiWindowStatus = 'current' | 'upcoming' | 'ended';
 type SelectOption = string | { value: string; label: string };
-const mapDensityLimits: Record<MapDensity, { graph: number; list: number }> = {
-  low: { graph: 4, list: 3 },
-  medium: { graph: 8, list: 5 },
-  high: { graph: 12, list: 8 }
-};
 const markdownSanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), 'u', 'span'],
@@ -278,6 +277,8 @@ function App() {
   const [noteSourceType, setNoteSourceType] = useState(DEFAULT_NOTE_SOURCE_TYPE);
   const [noteImportOpen, setNoteImportOpen] = useState(false);
   const [noteImportText, setNoteImportText] = useState('');
+  const [parsedFileNoteImport, setParsedFileNoteImport] = useState<ParsedNoteImport | null>(null);
+  const [noteImportFileError, setNoteImportFileError] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('notes');
   const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>('workspace');
@@ -724,6 +725,18 @@ function App() {
     }
   }
 
+  async function importNoteFile(file: File | undefined) {
+    if (!file) return;
+    try {
+      const imported = await readNoteImportFile(file);
+      setParsedFileNoteImport(imported);
+      setNoteImportFileError('');
+    } catch (error) {
+      setParsedFileNoteImport(null);
+      setNoteImportFileError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function applyImportedNoteToWorkbench(parsed: ParsedNoteImport) {
     const imported = parsed as ParsedNoteImportForUi;
     if (!imported.body.trim()) return;
@@ -797,8 +810,8 @@ function App() {
   const mapRelations = mapGraph ? (subjectRelations.length ? subjectRelations : mapGraph.relations) : [];
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
-  const parsedImport = parsedNoteImport as ParsedNoteImportForUi;
-  const noteImportWarnings = parsedImport.warnings ?? [];
+  const parsedImport = parsedFileNoteImport ?? parsedNoteImport as ParsedNoteImportForUi;
+  const noteImportWarnings = noteImportFileError ? [noteImportFileError, ...(parsedImport.warnings ?? [])] : parsedImport.warnings ?? [];
   const noteImportMetadata = metadataArraysFromSource(metadataFromParsedNoteImport(parsedImport));
   const noteImportTags = [
     ...noteImportMetadata.companyTags,
@@ -907,9 +920,26 @@ function App() {
             <textarea
               className="note-import-input"
               value={noteImportText}
-              onChange={event => setNoteImportText(event.target.value)}
+              onChange={event => {
+                setNoteImportText(event.target.value);
+                setParsedFileNoteImport(null);
+                setNoteImportFileError('');
+              }}
               placeholder="Paste meeting notes or transcript text"
             />
+            <div className="note-import-file-row">
+              <label className="note-import-file-button">
+                <input
+                  type="file"
+                  accept={NOTE_IMPORT_FILE_ACCEPT}
+                  onChange={event => {
+                    void importNoteFile(event.target.files?.[0]);
+                    event.currentTarget.value = '';
+                  }}
+                />
+                Choose TXT or Markdown
+              </label>
+            </div>
             <div className="note-import-preview">
               <b>{parsedImport.title || 'Untitled import'}</b>
               <span>{parsedImport.observedAt || 'Observed date not found'}</span>
@@ -2040,12 +2070,8 @@ function RelationshipMap({
   const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? '');
   const filteredRelations = filterMapRelations(relations, filters, notes);
   const densityLimits = mapDensityLimits[density];
-  const currentRelations = filteredRelations.filter(relation => laneForRelation(relation, asOf) === 'current');
-  const historicalRelations = filteredRelations.filter(relation => laneForRelation(relation, asOf) === 'historical');
-  const currentGraphRelations = currentRelations.slice(0, densityLimits.graph);
-  const historicalGraphRelations = historicalRelations.slice(0, densityLimits.graph);
-  const currentListRelations = currentRelations.slice(0, densityLimits.list);
-  const historicalListRelations = historicalRelations.slice(0, densityLimits.list);
+  const currentLane = buildMapLaneModel(filteredRelations, { asOf, density, lane: 'current', selectedRelationId, selectedSubject: selected });
+  const historicalLane = buildMapLaneModel(filteredRelations, { asOf, density, lane: 'historical', selectedRelationId, selectedSubject: selected });
   const selectedRelation = filteredRelations.find(relation => relation.id === selectedRelationId) ?? filteredRelations[0];
   const relationEmptyState = emptyStateForRelations({ hasRelations: relations.length > 0, hasActiveFilters: activeMapFilterCount(filters, mapAsOf, latestAsOf) > 0 });
 
@@ -2081,40 +2107,64 @@ function RelationshipMap({
     <div className="relation-legend"><span className="contradiction">red true contradiction</span><span className="open_tension">amber tension</span><span className="update_or_trend_reversal">blue trend reversal</span><span className="corroboration">green corroboration</span><span className="stale_evidence">grey stale evidence</span></div>
     {filteredRelations.length ? <div className="map-lanes">
       <section className="map-lane current">
-        <div className="map-lane-head"><h3>Current / upcoming</h3><span>{currentRelations.length} relations</span></div>
-        {currentGraphRelations.length ? <div className="graph-canvas" aria-label="Current relationship graph">
+        <div className="map-lane-head"><h3>Current / upcoming</h3><span>{currentLane.relations.length} relations</span></div>
+        {currentLane.graphRelations.length ? <div className="graph-canvas" aria-label="Current relationship graph">
           <div className="node primary"><CircleDot/> {selected}</div>
-          {currentGraphRelations.map((r, i) => <React.Fragment key={r.id}>
-            <button className={`node satellite n${i} ${r.type}`} onClick={() => {
-              setSelectedRelationId(r.id);
-              onSelect(r.a.subject);
-            }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
-            <i className={`edge e${i} ${r.type}`} />
-          </React.Fragment>)}
+          {currentLane.graphRelations.map(r => {
+            const node = currentLane.nodes.find(item => item.relationId === r.id);
+            return node ? <React.Fragment key={r.id}>
+              <button className={`node satellite ${node.type} ${node.selected ? 'selected' : ''}`} style={mapNodeStyle(node)} onClick={() => {
+                setSelectedRelationId(r.id);
+                onSelect(node.subject);
+              }}>{node.subject}<small>{node.label}</small></button>
+              <i className={`edge ${node.type}`} style={mapEdgeStyle(node)} />
+            </React.Fragment> : null;
+          })}
         </div> : <p className="map-lane-empty">No current or upcoming endpoints at this as-of date.</p>}
+        {currentLane.hiddenGraphCount > 0 && <p className="map-lane-overflow">{currentLane.hiddenGraphCount} hidden by density</p>}
         <div className="relation-list">
-          {currentListRelations.map(r => <RelationCard key={r.id} relation={r} asOf={asOf} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
+          {currentLane.listRelations.map(r => <RelationCard key={r.id} relation={r} asOf={asOf} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
         </div>
+        {currentLane.hiddenListCount > 0 && <p className="map-lane-overflow">{currentLane.hiddenListCount} list items hidden by density</p>}
       </section>
       <section className="map-lane historical">
-        <div className="map-lane-head"><h3>Historical / ended</h3><span>{historicalRelations.length} relations</span></div>
-        {historicalGraphRelations.length ? <div className="graph-canvas" aria-label="Historical relationship graph">
+        <div className="map-lane-head"><h3>Historical / ended</h3><span>{historicalLane.relations.length} relations</span></div>
+        {historicalLane.graphRelations.length ? <div className="graph-canvas" aria-label="Historical relationship graph">
           <div className="node primary"><CircleDot/> {selected}</div>
-          {historicalGraphRelations.map((r, i) => <React.Fragment key={r.id}>
-            <button className={`node satellite n${i} ${r.type}`} onClick={() => {
-              setSelectedRelationId(r.id);
-              onSelect(r.a.subject);
-            }}>{r.a.subject}<small>{relationLabel(r.type)}</small></button>
-            <i className={`edge e${i} ${r.type}`} />
-          </React.Fragment>)}
+          {historicalLane.graphRelations.map(r => {
+            const node = historicalLane.nodes.find(item => item.relationId === r.id);
+            return node ? <React.Fragment key={r.id}>
+              <button className={`node satellite ${node.type} ${node.selected ? 'selected' : ''}`} style={mapNodeStyle(node)} onClick={() => {
+                setSelectedRelationId(r.id);
+                onSelect(node.subject);
+              }}>{node.subject}<small>{node.label}</small></button>
+              <i className={`edge ${node.type}`} style={mapEdgeStyle(node)} />
+            </React.Fragment> : null;
+          })}
         </div> : <p className="map-lane-empty">No fully historical or ended relations at this as-of date.</p>}
+        {historicalLane.hiddenGraphCount > 0 && <p className="map-lane-overflow">{historicalLane.hiddenGraphCount} hidden by density</p>}
         <div className="relation-list">
-          {historicalListRelations.map(r => <RelationCard key={r.id} relation={r} asOf={asOf} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
+          {historicalLane.listRelations.map(r => <RelationCard key={r.id} relation={r} asOf={asOf} selected={r.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(r.id)} onUpdate={input => onUpdate(r.id, input)} />)}
         </div>
+        {historicalLane.hiddenListCount > 0 && <p className="map-lane-overflow">{historicalLane.hiddenListCount} list items hidden by density</p>}
       </section>
     </div> : <EmptyState title={relationEmptyState.title} body={relationEmptyState.body} actions={emptyStateActions(relationEmptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
     {selectedRelation && <RelationDetailDrawer relation={selectedRelation} asOf={asOf} />}
   </article>;
+}
+
+function mapNodeStyle(node: { x: string; y: string }): React.CSSProperties & Record<'--node-x' | '--node-y', string> {
+  return {
+    '--node-x': node.x,
+    '--node-y': node.y
+  };
+}
+
+function mapEdgeStyle(node: { edgeRotation: string; edgeWidth: string }): React.CSSProperties & Record<'--edge-rotation' | '--edge-width', string> {
+  return {
+    '--edge-rotation': node.edgeRotation,
+    '--edge-width': node.edgeWidth
+  };
 }
 
 function RelationCard({ relation, asOf = today(), selected, onSelect, onUpdate }: { relation: FrontendWorkspaceRelation; asOf?: string; selected: boolean; onSelect: () => void; onUpdate: (input: UpdateRelationInput) => void }) {
@@ -2172,29 +2222,6 @@ function RelationDetailDrawer({ relation, asOf = today() }: { relation: Frontend
     </div>
     <p>{relation.reason}</p>
   </aside>;
-}
-
-function relationWindowStatuses(relation: FrontendWorkspaceRelation, asOf: string): { a: UiWindowStatus; b: UiWindowStatus } {
-  return {
-    a: uiWindowStatus(relation.a, asOf),
-    b: uiWindowStatus(relation.b, asOf)
-  };
-}
-
-function uiWindowStatus(claim: Claim, asOf: string): UiWindowStatus {
-  const status = claimWindowStatus(claim, asOf);
-  if (status === 'future') return 'upcoming';
-  if (status === 'expired') return 'ended';
-  return 'current';
-}
-
-function laneForRelation(relation: FrontendWorkspaceRelation, asOf: string): WindowLane {
-  const statuses = relationWindowStatuses(relation, asOf);
-  return isCurrentWindowStatus(statuses.a) || isCurrentWindowStatus(statuses.b) ? 'current' : 'historical';
-}
-
-function isCurrentWindowStatus(status: UiWindowStatus): boolean {
-  return status === 'current' || status === 'upcoming';
 }
 
 function statusLabel(status: UiWindowStatus): string {

@@ -23,6 +23,8 @@ export type {
 export { accessScopeFromVisibility, canAccess, userTeamMemberships, visibilityFromAccessScope } from './engine/access';
 export { generateAlerts } from './engine/alerts';
 export { buildClaims, directionFor, extractClaims } from './engine/claim-extraction';
+export type { ClaimExtractionContext, ClaimExtractionDraft, ClaimExtractionProvider } from './engine/extraction-provider';
+export { createFallbackClaimExtractionProvider, deterministicClaimExtractionProvider } from './engine/extraction-provider';
 export { detectEntities } from './engine/entity-extraction';
 export { companyLexicon, kpiWords, themeLexicon } from './engine/lexicon';
 export { classifyTemporalRelation, detectRelations, relationLabel } from './engine/relation-classification';

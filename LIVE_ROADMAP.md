@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-16_
+_Last updated: 2026-05-17_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -41,7 +41,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 147 tests.
+- [x] Validation passing: build + 163 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -110,6 +110,20 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - Notes-only import panel parses pasted meeting notes and transcript text into title, observed date, body, participants, and linked metadata,
   - imports apply to the unsaved workbench for analyst review instead of auto-saving,
   - existing `/api/notes` creation handles import-shaped payloads with no new route, schema, or RLS changes.
+- [x] TXT/Markdown file import v1 added:
+  - Notes-only import panel reads `.txt`, `.md`, and `.markdown` files client-side,
+  - imported file text uses the same parser preview and unsaved workbench apply path,
+  - no backend upload route, attachment storage, or PDF/DOCX parsing was added.
+- [x] Optional extraction-provider seam added:
+  - server graph materialization can use an injected async claim extraction provider,
+  - provider drafts are normalized through deterministic temporal/provenance/confidence helpers,
+  - deterministic fallback handles missing, empty, malformed, or throwing providers without SDKs, env vars, or paid APIs.
+- [x] Relationship map layout harness added:
+  - pure map lane helper owns current/historical assignment, density budgets, selected relation fallback, endpoint labels, data-driven node positions, and overflow counts,
+  - the UI remains dependency-free and does not add a graph visualization library.
+- [x] Opt-in live Supabase RLS smoke test added:
+  - `npm run test:supabase:live` checks local auth bootstrap and same-domain invite gating when Supabase is running,
+  - the test skips cleanly when Docker/local Supabase is unavailable and is not part of `npm run validate`.
 
 ### Current MVP Validation
 
@@ -129,20 +143,21 @@ Expected result:
   - stale evidence,
   - table-driven temporal eval fixtures for contradiction/reversal/tension/corroboration/agreement/stale cases,
   - deterministic and injected relation candidate retrieval,
+  - async extraction-provider fallback and draft normalization,
   - conservative topic/KPI candidate matching,
   - deterministic extraction confidence and relation evidence scoring,
   - ontology-backed issuer/security aliases, industry hierarchy, and default demo watchlists,
   - permission-aware temporal graph filtering,
-  - migration/RLS schema contract including normalized entity links,
+  - migration/RLS schema contract including normalized entity links plus opt-in live RLS smoke coverage,
   - Fastify BFF route auth,
   - server-side graph materialization,
   - persisted note edits, server drafts, note history, and claim/relation review behavior.
   - normalized note/claim metadata persistence,
   - source-person relation context and memory summaries.
-  - historical workspace as-of projections and map timeline contracts.
+  - historical workspace as-of projections and map timeline/layout contracts.
   - note filtering and sorting helpers.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
-  - pasted note/transcript import parsing, UI contracts, and existing note-create route contracts.
+  - pasted note/transcript plus TXT/Markdown file import parsing, UI contracts, and existing note-create route contracts.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
   - organization admin lifecycle, invite/team/member tests, multi-team access scopes, and personal-note graph privacy.
@@ -223,7 +238,8 @@ Goal: make the map the product’s “aha” moment.
   - reviewer state,
   - explanation.
 - [x] Add graph density controls so the map stays readable.
-- [ ] Consider a lightweight graph visualization library only if it improves clarity without bloating the product.
+- [x] Add dependency-free map layout helper and overflow counts so density limits are explicit.
+- [ ] Consider a lightweight graph visualization library only if real pilot density proves the lane model is insufficient.
 
 ### P3 — Better Intelligence Layer
 
@@ -256,7 +272,7 @@ Goal: improve extraction/relation quality while keeping explainability.
 
 Current implementation note: normalized note/claim entity links are live for securities, industries, themes, KPIs, watchlists, companies, and source people. Conservative topic/KPI relation matching is internal to deterministic candidate selection and does not enrich claim metadata. Confidence scoring is deterministic and bounded on the existing claim confidence and relation score fields. The local ontology v1 covers the demo issuer/security set, parent industry sectors, and default demo watchlist membership without external providers or schema changes. External security-master providers, richer portfolio-specific membership, fuzzy source-person identity resolution, and identity-confidence workflows beyond explicit source-person scoring evidence remain deferred.
 - [x] Add candidate retrieval abstraction for future vector search/RAG.
-- [ ] Add optional LLM extraction interface with deterministic fallback.
+- [x] Add optional LLM extraction interface with deterministic fallback. **Done as an async provider seam with no model wiring.**
 - [x] Add eval fixtures for known contradiction/reversal/stale examples.
 
 ### P4 — Backend + Security Foundation
@@ -282,15 +298,15 @@ Goal: move from in-browser mock to production-shaped architecture.
 - [x] Add deployment path for private alpha: `npm run build` + `npm start` serves API and React from one Node process.
 - [x] Add entity/security/industry/source-person tables and links.
 - [x] Add organization administration for org admin/member status, active/archived teams, pending invites, active team assignments, and deactivation guards.
-- [ ] Add live Supabase RLS integration tests once Docker Desktop is available in the environment.
+- [x] Add live Supabase RLS integration tests once Docker Desktop is available in the environment. **Done as an opt-in smoke test that skips when local Supabase is unavailable.**
 
 ### P5 — Real Input Sources + Transcription
 
 Goal: reduce friction for actual analysts by capturing research where it already happens: calls, meetings, transcripts, files, chat, and mobile notes.
 
 - [x] Import pasted meeting notes with templates. **Done for Notes-only pasted note/transcript import v1.**
-- [ ] Add transcript/file upload path.
-- [ ] Parse DOCX/PDF/TXT/Markdown.
+- [x] Add transcript/file upload path. **Done for client-side TXT/Markdown content import; durable file storage remains deferred.**
+- [ ] Parse DOCX/PDF/TXT/Markdown. **TXT/Markdown done; DOCX/PDF deferred.**
 - [ ] Add audio upload transcription for expert calls, company meetings, and internal research discussions.
 - [ ] Add live/near-live meeting transcription design:
   - speaker diarization,

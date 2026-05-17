@@ -588,6 +588,41 @@ textarea:focus {
   line-height: 1.45;
 }
 
+.note-import-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.note-import-file-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent);
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.note-import-file-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.note-import-file-button input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .note-import-preview {
   min-width: 0;
   max-height: 180px;
@@ -2180,9 +2215,14 @@ textarea::placeholder {
 }
 
 .node.satellite {
+  left: var(--node-x);
+  top: var(--node-y);
+  transform: translate(-50%, -50%);
   padding: 10px 12px;
+  max-width: min(180px, 38%);
   font-size: 12px;
   font-weight: 720;
+  text-align: left;
 }
 
 .node.satellite small {
@@ -2214,44 +2254,9 @@ textarea::placeholder {
   opacity: 0.78;
 }
 
-.n0 {
-  left: 10%;
-  top: 16%;
-}
-
-.n1 {
-  right: 12%;
-  top: 17%;
-}
-
-.n2 {
-  left: 13%;
-  bottom: 17%;
-}
-
-.n3 {
-  right: 14%;
-  bottom: 16%;
-}
-
-.n4 {
-  left: 42%;
-  top: 8%;
-}
-
-.n5 {
-  left: 43%;
-  bottom: 8%;
-}
-
-.n6 {
-  left: 4%;
-  top: 47%;
-}
-
-.n7 {
-  right: 5%;
-  top: 48%;
+.node.satellite.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .edge {
@@ -2259,9 +2264,10 @@ textarea::placeholder {
   left: 50%;
   top: 50%;
   z-index: 1;
-  width: 42%;
+  width: var(--edge-width, 42%);
   height: 1px;
   background: var(--line-strong);
+  transform: rotate(var(--edge-rotation, 0deg));
   transform-origin: left center;
 }
 
@@ -2281,42 +2287,6 @@ textarea::placeholder {
 .edge.corroboration,
 .edge.agreement {
   background: linear-gradient(90deg, var(--sage), transparent);
-}
-
-.e0 {
-  transform: rotate(214deg);
-}
-
-.e1 {
-  transform: rotate(326deg);
-}
-
-.e2 {
-  transform: rotate(145deg);
-}
-
-.e3 {
-  transform: rotate(35deg);
-}
-
-.e4 {
-  width: 32%;
-  transform: rotate(270deg);
-}
-
-.e5 {
-  width: 32%;
-  transform: rotate(90deg);
-}
-
-.e6 {
-  width: 45%;
-  transform: rotate(180deg);
-}
-
-.e7 {
-  width: 45%;
-  transform: rotate(0deg);
 }
 
 .map-lanes {
@@ -2367,6 +2337,13 @@ textarea::placeholder {
   color: var(--muted);
   padding: 12px;
   font-size: 12px;
+}
+
+.map-lane-overflow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .relation-list {

@@ -2,8 +2,8 @@ import {
   canAccess,
   accessScopeFromVisibility,
   claimObservedBy,
+  createFallbackClaimExtractionProvider,
   detectRelations,
-  extractClaims,
   freshnessAsOf,
   generateAlerts,
   projectClaimAsOf,
@@ -11,6 +11,7 @@ import {
   type Alert,
   type AccessScope,
   type Claim,
+  type ClaimExtractionProvider,
   type Direction,
   type Horizon,
   type Note,
@@ -395,10 +396,6 @@ export interface UpdateRelationInput {
   reviewNote?: string;
 }
 
-export interface ExtractionProvider {
-  extractClaims(note: Note, context: { asOf: string }): Promise<Claim[]>;
-}
-
 export interface WorkspaceRepository {
   getOrganization(orgId: string): Promise<OrganizationSummary | undefined>;
   getUser(userId: string): Promise<WorkspaceUser | undefined>;
@@ -429,16 +426,12 @@ export interface WorkspaceRepository {
   listAuditEvents(orgId: string): Promise<AuditEvent[]>;
 }
 
-export const deterministicExtractionProvider: ExtractionProvider = {
-  async extractClaims(note, context) {
-    return extractClaims(note, context.asOf);
-  }
-};
-
 export function createWorkspaceService(
   repository: WorkspaceRepository,
-  extractionProvider: ExtractionProvider = deterministicExtractionProvider
+  primaryExtractionProvider?: ClaimExtractionProvider
 ) {
+  const extractionProvider = createFallbackClaimExtractionProvider(primaryExtractionProvider);
+
   async function requireViewer(viewerId: string): Promise<WorkspaceUser> {
     const viewer = await repository.getUser(viewerId);
     if (!viewer) throw new Error(`Unknown viewer ${viewerId}`);

@@ -157,10 +157,13 @@ test('note import is an inline notes panel without adding a rail mode', () => {
   const noteActions = notesPage.slice(noteActionsStart, noteActionsEnd);
 
   assert.match(source, /import \{ parsePastedNoteImport, type ParsedNoteImport \} from '\.\/note-import'/);
+  assert.match(source, /import \{ NOTE_IMPORT_FILE_ACCEPT, readNoteImportFile \} from '\.\/note-import-files'/);
   assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive' \| 'admin'/);
   assert.match(notesPage, /noteImportOpen/);
   assert.match(notesPage, /note-import-panel/);
   assert.match(notesPage, /note-import-input/);
+  assert.match(notesPage, /type="file"/);
+  assert.match(notesPage, /accept=\{NOTE_IMPORT_FILE_ACCEPT\}/);
   assert.match(notesPage, /note-import-preview/);
   assert.match(notesPage, /note-import-actions/);
   assert.match(notesPage, /note-import-warning/);
@@ -172,10 +175,19 @@ test('note import parses pasted content and applies only to workbench state', ()
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const applyStart = source.indexOf('function applyImportedNoteToWorkbench');
   const applyEnd = source.indexOf('async function signOut', applyStart);
+  const fileStart = source.indexOf('async function importNoteFile');
+  const fileEnd = source.indexOf('function applyImportedNoteToWorkbench', fileStart);
   assert(applyStart >= 0 && applyEnd > applyStart, 'Import apply handler source is missing');
+  assert(fileStart >= 0 && fileEnd > fileStart, 'File import handler source is missing');
   const applySource = source.slice(applyStart, applyEnd);
+  const fileSource = source.slice(fileStart, fileEnd);
 
   assert.match(source, /parsePastedNoteImport\(noteImportText\)/);
+  assert.match(fileSource, /readNoteImportFile\(file\)/);
+  assert.match(fileSource, /setParsedFileNoteImport\(imported\)/);
+  assert.match(fileSource, /setNoteImportFileError\(''\)/);
+  assert.match(fileSource, /setNoteImportFileError\(error instanceof Error \? error\.message : String\(error\)\)/);
+  assert.match(source, /const parsedImport = parsedFileNoteImport \?\? parsedNoteImport/);
   assert.match(source, />Apply to workbench</);
   assert.match(applySource, /setSelectedNoteId\(''\)/);
   assert.match(applySource, /setNoteTitle\(imported\.title \?\? ''\)/);
@@ -190,6 +202,7 @@ test('note import parses pasted content and applies only to workbench state', ()
   assert.match(applySource, /setHistoryDrawerOpen\(false\)/);
   assert.match(applySource, /setNoteSourceType\(IMPORTED_NOTE_SOURCE_TYPE\)/);
   assert.doesNotMatch(applySource, /createNote\(/);
+  assert.doesNotMatch(fileSource, /createNote\(/);
   assert.match(source, /async function saveWorkbenchNote\(\)[\s\S]*await addNote\(\)/);
   assert.match(source, /onClick=\{saveWorkbenchNote\}/);
 });
@@ -349,12 +362,14 @@ test('relationship map exposes timeline, density, lanes, and author/team control
   assert.match(source, /mapLoading/);
   assert.match(source, /mapError/);
   assert.match(source, /loadWorkspace\(session,\s*\{\s*asOf: mapAsOf/);
+  assert.match(source, /buildMapLaneModel/);
   assert.match(relationSource, /timeline-control/);
   assert.match(relationSource, /map-density-control/);
   assert.match(relationSource, /label="Author"/);
   assert.match(relationSource, /label="Team"/);
   assert.match(relationSource, /className="map-lane current"/);
   assert.match(relationSource, /className="map-lane historical"/);
+  assert.match(relationSource, /map-lane-overflow/);
 });
 
 test('map filters include author and team fields with as-of active count', () => {
@@ -391,10 +406,29 @@ test('map mutations refresh historical snapshots and density budgets both lanes'
   assert.match(source, /refreshMapWorkspace/);
   assert.match(claimSource, /refreshMapWorkspace\(next\)/);
   assert.match(relationSource, /refreshMapWorkspace\(next\)/);
-  assert.match(mapSource, /historicalRelations\.slice\(0,\s*densityLimits\.graph\)/);
-  assert.match(mapSource, /historicalRelations\.slice\(0,\s*densityLimits\.list\)/);
+  assert.match(mapSource, /currentLane = buildMapLaneModel/);
+  assert.match(mapSource, /historicalLane = buildMapLaneModel/);
   assert.doesNotMatch(mapSource, /densityLimits\.graph - currentGraphRelations\.length/);
   assert.doesNotMatch(mapSource, /densityLimits\.list - currentListRelations\.length/);
+});
+
+test('relationship map stays dependency-free and uses data-driven node positions', () => {
+  const packageJson = readFileSync(join(process.cwd(), 'package.json'), 'utf8');
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const styles = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const relationStart = source.indexOf('function RelationshipMap');
+  const relationEnd = source.indexOf('function RelationCard', relationStart);
+  assert(relationStart >= 0 && relationEnd > relationStart, 'RelationshipMap source is missing');
+  const relationSource = source.slice(relationStart, relationEnd);
+
+  assert.doesNotMatch(packageJson, /react-flow|cytoscape|d3/);
+  assert.match(source, /from '\.\/map-layout'/);
+  assert.match(relationSource, /--node-x/);
+  assert.match(relationSource, /--edge-rotation/);
+  assert.doesNotMatch(relationSource, /n\$\{i\}/);
+  assert.doesNotMatch(relationSource, /e\$\{i\}/);
+  assert.doesNotMatch(styles, /\.n0\b/);
+  assert.doesNotMatch(styles, /\.e0\b/);
 });
 
 test('notes mode shows only current-note intelligence and dashboard owns broad widgets', () => {

@@ -10,6 +10,8 @@ import {
   detectRelations,
   effectiveClaimEnd,
   extractClaims,
+  createFallbackClaimExtractionProvider,
+  deterministicClaimExtractionProvider,
   freshnessAsOf,
   inferTemporalWindow,
   projectClaimAsOf,
@@ -70,6 +72,77 @@ test('extracts entities, claims, and temporal metadata from investment notes', (
   assert.equal(claims[0].appliesToStart, '2026-05-01');
   assert.equal(claims[0].appliesToEnd, '2026-08-01');
   assert.equal(claims[0].freshness, 'fresh');
+});
+
+test('fallback claim extraction provider without a primary matches deterministic extraction', async () => {
+  const note: Note = { ...base, id: 'provider-deterministic', title: 'provider deterministic', body: 'Nvidia demand is strong and GPU supply is tight.' };
+  const provider = createFallbackClaimExtractionProvider();
+
+  const claims = await provider.extractClaims(note, { asOf: '2026-05-03' });
+
+  assert.deepEqual(claims, await deterministicClaimExtractionProvider.extractClaims(note, { asOf: '2026-05-03' }));
+  assert.deepEqual(claims, extractClaims(note, '2026-05-03'));
+});
+
+test('fallback claim extraction provider normalizes primary drafts into complete claims', async () => {
+  const note: Note = {
+    ...base,
+    id: 'provider-draft',
+    title: 'provider draft',
+    body: 'Nvidia demand is strong and GPU supply is tight.',
+    appliesToEnd: undefined,
+    horizon: undefined,
+    linkedEntities: [linkedEntity('source_person', 'source_person', 'Dana Lee')]
+  };
+  const provider = createFallbackClaimExtractionProvider({
+    async extractClaims() {
+      return [{ subject: 'Nvidia', text: 'Nvidia Blackwell demand is strong into Q3.' }];
+    }
+  });
+
+  const [claim] = await provider.extractClaims(note, { asOf: '2026-05-03' });
+
+  assert.equal(claim.id, 'provider-draft-nvidia-0');
+  assert.equal(claim.noteId, note.id);
+  assert.equal(claim.subject, 'Nvidia');
+  assert.equal(claim.direction, 'positive');
+  assert.equal(claim.evidence, 'Nvidia Blackwell demand is strong into Q3.');
+  assert.equal(claim.horizon, 'quarter');
+  assert.equal(claim.appliesToStart, '2026-05-01');
+  assert.equal(claim.freshness, 'fresh');
+  assert(claim.confidence > 0);
+  assert.deepEqual(claim.tickers, ['NVDA']);
+  assert.deepEqual(claim.companyTags, ['Nvidia']);
+  assert.deepEqual(claim.sourcePeople, ['Dana Lee']);
+  assert(claim.linkedEntities?.some(entity => entity.role === 'subject' && entity.name === 'Nvidia'));
+});
+
+test('fallback claim extraction provider falls back when primary throws', async () => {
+  const note: Note = { ...base, id: 'provider-throws', title: 'provider throws', body: 'Nvidia demand is strong and GPU supply is tight.' };
+  const provider = createFallbackClaimExtractionProvider({
+    async extractClaims() {
+      throw new Error('provider unavailable');
+    }
+  });
+
+  assert.deepEqual(await provider.extractClaims(note, { asOf: '2026-05-03' }), extractClaims(note, '2026-05-03'));
+});
+
+test('fallback claim extraction provider falls back when primary output is malformed or empty', async () => {
+  const note: Note = { ...base, id: 'provider-malformed', title: 'provider malformed', body: 'Nvidia demand is strong and GPU supply is tight.' };
+  const emptyProvider = createFallbackClaimExtractionProvider({
+    async extractClaims() {
+      return [];
+    }
+  });
+  const malformedProvider = createFallbackClaimExtractionProvider({
+    async extractClaims() {
+      return [{ subject: 'Nvidia' } as any];
+    }
+  });
+
+  assert.deepEqual(await emptyProvider.extractClaims(note, { asOf: '2026-05-03' }), extractClaims(note, '2026-05-03'));
+  assert.deepEqual(await malformedProvider.extractClaims(note, { asOf: '2026-05-03' }), extractClaims(note, '2026-05-03'));
 });
 
 test('confidence helpers bound scores and reward richer claim evidence', () => {

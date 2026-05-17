@@ -6,6 +6,12 @@ import {
   type NoteImportWarning,
   type ParsedNoteImport
 } from '../src/note-import';
+import {
+  NOTE_IMPORT_FILE_ACCEPT,
+  NOTE_IMPORT_FILE_MAX_BYTES,
+  readNoteImportFile,
+  type NoteImportFileLike
+} from '../src/note-import-files';
 
 function warningCodes(parsed: ParsedNoteImport): NoteImportWarning['code'][] {
   return parsed.warnings.map(warning => warning.code).sort();
@@ -177,4 +183,49 @@ test('empty imports keep a fallback title and emit a missing body warning', () =
   assert.equal(parsed.title, 'Empty note');
   assert.equal(parsed.body, '');
   assertIncludes(warningCodes(parsed), 'missing_body');
+});
+
+function importFile(name: string, text: string, size = text.length): NoteImportFileLike {
+  return {
+    name,
+    size,
+    text: async () => text
+  };
+}
+
+test('text note import reads client-side text and falls back to filename title', async () => {
+  const parsed = await readNoteImportFile(importFile('Nvidia channel check.txt', 'Nvidia demand is strong.'));
+
+  assert.equal(NOTE_IMPORT_FILE_ACCEPT, '.txt,.md,.markdown');
+  assert.equal(parsed.title, 'Nvidia demand is strong.');
+  assert.equal(parsed.body, 'Nvidia demand is strong.');
+  assert.deepEqual(parsed.tickers, ['NVDA']);
+});
+
+test('text note import uses filename fallback when body has no title', async () => {
+  const parsed = await readNoteImportFile(importFile('field-notes.TXT', ''));
+
+  assert.equal(parsed.title, 'field-notes');
+  assertIncludes(warningCodes(parsed), 'missing_body');
+});
+
+test('markdown note import preserves markdown content', async () => {
+  const parsed = await readNoteImportFile(importFile('Management Meeting.MARKDOWN', '# Nvidia meeting\n\n- Demand remains **strong**.'));
+
+  assert.equal(parsed.title, '# Nvidia meeting');
+  assert.equal(parsed.body, '# Nvidia meeting\n- Demand remains **strong**.');
+});
+
+test('file note import rejects unsupported extensions', async () => {
+  await assert.rejects(
+    () => readNoteImportFile(importFile('notes.pdf', 'Nvidia demand is strong.')),
+    /Unsupported note import file type/
+  );
+});
+
+test('file note import rejects files over the size limit', async () => {
+  await assert.rejects(
+    () => readNoteImportFile(importFile('oversized.md', '', NOTE_IMPORT_FILE_MAX_BYTES + 1)),
+    /Note import file is too large/
+  );
 });
