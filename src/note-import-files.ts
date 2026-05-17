@@ -1,27 +1,57 @@
 import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
+import { extractDocxText } from './note-import-docx';
+import { extractPdfText } from './note-import-pdf';
 
 export interface NoteImportFileLike {
   name: string;
   size: number;
   text(): Promise<string>;
+  arrayBuffer?(): Promise<ArrayBuffer>;
 }
 
-export const NOTE_IMPORT_FILE_ACCEPT = '.txt,.md,.markdown';
+export const NOTE_IMPORT_FILE_ACCEPT = '.txt,.md,.markdown,.docx,.pdf';
 export const NOTE_IMPORT_FILE_MAX_BYTES = 1048576;
 
-const supportedExtensions = new Set(['txt', 'md', 'markdown']);
+const supportedExtensions = new Set(['txt', 'md', 'markdown', 'docx', 'pdf']);
 
 export async function readNoteImportFile(file: NoteImportFileLike): Promise<ParsedNoteImport> {
   const extension = fileExtension(file.name);
   if (!supportedExtensions.has(extension)) {
-    throw new Error('Unsupported note import file type. Choose a .txt, .md, or .markdown file.');
+    throw new Error('Unsupported note import file type. Choose a .txt, .md, .markdown, .docx, or .pdf file.');
   }
   if (file.size > NOTE_IMPORT_FILE_MAX_BYTES) {
     throw new Error('Note import file is too large. Choose a file up to 1 MB.');
   }
 
-  const text = await file.text();
+  const text = await readFileTextByType(file, extension);
   return parsePastedNoteImport(text, { fallbackTitle: filenameWithoutExtension(file.name) });
+}
+
+async function readFileTextByType(file: NoteImportFileLike, extension: string): Promise<string> {
+  if (extension === 'docx') {
+    try {
+      return await extractDocxText(await readArrayBuffer(file));
+    } catch (error) {
+      throw new Error(`DOCX note import could not be read. ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (extension === 'pdf') {
+    try {
+      return await extractPdfText(await readArrayBuffer(file));
+    } catch (error) {
+      throw new Error(`PDF note import could not be read. ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return file.text();
+}
+
+async function readArrayBuffer(file: NoteImportFileLike): Promise<ArrayBuffer> {
+  if (!file.arrayBuffer) {
+    throw new Error('This browser cannot read binary note import files.');
+  }
+  return file.arrayBuffer();
 }
 
 function fileExtension(name: string): string {

@@ -164,6 +164,7 @@ test('note import is an inline notes panel without adding a rail mode', () => {
   assert.match(notesPage, /note-import-input/);
   assert.match(notesPage, /type="file"/);
   assert.match(notesPage, /accept=\{NOTE_IMPORT_FILE_ACCEPT\}/);
+  assert.match(notesPage, /Choose TXT, Markdown, DOCX, or PDF/);
   assert.match(notesPage, /note-import-preview/);
   assert.match(notesPage, /note-import-actions/);
   assert.match(notesPage, /note-import-warning/);

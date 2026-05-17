@@ -193,10 +193,21 @@ function importFile(name: string, text: string, size = text.length): NoteImportF
   };
 }
 
+function binaryImportFile(name: string, bytes: Uint8Array): NoteImportFileLike & { arrayBuffer(): Promise<ArrayBuffer> } {
+  return {
+    name,
+    size: bytes.byteLength,
+    text: async () => {
+      throw new Error('Binary imports should not be read through text()');
+    },
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  };
+}
+
 test('text note import reads client-side text and falls back to filename title', async () => {
   const parsed = await readNoteImportFile(importFile('Nvidia channel check.txt', 'Nvidia demand is strong.'));
 
-  assert.equal(NOTE_IMPORT_FILE_ACCEPT, '.txt,.md,.markdown');
+  assert.equal(NOTE_IMPORT_FILE_ACCEPT, '.txt,.md,.markdown,.docx,.pdf');
   assert.equal(parsed.title, 'Nvidia demand is strong.');
   assert.equal(parsed.body, 'Nvidia demand is strong.');
   assert.deepEqual(parsed.tickers, ['NVDA']);
@@ -216,9 +227,20 @@ test('markdown note import preserves markdown content', async () => {
   assert.equal(parsed.body, '# Nvidia meeting\n- Demand remains **strong**.');
 });
 
+test('binary note import routes DOCX and PDF files to document parsers', async () => {
+  await assert.rejects(
+    () => readNoteImportFile(binaryImportFile('malformed.DOCX', new Uint8Array([1, 2, 3]))),
+    /DOCX note import could not be read/
+  );
+  await assert.rejects(
+    () => readNoteImportFile(binaryImportFile('malformed.PDF', new Uint8Array([1, 2, 3]))),
+    /PDF note import could not be read/
+  );
+});
+
 test('file note import rejects unsupported extensions', async () => {
   await assert.rejects(
-    () => readNoteImportFile(importFile('notes.pdf', 'Nvidia demand is strong.')),
+    () => readNoteImportFile(importFile('notes.rtf', 'Nvidia demand is strong.')),
     /Unsupported note import file type/
   );
 });

@@ -20,6 +20,7 @@
     "fastify": "^5.8.5",
     "lucide-react": "latest",
     "marked": "^18.0.3",
+    "pdfjs-dist": "^5.7.284",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "^10.1.0",

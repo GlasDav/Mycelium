@@ -74,7 +74,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, Notes-only pasted meeting-note/transcript and TXT/Markdown file import that previews parsed fields before applying them to the unsaved workbench, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, Notes-only pasted meeting-note/transcript and TXT/Markdown/DOCX/PDF file import that previews parsed fields before applying them to the unsaved workbench, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Cmd/Ctrl + Enter` note intake.
 - Left-rail page navigation separates clean current-note Notes, scoped Dashboard, relationship map, full-width note archive, and Organisation admin so each surface has its own workspace.
 - Notes only shows the active note, live extraction, and saved claims/relations tied to the selected note; workspace/team/org pulse, signals, top metadata, and source-person coverage live on Dashboard.
 - Action-backed empty states for no notes, filtered results, empty graph subjects, missing current-note claims, missing relations, and source-person history.
@@ -100,6 +100,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - React
 - TypeScript
 - React Markdown with sanitized markdown/HTML rendering
+- PDF.js text extraction for client-side PDF imports
 - Fastify
 - Supabase Auth/Postgres/RLS/Storage-ready local project
 - Local heuristic intelligence engine (`src/engine.ts`)
@@ -171,7 +172,8 @@ npm run test:supabase:live
 ### Useful files
 
 - `src/note-import.ts` - pure parser for pasted meeting notes and transcripts, including header extraction, transcript cleanup, conservative date handling, participant detection, and linked metadata normalization.
-- `src/note-import-files.ts` - client-side TXT/Markdown file validation and text import adapter for the Notes import panel.
+- `src/note-import-files.ts` - client-side TXT/Markdown/DOCX/PDF file validation and text import adapter for the Notes import panel.
+- `src/note-import-docx.ts` and `src/note-import-pdf.ts` - client-side document text extraction helpers for DOCX document XML and selectable PDF text.
 - `src/map-layout.ts` - pure relationship-map lane/density/layout helper for current/historical lanes, node positions, selected relation fallback, and overflow counts.
 - `src/ontology.ts` - local deterministic issuer/security/industry/watchlist ontology for canonical aliases, parent sectors, default demo watchlists, and issuer-aware relation matching.
 - `src/entity-links.ts` - shared normalized entity/link helpers, ontology-backed canonicalization, derived metadata arrays, and legacy metadata-array compatibility.
@@ -185,7 +187,7 @@ npm run test:supabase:live
 - `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/location controls, active team selection, organization admin page, stock/theme/KPI metadata, action-backed empty states, notes sidebar, page-level notes/dashboard/map/archive/admin navigation, slash-command markdown editing, live extraction, current-note claim/relation review, dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline/lanes/filters/density/review/detail drawer, and archive.
 - `src/demo-guide.ts` and `src/empty-states.ts` — pure frontend guidance helpers for walkthrough content/storage and empty-state copy/action contracts.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, extraction-provider fallback, confidence scoring, direct temporal/as-of helpers, schema contract, workspace service behavior, organization admin lifecycle, multi-team access scopes, personal-note privacy, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, map timeline/layout contracts, page layout, markdown commands, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, extraction-provider fallback, confidence scoring, direct temporal/as-of helpers, schema contract, workspace service behavior, organization admin lifecycle, multi-team access scopes, personal-note privacy, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, map timeline/layout contracts, document imports, page layout, markdown commands, and BFF routes.
 - `tests/supabase-rls-live.ts` — opt-in local Supabase smoke test for auth bootstrap and invite gating.
 
 - `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
@@ -198,4 +200,4 @@ npm run test:supabase:live
 - Confidence scoring is deterministic and bounded on the existing `claims.confidence` and `relations.score` fields. It is evidence-strength guidance for review and ordering, not an automated investment or compliance decision.
 - Normalized research entities use deterministic/manual keys plus a small local ontology for the demo issuer/security set, parent industry sectors, and default demo watchlists. External security-master integration, portfolio-specific membership sync, and fuzzy source-person identity resolution are deferred.
 - Default automated RLS coverage is still migration/schema contract coverage; `npm run test:supabase:live` adds opt-in live local auth bootstrap/invite-gating coverage when Docker Desktop and Supabase are running.
-- Note import supports pasted text plus TXT/Markdown file content import into the workbench. PDF/DOCX parsing, durable transcript chunks, audio transcription, and RMS integrations are deferred.
+- Note import supports pasted text plus TXT/Markdown/DOCX/PDF file content import into the workbench. Scanned-PDF OCR, durable transcript chunks, audio transcription, and RMS integrations are deferred.

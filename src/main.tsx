@@ -937,7 +937,7 @@ function App() {
                     event.currentTarget.value = '';
                   }}
                 />
-                Choose TXT or Markdown
+                Choose TXT, Markdown, DOCX, or PDF
               </label>
             </div>
             <div className="note-import-preview">
