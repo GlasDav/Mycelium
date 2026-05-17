@@ -46,9 +46,9 @@ export function buildMapLaneModel<T extends Relation>(
 ): MapLaneModel<T> {
   const limits = mapDensityLimits[options.density];
   const laneRelations = relations.filter(relation => laneForRelation(relation, options.asOf) === options.lane);
-  const graphRelations = laneRelations.slice(0, limits.graph);
-  const listRelations = laneRelations.slice(0, limits.list);
   const selectedRelation = laneRelations.find(relation => relation.id === options.selectedRelationId) ?? laneRelations[0];
+  const graphRelations = pinnedDensitySlice(laneRelations, limits.graph, selectedRelation);
+  const listRelations = pinnedDensitySlice(laneRelations, limits.list, selectedRelation);
   const nodes = graphRelations.map((relation, index) => {
     const position = nodePosition(index, graphRelations.length);
     return {
@@ -102,6 +102,13 @@ function uiWindowStatus(claim: Relation['a'], asOf: string): UiWindowStatus {
 
 function isCurrentWindowStatus(status: UiWindowStatus): boolean {
   return status === 'current' || status === 'upcoming';
+}
+
+function pinnedDensitySlice<T extends Relation>(relations: T[], limit: number, pinnedRelation: T | undefined): T[] {
+  const visible = relations.slice(0, limit);
+  if (!pinnedRelation || visible.some(relation => relation.id === pinnedRelation.id)) return visible;
+  if (visible.length < limit) return [...visible, pinnedRelation];
+  return [...visible.slice(0, Math.max(0, limit - 1)), pinnedRelation];
 }
 
 function nodePosition(index: number, total: number): Pick<MapGraphNode, 'x' | 'y' | 'edgeRotation' | 'edgeWidth'> {

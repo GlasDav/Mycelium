@@ -1,3 +1,5 @@
+@import "./styles/premium.css";
+
 :root {
   --ink: #141616;
   --ink-2: #373c3d;
@@ -554,6 +556,10 @@ textarea:focus {
   align-items: stretch;
 }
 
+.note-workbench.focus-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .note-side {
   display: grid;
   gap: 12px;
@@ -830,6 +836,12 @@ textarea {
   box-shadow: inset 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
 
+.markdown-editor.read-only .markdown-display-editor {
+  background: var(--surface-soft);
+  color: var(--muted);
+  cursor: default;
+}
+
 .markdown-slash-palette {
   position: absolute;
   top: 78px;
@@ -1061,6 +1073,14 @@ textarea::placeholder {
   padding: 6px 8px;
   font-size: 11px;
   font-weight: 700;
+}
+
+.metadata-chip-input button:disabled,
+.metadata-chip-input input:disabled,
+.metadata-chip-input select:disabled,
+.markdown-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .samples {
@@ -1405,6 +1425,21 @@ textarea::placeholder {
   align-items: center;
 }
 
+.dashboard-bar-row,
+.dashboard-donut,
+.dashboard-legend button {
+  border: 0;
+  background-color: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: inherit;
+}
+
+.dashboard-bar-row {
+  width: 100%;
+  text-align: left;
+}
+
 .dashboard-top-list button {
   width: 100%;
   border: 0;
@@ -1520,6 +1555,18 @@ textarea::placeholder {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.dashboard-legend button {
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-legend button:hover,
+.dashboard-legend button:focus-visible {
+  color: var(--accent);
 }
 
 .signals-card {
@@ -2673,8 +2720,6 @@ textarea::placeholder {
 }
 
 @media (max-width: 1280px) {
-  .app-main,
-  .app-main.notes-collapsed,
   .note-workbench,
   .note-intelligence-grid,
   .dashboard-header,
@@ -2716,6 +2761,28 @@ textarea::placeholder {
   .right-stack {
     position: relative;
     top: auto;
+  }
+}
+
+@media (max-width: 920px) {
+  .app-main,
+  .app-main.notes-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .left-rail {
+    position: relative;
+    top: auto;
+    height: auto;
+    flex-direction: row;
+  }
+
+  .left-rail nav {
+    display: flex;
+  }
+
+  .rail-footer {
+    writing-mode: horizontal-tb;
   }
 }
 

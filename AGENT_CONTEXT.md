@@ -20,6 +20,7 @@ The repo contains a production-shaped MVP foundation:
 - Server-side graph materialization for notes, claims, relations, deterministic extraction confidence, relation evidence strength, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, and extraction jobs.
 - Deterministic local ontology v1 for core demo issuers/securities, ticker aliases, issuer aliases, industry/sector hierarchy, and default watchlist membership; no external security-master provider required.
 - Minimal note-taking-first research workspace UI with auth, observed-date/location controls for Personal, Team, and Organisation notes, team selection for active memberships, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata capture, Notes-only pasted meeting-note/transcript import plus TXT/Markdown/DOCX/PDF file content import with parser preview, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive/admin, full-width rendered archive display, collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, organization admin lifecycle controls, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls with explicit overflow counts, and responsive mobile layout. Source type is not user-facing note metadata; imported notes use lightweight create-only source provenance, and claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
+- Premium institutional workstation pass layered on the note-first UI: persistent context header, save/draft/read-only status, compact status toasts, `Cmd/Ctrl+K` command palette with keyboard selection, focus mode for capture, ontology-backed metadata token suggestions, actionable dashboard drilldowns, active map filter chips, selected-relation density pinning, and relation review controls in the detail drawer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
 - Tests covering extraction, async extraction-provider fallback, confidence scoring, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract plus opt-in live RLS smoke coverage, normalized entity links, BFF routing including scoped dashboard aggregates, workspace as-of queries, and import-shaped note creation, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, relation filtering, relation detail UI contracts, map timeline/lane/density/layout UI contracts, note metadata persistence, pasted/TXT/Markdown/DOCX/PDF note import parsing/UI contracts, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
 
@@ -52,19 +53,21 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Frontend
 
-- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, Notes-only pasted note/transcript and TXT/Markdown/DOCX/PDF file import that applies parsed content to the unsaved workbench, Personal/Team/Organisation note location controls, organization admin page, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, action-backed empty states, current-note claim/relation intelligence on Notes, scoped dashboard metrics/charts/signals/source-person coverage, relationship map as-of timeline, current/historical lanes, author/team/metadata filters, density controls, relation detail drawer, and separate notes/dashboard/map/archive/admin page bodies.
+- `src/main.tsx` now includes Supabase Auth, note capture, editable title field, display-mode markdown editor, slash-command formatting palette, undo/redo controls, blank-note reset action, selected-note explicit save, Notes-only pasted note/transcript and TXT/Markdown/DOCX/PDF file import that applies parsed content to the unsaved workbench, Personal/Team/Organisation note location controls, organization admin page, server-backed draft restore, read-only history drawer, normalized security/industry/theme/KPI/watchlist/participant metadata token controls, addable live extraction suggestions, collapsible all-notes sidebar and filters, action-backed empty states, current-note claim/relation intelligence on Notes, scoped dashboard metrics/charts/signals/source-person coverage with drilldowns, relationship map as-of timeline, current/historical lanes, active filter chips, author/team/metadata filters, density controls, relation detail drawer review controls, premium context header/command palette/status toasts, and separate notes/dashboard/map/archive/admin page bodies.
+- `src/premium-ui.ts` owns pure premium-shell helpers for context-header status labels, command palette items/filtering, ontology-backed metadata token options, dashboard drilldown routing, and save-state labelling.
+- `src/premium-shell.tsx` renders the persistent context header, command palette, and status toast stack while keeping `App` as the state owner.
 - `src/note-import.ts` owns pure parsing for pasted meeting notes and transcripts, including header extraction, transcript timestamp cleanup, conservative date inference, participant detection, metadata normalization, and warnings.
 - `src/note-import-files.ts` owns client-side TXT/Markdown/DOCX/PDF file validation and text-to-import parsing for the Notes import panel; it does not upload or persist files.
 - `src/note-import-docx.ts` extracts plain text from DOCX document XML in the browser.
 - `src/note-import-pdf.ts` extracts selectable PDF text with `pdfjs-dist`; scanned/image-only PDFs are rejected as no extractable text.
-- `src/map-layout.ts` owns pure relationship-map lane assignment, density budgets, data-driven node positions, selected-relation fallback, and overflow counts.
+- `src/map-layout.ts` owns pure relationship-map lane assignment, density budgets, data-driven node positions, selected-relation fallback/pinning, and overflow counts.
 - `src/ontology.ts` owns the deterministic local issuer/security/industry/watchlist ontology used by extraction, linked-entity canonicalization, derived sector/watchlist metadata, and issuer-aware relation candidate matching.
 - `src/entity-links.ts` owns shared normalized entity/link metadata helpers, legacy array compatibility, key normalization, ontology-backed canonicalization, and derived metadata arrays.
 - `src/note-filters.ts` owns pure note metadata normalization, option derivation, filtering, and sorting helpers for the sidebar.
 - `src/markdown-tools.ts` owns pure markdown toolbar and slash-command transformations for inline marks, headings, lists, quotes, indentation, underline, and font-size spans.
 - `src/api.ts` provides browser API/auth helpers for the Fastify BFF and Supabase Auth.
 
-- `src/styles.css` — minimal note-taking-first visual system and responsive layout.
+- `src/styles.css` imports the app visual system; `src/styles/premium.css` adds the institutional workstation tokens, context header, command palette, toasts, focus-visible states, token controls, dashboard/map polish, and responsive premium layout rules.
 - `index.html` — Vite entry.
 
 ### Backend
@@ -114,7 +117,8 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `tests/bff.test.ts` checks Fastify API auth, scoped dashboard routes, note update/history/draft routes, normalized metadata round trips, export/import, and route behavior.
 - `tests/note-import.test.ts` checks pasted note/transcript parsing, conservative date handling, metadata canonicalization, and preservation of the claim-window inference boundary.
 - `tests/note-import-docx.test.ts` and `tests/note-import-pdf.test.ts` check client-side document text extraction helpers.
-- `tests/map-layout.test.ts` checks pure relationship-map lane assignment, density budgets, selected-relation fallback, node positioning, and endpoint labels.
+- `tests/map-layout.test.ts` checks pure relationship-map lane assignment, density budgets, selected-relation fallback/pinning, node positioning, and endpoint labels.
+- `tests/premium-ui.test.ts` and `tests/premium-shell-source.test.ts` check premium context header models, command items/filtering/keyboard shell contract, metadata token options, dashboard drilldown routing, and save-state labels.
 - `tests/supabase-rls-live.ts` is an opt-in live Supabase smoke test for local auth bootstrap/invite-gating; it skips cleanly when Docker/local Supabase is not running and is not part of `npm test`.
 - `tests/note-filters.test.ts` checks note metadata normalization, option derivation, filtering, and sorting across securities, industries/themes, KPIs, watchlists, participants, access scope/location, team, and dates.
 - `tests/markdown-tools.test.ts` checks markdown toolbar and slash-command transforms.
@@ -215,7 +219,8 @@ Design principles:
 
 - Note-taking is the primary surface: the first viewport should prioritize titled markdown writing or pasting research notes.
 - Intelligence panels should support capture without overwhelming it: the dense notes sidebar handles navigation, while collapsible sidebar filters and live extraction support capture. Broad workspace/team/org pulse, signals, synthesis-like summaries, and source-person coverage belong on Dashboard, not Notes.
-- Keep shell chrome compact and functional rather than hero-like; the note workbench and live extraction should align with the notes sidebar at the top of the first viewport.
+- Keep shell chrome compact and functional rather than hero-like; the persistent context header should clarify page, note, scope, as-of date, and save/read-only status without pushing capture below the first viewport.
+- Premium direction is institutional terminal: quiet, dense, keyboard-friendly, status-explicit, and high-trust rather than decorative.
 - Calm, fast capture like Granola.
 - Clear workspace hierarchy like Notion.
 - Connected knowledge/backlink feel like Obsidian.
@@ -228,7 +233,7 @@ As of 2026-05-17:
 
 - `npm run validate` passes.
 - Build passes.
-- 163/163 default tests pass; the opt-in live Supabase RLS test skips when Docker/local Supabase is unavailable.
+- 184/184 default tests pass; the opt-in live Supabase RLS test skips when Docker/local Supabase is unavailable.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs

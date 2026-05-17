@@ -18,6 +18,16 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Working local Vite/React/TypeScript MVP built.
 - [x] Initial polished dark editorial UX pass inspired by Notion, Granola, and Obsidian.
 - [x] Minimal note-taking-first UI pass with headerless aligned workbench, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
+- [x] Premium institutional workstation UI pass added:
+  - persistent context header with page/note/scope/as-of/save state,
+  - compact status toasts and disabled/read-only/saving feedback,
+  - `Cmd/Ctrl+K` command palette with keyboard selection,
+  - focus mode for note capture,
+  - ontology-backed metadata token suggestions while preserving manual entries,
+  - actionable dashboard drilldowns into Map and Archive,
+  - active map filter chips, polished current/historical lanes, and selected-relation density pinning,
+  - relation review controls in the detail drawer,
+  - imported premium CSS partial with focus-visible and responsive layout coverage.
 - [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, access scope/location, and team filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
 - [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
@@ -41,7 +51,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 163 default tests.
+- [x] Validation passing: build + 184 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -160,6 +170,7 @@ Expected result:
   - source-person relation context and memory summaries.
   - historical workspace as-of projections and map timeline/layout contracts.
   - note filtering and sorting helpers.
+  - premium context header, command palette, metadata token options, dashboard drilldowns, and imported premium CSS contracts.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
   - pasted note/transcript plus TXT/Markdown/DOCX/PDF file import parsing, UI contracts, and existing note-create route contracts.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
@@ -201,6 +212,12 @@ Goal: make the app feel like a real product a design partner could use with samp
   - open a formatting palette when typing `/`,
   - support headings, lists, quotes, and text styling commands,
   - keep keyboard behavior compatible with the existing toolbar and undo/redo flow.
+- [x] Add premium capture ergonomics:
+  - context-aware shell header,
+  - focus mode,
+  - keyboard command palette,
+  - save/draft/read-only status and compact toasts,
+  - metadata token suggestions backed by the local ontology.
 - [x] Add explicit stock and industry linking UX:
   - attach notes to one or more tickers/securities,
   - attach notes to one or more industries/sectors/themes,
@@ -243,6 +260,7 @@ Goal: make the map the product’s “aha” moment.
   - explanation.
 - [x] Add graph density controls so the map stays readable.
 - [x] Add dependency-free map layout helper and overflow counts so density limits are explicit.
+- [x] Keep selected relations visible under density limits and expose active filter chips with one-click clearing.
 - [ ] Consider a lightweight graph visualization library only if real pilot density proves the lane model is insufficient.
 
 ### P3 — Better Intelligence Layer
@@ -376,6 +394,7 @@ Suggested tasks:
 9. Add tests for persisted review decisions, server drafts/history, temporal filters, stock/industry links, source-person sentiment changes, current-note Notes scope, and dashboard aggregation. **Done for normalized metadata/source-person v1 plus dashboard/current-note scope.**
 10. Add a slash-command formatting palette to the markdown editor. **Done.**
 11. Update `AGENT_CONTEXT.md`, `README.md`, and this roadmap.
+12. Premiumize the UI into an institutional workstation while preserving note-first capture and the dependency-free map. **Done.**
 
 ## Product Questions to Resolve
 

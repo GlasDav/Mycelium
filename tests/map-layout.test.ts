@@ -94,6 +94,30 @@ test('map lane model falls back selection to the first filtered relation', () =>
   assert.deepEqual(model.nodes.map(node => node.selected), [true, false]);
 });
 
+test('map lane model pins the selected relation when density would otherwise hide it', () => {
+  const relations = Array.from({ length: 6 }, (_, index) => relation(
+    `r${index + 1}`,
+    claim(`a${index + 1}`, 'Nvidia', '2026-05-01', '2026-06-30'),
+    claim(`b${index + 1}`, `Company ${index + 1}`, '2026-05-01', '2026-06-30'),
+    'contradiction'
+  ));
+
+  const model = buildMapLaneModel(relations, {
+    asOf: '2026-05-15',
+    density: 'low',
+    lane: 'current',
+    selectedRelationId: 'r6',
+    selectedSubject: 'Nvidia'
+  });
+
+  assert.equal(model.graphRelations.length, 4);
+  assert.equal(model.listRelations.length, 3);
+  assert(model.graphRelations.some(item => item.id === 'r6'));
+  assert(model.listRelations.some(item => item.id === 'r6'));
+  assert.equal(model.selectedRelation?.id, 'r6');
+  assert(model.nodes.some(node => node.relationId === 'r6' && node.selected));
+});
+
 test('relation endpoint label shows the opposite endpoint when selected subject matches either side', () => {
   const item = relation('label', claim('a', 'Nvidia', '2026-05-01', '2026-06-30'), claim('b', 'Apple', '2026-05-01', '2026-06-30'));
 

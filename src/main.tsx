@@ -121,6 +121,15 @@ import {
   type MapDensity,
   type UiWindowStatus
 } from './map-layout';
+import {
+  buildCommandItems,
+  buildContextHeaderModel,
+  buildDashboardDrilldown,
+  buildMetadataTokenOptions,
+  type CommandItem,
+  type DashboardDrilldownKind
+} from './premium-ui';
+import { CommandPalette, ContextHeader, StatusToastStack, type StatusToast } from './premium-shell';
 import type {
   ClaimReviewStatus,
   AdminOrganizationSnapshot,
@@ -303,7 +312,15 @@ function App() {
   const [mapFilters, setMapFilters] = useState<MapFilters>({});
   const [noteHistory, setNoteHistory] = useState<NoteRevision[]>([]);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [editorFocusSignal, setEditorFocusSignal] = useState(0);
+  const [workbenchSaving, setWorkbenchSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState('');
+  const [draftRecovered, setDraftRecovered] = useState(false);
+  const [toasts, setToasts] = useState<StatusToast[]>([]);
   const clearedDraftSignatureRef = useRef('');
+  const workbenchBaselineSignatureRef = useRef('');
   const previousWorkspaceAsOfRef = useRef('');
 
   useEffect(() => {
@@ -509,8 +526,10 @@ function App() {
     setSourcePeople([]);
   }
 
-  function focusCapture() {
+  function focusCapture(options: { focusEditor?: boolean; enableFocusMode?: boolean } = {}) {
     setViewMode('notes');
+    if (options.enableFocusMode) setFocusMode(true);
+    if (options.focusEditor) setEditorFocusSignal(value => value + 1);
   }
 
   function clearNoteFilters() {
@@ -521,6 +540,27 @@ function App() {
     setMapFilters({});
     if (workspace?.asOf) setMapAsOf(workspace.asOf);
     setMapError('');
+  }
+
+  function pushToast(toast: Omit<StatusToast, 'id'>) {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts(current => [...current.slice(-2), { id, ...toast }]);
+    window.setTimeout(() => {
+      setToasts(current => current.filter(item => item.id !== id));
+    }, 4200);
+  }
+
+  function currentWorkbenchSignature() {
+    return draftSignature({
+      selectedNoteId: selectedNoteId || undefined,
+      title: noteTitle,
+      body: draft,
+      accessScope,
+      teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+      observedAt,
+      ...currentMetadataArrays(),
+      linkedEntities: currentLinkedEntities()
+    });
   }
 
   async function restoreNoteDraft(nextSession: Session, nextWorkspace: WorkspaceSnapshot) {
@@ -539,6 +579,9 @@ function App() {
       setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
       applyWorkbenchMetadata(savedDraft);
       clearedDraftSignatureRef.current = draftSignature(savedDraft);
+      workbenchBaselineSignatureRef.current = draftSignature(savedDraft);
+      setDraftRecovered(true);
+      pushToast({ tone: 'info', title: 'Draft recovered', body: 'Recovered your latest unsaved workbench draft.' });
       setViewMode('notes');
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
@@ -571,10 +614,16 @@ function App() {
   }, [session, workspace, selectedNoteId, noteTitle, draft, accessScope, noteTeamId, observedAt, tickers, manualThemes, kpis, industries, companyTags, watchlistTags, sourcePeople]);
 
   async function saveWorkbenchNote() {
-    if (selectedNoteId) {
-      await saveExistingNote();
-    } else {
-      await addNote();
+    if (workbenchSaving) return;
+    setWorkbenchSaving(true);
+    try {
+      if (selectedNoteId) {
+        await saveExistingNote();
+      } else {
+        await addNote();
+      }
+    } finally {
+      setWorkbenchSaving(false);
     }
   }
 
@@ -603,10 +652,16 @@ function App() {
       setSelectedNoteId('');
       setViewMode('notes');
       clearedDraftSignatureRef.current = '';
+      workbenchBaselineSignatureRef.current = '';
       await deleteNoteDraft(session);
+      setLastSavedAt(new Date().toISOString());
+      setDraftRecovered(false);
+      pushToast({ tone: 'success', title: 'Note added', body: 'The graph has been refreshed.' });
       void refreshDashboard(session);
     } catch (error) {
-      setAppError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setAppError(message);
+      pushToast({ tone: 'error', title: 'Could not add note', body: message });
     }
   }
 
@@ -644,9 +699,15 @@ function App() {
       const history = await loadNoteHistory(session, selectedNoteId);
       setNoteHistory(history);
       setHistoryDrawerOpen(false);
+      workbenchBaselineSignatureRef.current = currentWorkbenchSignature();
+      setLastSavedAt(new Date().toISOString());
+      setDraftRecovered(false);
+      pushToast({ tone: 'success', title: 'Note saved', body: 'Review state and map snapshots were refreshed.' });
       void refreshDashboard(session);
     } catch (error) {
-      setAppError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setAppError(message);
+      pushToast({ tone: 'error', title: 'Could not save note', body: message });
     }
   }
 
@@ -717,6 +778,8 @@ function App() {
     setNoteHistory([]);
     setHistoryDrawerOpen(false);
     clearedDraftSignatureRef.current = '';
+    workbenchBaselineSignatureRef.current = '';
+    setDraftRecovered(false);
     setViewMode('notes');
     if (session) {
       deleteNoteDraft(session).catch(error => {
@@ -750,6 +813,8 @@ function App() {
     setNoteSourceType(IMPORTED_NOTE_SOURCE_TYPE);
     setNoteImportOpen(false);
     clearedDraftSignatureRef.current = '';
+    workbenchBaselineSignatureRef.current = '';
+    setDraftRecovered(false);
     setViewMode('notes');
   }
 
@@ -844,6 +909,103 @@ function App() {
     neutralCount: 0,
     subjects: []
   })) ?? [];
+  const currentWorkbenchSignatureValue = currentWorkbenchSignature();
+  const currentWorkbenchHasContent = hasDraftContent({
+    selectedNoteId: selectedNoteId || undefined,
+    title: noteTitle,
+    body: draft,
+    accessScope,
+    teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+    observedAt,
+    ...currentMetadataArrays(),
+    linkedEntities: currentLinkedEntities()
+  });
+  const workbenchDirty = currentWorkbenchHasContent && currentWorkbenchSignatureValue !== workbenchBaselineSignatureRef.current;
+  const saveStateError = appError || mapError || dashboardError;
+  const contextHeaderModel = buildContextHeaderModel({
+    viewMode,
+    userRole: user?.role ?? 'Analyst',
+    teamName: selectedNoteTeamName,
+    selectedNoteTitle: noteTitle || selectedNote?.title,
+    accessScope,
+    mapAsOf,
+    latestAsOf: graph?.asOf,
+    dirty: workbenchDirty,
+    saving: workbenchSaving,
+    readOnly: !canEditSelectedNote,
+    error: saveStateError,
+    draftRecovered,
+    lastSavedAt
+  });
+  const commandItems = buildCommandItems({
+    viewMode,
+    canSaveNote: Boolean(draft.trim() && canEditSelectedNote && !workbenchSaving),
+    canOpenHistory: Boolean(selectedNoteId),
+    canUseAdmin: user?.orgRole === 'admin',
+    hasNoteFilters: activeFilterCount(noteFilters) > 0,
+    hasMapFilters: activeMapFilterCount(mapFilters, mapAsOf, graph?.asOf) > 0,
+    noteImportOpen,
+    selectedNoteTitle: noteTitle || selectedNote?.title
+  });
+
+  function runCommand(id: CommandItem['id']) {
+    if (id === 'open-notes') setViewMode('notes');
+    if (id === 'open-dashboard') setViewMode('dashboard');
+    if (id === 'open-map') setViewMode('map');
+    if (id === 'open-archive') setViewMode('archive');
+    if (id === 'open-admin' && user?.orgRole === 'admin') setViewMode('admin');
+    if (id === 'new-note') startNewNote();
+    if (id === 'save-note') void saveWorkbenchNote();
+    if (id === 'import-note') {
+      setViewMode('notes');
+      setNoteImportOpen(open => !open);
+    }
+    if (id === 'open-history') void openNoteHistory();
+    if (id === 'focus-editor') focusCapture({ focusEditor: true, enableFocusMode: true });
+    if (id === 'clear-filters') {
+      clearNoteFilters();
+      clearMapFilters();
+    }
+  }
+
+  function toggleFocusMode() {
+    if (viewMode !== 'notes') return;
+    if (!focusMode) setEditorFocusSignal(value => value + 1);
+    setFocusMode(value => !value);
+  }
+
+  function handleDashboardDrilldown(kind: DashboardDrilldownKind, label: string) {
+    const drilldown = buildDashboardDrilldown(kind, label);
+    if (drilldown.noteFilters) {
+      setNoteFilters(current => ({ ...current, ...drilldown.noteFilters }));
+    }
+    if (drilldown.mapFilters) {
+      setMapFilters(current => ({ ...current, ...drilldown.mapFilters }));
+    }
+    if (drilldown.selected) setSelected(drilldown.selected);
+    setViewMode(drilldown.viewMode as ViewMode);
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && key === 'k') {
+        event.preventDefault();
+        setCommandPaletteOpen(open => !open);
+      }
+      if (event.key === 'Escape') {
+        setCommandPaletteOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== 'notes' && focusMode) setFocusMode(false);
+  }, [viewMode, focusMode]);
 
   if (loading) return <StatusScreen title="Connecting to Mycelium" body="Loading auth and workspace services." />;
   if (!session || !workspace || !user) {
@@ -854,13 +1016,13 @@ function App() {
     <aside className="left-rail" aria-label="Workspace navigation">
       <div className="mark"><span>M</span></div>
       <nav>
-        <button className={viewMode === 'notes' ? 'active' : ''} onClick={() => setViewMode('notes')} title="Notes"><BookOpen size={18}/></button>
-        <button className={viewMode === 'dashboard' ? 'active' : ''} onClick={() => setViewMode('dashboard')} title="Dashboard"><BarChart3 size={18}/></button>
-        <button className={viewMode === 'map' ? 'active' : ''} onClick={() => setViewMode('map')} title="Relationship map"><GitBranch size={18}/></button>
-        <button className={viewMode === 'archive' ? 'active' : ''} onClick={() => setViewMode('archive')} title="Archive"><Layers3 size={18}/></button>
-        {user.orgRole === 'admin' && <button className={viewMode === 'admin' ? 'active' : ''} onClick={() => setViewMode('admin')} title="Organisation admin"><ShieldCheck size={18}/></button>}
+        <button className={viewMode === 'notes' ? 'active' : ''} onClick={() => setViewMode('notes')} title="Notes" aria-label="Open notes"><BookOpen size={18}/></button>
+        <button className={viewMode === 'dashboard' ? 'active' : ''} onClick={() => setViewMode('dashboard')} title="Dashboard" aria-label="Open dashboard"><BarChart3 size={18}/></button>
+        <button className={viewMode === 'map' ? 'active' : ''} onClick={() => setViewMode('map')} title="Relationship map" aria-label="Open relationship map"><GitBranch size={18}/></button>
+        <button className={viewMode === 'archive' ? 'active' : ''} onClick={() => setViewMode('archive')} title="Archive" aria-label="Open archive"><Layers3 size={18}/></button>
+        {user.orgRole === 'admin' && <button className={viewMode === 'admin' ? 'active' : ''} onClick={() => setViewMode('admin')} title="Organisation admin" aria-label="Open organisation admin"><ShieldCheck size={18}/></button>}
       </nav>
-      <button className="rail-footer" type="button" onClick={signOut} title="Sign out"><LogOut size={16}/><span>{user.role}</span></button>
+      <button className="rail-footer" type="button" onClick={signOut} title="Sign out" aria-label="Sign out"><LogOut size={16}/><span>{user.role}</span></button>
     </aside>
 
     <NotesSidebar
@@ -877,7 +1039,7 @@ function App() {
       onClearFilters={clearNoteFilters}
       onStartCapture={focusCapture}
       onSelectNote={note => {
-        clearedDraftSignatureRef.current = draftSignature({
+        const loadedSignature = draftSignature({
           selectedNoteId: note.id,
           title: note.title,
           body: note.body,
@@ -887,6 +1049,8 @@ function App() {
           ...metadataArraysFromSource(note),
           linkedEntities: (note as FrontendWorkspaceNote).linkedEntities ?? []
         });
+        clearedDraftSignatureRef.current = loadedSignature;
+        workbenchBaselineSignatureRef.current = loadedSignature;
         setSelectedNoteId(note.id);
         setNoteTitle(note.title);
         setDraft(note.body);
@@ -897,16 +1061,26 @@ function App() {
         applyWorkbenchMetadata(note as FrontendWorkspaceNote);
         setNoteHistory([]);
         setHistoryDrawerOpen(false);
+        setDraftRecovered(false);
         clearedDraftSignatureRef.current = '';
         setViewMode('notes');
       }}
     />
 
     <section className={`shell page-shell ${viewMode}-page`}>
+      <ContextHeader
+        model={contextHeaderModel}
+        focusMode={viewMode === 'notes' && focusMode}
+        canToggleFocusMode={viewMode === 'notes'}
+        onOpenCommands={() => setCommandPaletteOpen(true)}
+        onToggleFocusMode={toggleFocusMode}
+      />
       {appError && <div className="inline-error">{appError}</div>}
+      <StatusToastStack toasts={toasts} onDismiss={id => setToasts(current => current.filter(toast => toast.id !== id))} />
+      <CommandPalette open={commandPaletteOpen} items={commandItems} onClose={() => setCommandPaletteOpen(false)} onRun={runCommand} />
 
       {viewMode === 'notes' && <NotesPage>
-      <section className="note-workbench">
+      <section className={`note-workbench ${focusMode ? 'focus-mode' : ''}`}>
         <article className="capture panel primary-note">
           <div className="note-panel-head">
             <div className="panel-title"><FilePlus2/> Note</div>
@@ -961,28 +1135,28 @@ function App() {
             <span>{accessScope === 'team' ? selectedNoteTeamName : accessScope === 'organization' ? 'Organisation' : 'Personal'}</span>
             <span>{observedAt}</span>
           </div>
-          <input className="note-title-input" value={noteTitle} onChange={event => setNoteTitle(event.target.value)} placeholder="Title..." aria-label="Note title" />
-          <MarkdownEditor value={draft} onChange={setDraft} onSubmit={saveWorkbenchNote} />
+          <input className="note-title-input" value={noteTitle} onChange={event => setNoteTitle(event.target.value)} placeholder="Title..." aria-label="Note title" disabled={!canEditSelectedNote} />
+          <MarkdownEditor value={draft} onChange={setDraft} onSubmit={saveWorkbenchNote} readOnly={!canEditSelectedNote} focusSignal={editorFocusSignal} />
           <div className="metadata-grid">
-            <label><span>Observed</span><input type="date" value={observedAt} onChange={e => setObservedAt(e.target.value)} /></label>
-            <label><span>Location</span><select value={accessScope} onChange={e => setAccessScope(e.target.value as AccessScope)}><option value="personal">Personal</option><option value="team">Team</option><option value="organization">Organisation</option></select></label>
-            {accessScope === 'team' && <label><span>Team</span><select value={effectiveNoteTeamId} onChange={e => setNoteTeamId(e.target.value)}>{activeTeamMemberships.map(team => <option key={team.teamId} value={team.teamId}>{team.teamName}</option>)}</select></label>}
+            <label><span>Observed</span><input type="date" value={observedAt} onChange={e => setObservedAt(e.target.value)} disabled={!canEditSelectedNote} /></label>
+            <label><span>Location</span><select value={accessScope} onChange={e => setAccessScope(e.target.value as AccessScope)} disabled={!canEditSelectedNote}><option value="personal">Personal</option><option value="team">Team</option><option value="organization">Organisation</option></select></label>
+            {accessScope === 'team' && <label><span>Team</span><select value={effectiveNoteTeamId} onChange={e => setNoteTeamId(e.target.value)} disabled={!canEditSelectedNote}>{activeTeamMemberships.map(team => <option key={team.teamId} value={team.teamId}>{team.teamName}</option>)}</select></label>}
           </div>
           <div className="metadata-linking">
-            <MetadataChipInput label="Securities/Tickers" values={tickers} options={knownTickers()} onChange={setTickers} transform={value => value.toUpperCase()} placeholder="Add ticker" />
-            <MetadataChipInput label="Industries/Sectors" values={industries} options={industryOptions(noteFilterOptions)} onChange={setIndustries} placeholder="Add industry" />
-            <MetadataChipInput label="Themes" values={manualThemes} options={themeLexicon} onChange={setManualThemes} placeholder="Add theme" />
-            <MetadataChipInput label="KPIs" values={kpis} options={kpiWords} onChange={setKpis} placeholder="Add KPI" />
-            <MetadataChipInput label="Watchlists" values={watchlistTags} options={noteFilterOptions.watchlists} onChange={setWatchlistTags} placeholder="Add watchlist" />
-            <MetadataChipInput label="Participants" values={sourcePeople} options={noteFilterOptions.sourcePeople} onChange={setSourcePeople} placeholder="Add person" />
+            <MetadataChipInput label="Securities/Tickers" values={tickers} options={knownTickers()} onChange={setTickers} transform={value => value.toUpperCase()} placeholder="Add ticker" disabled={!canEditSelectedNote} />
+            <MetadataChipInput label="Industries/Sectors" values={industries} options={industryOptions(noteFilterOptions)} onChange={setIndustries} placeholder="Add industry" disabled={!canEditSelectedNote} />
+            <MetadataChipInput label="Themes" values={manualThemes} options={themeLexicon} onChange={setManualThemes} placeholder="Add theme" disabled={!canEditSelectedNote} />
+            <MetadataChipInput label="KPIs" values={kpis} options={kpiWords} onChange={setKpis} placeholder="Add KPI" disabled={!canEditSelectedNote} />
+            <MetadataChipInput label="Watchlists" values={watchlistTags} options={noteFilterOptions.watchlists} onChange={setWatchlistTags} placeholder="Add watchlist" disabled={!canEditSelectedNote} />
+            <MetadataChipInput label="Participants" values={sourcePeople} options={noteFilterOptions.sourcePeople} onChange={setSourcePeople} placeholder="Add person" disabled={!canEditSelectedNote} />
           </div>
           <div className="capture-actions">
-            <button onClick={saveWorkbenchNote} disabled={!draft.trim() || !canEditSelectedNote}>{workbenchActionLabel} <span><Command size={13}/> Enter</span></button>
+            <button onClick={saveWorkbenchNote} disabled={!draft.trim() || !canEditSelectedNote || workbenchSaving}>{workbenchSaving ? 'Saving...' : workbenchActionLabel} <span><Command size={13}/> Enter</span></button>
           </div>
           {selectedNoteId && !canEditSelectedNote && <p className="note-edit-lock"><LockKeyhole size={13}/> Only the note author can save changes.</p>}
         </article>
 
-        <aside className="note-side">
+        {!focusMode && <aside className="note-side">
           <article className="panel live-preview">
             <div className="panel-title"><Eye/> Live extraction</div>
             {previewEntities.length ? <div className="entity-cloud">
@@ -993,7 +1167,7 @@ function App() {
             </div>
           </article>
 
-        </aside>
+        </aside>}
       </section>
       {historyDrawerOpen && <NoteHistoryDrawer history={noteHistory} onClose={() => setHistoryDrawerOpen(false)} />}
 
@@ -1037,6 +1211,7 @@ function App() {
           setNoteFilters(current => ({ ...current, sourcePerson: name }));
           setMapFilters(current => ({ ...current, sourcePerson: name }));
         }}
+        onDrilldown={handleDashboardDrilldown}
         onStartCapture={focusCapture}
       />}
 
@@ -1241,6 +1416,7 @@ function DashboardPage({
   onTeamChange,
   onSelectCompany,
   onSelectPerson,
+  onDrilldown,
   onStartCapture
 }: {
   dashboard: DashboardSnapshot | null;
@@ -1255,6 +1431,7 @@ function DashboardPage({
   onTeamChange: (teamId: string) => void;
   onSelectCompany: (company: string) => void;
   onSelectPerson: (name: string) => void;
+  onDrilldown: (kind: DashboardDrilldownKind, label: string) => void;
   onStartCapture: () => void;
 }) {
   const availability = dashboard?.scopeAvailability ?? defaultDashboardScopeAvailability();
@@ -1285,10 +1462,10 @@ function DashboardPage({
     {loading && !dashboard && <div className="panel dashboard-loading"><div className="panel-title"><Sparkles/> Loading dashboard</div><p>Preparing scoped research aggregates.</p></div>}
 
     {dashboard && <section className="dashboard-metric-grid">
-      <DashboardMetricCard icon={<BookOpen/>} label="Notes" value={dashboard.totals.notes} sub={`${dashboardRangeLabel(dashboard.range)} ${dashboard.scope}`} />
-      <DashboardMetricCard icon={<Network/>} label="Claims" value={dashboard.totals.claims} sub={`${dashboard.reviewBacklog.claims} awaiting claim review`} />
-      <DashboardMetricCard icon={<GitBranch/>} label="Relations" value={dashboard.totals.relations} sub={`${dashboard.reviewBacklog.relations} open relation reviews`} />
-      <DashboardMetricCard icon={<AlertTriangle/>} label="Signals" value={dashboard.signals.length} sub={`as of ${dashboard.asOf}`} />
+      <DashboardMetricCard icon={<BookOpen/>} label="Notes" value={dashboard.totals.notes} sub={`${dashboardRangeLabel(dashboard.range)} ${dashboard.scope}`} onClick={() => onDrilldown('metric-notes', 'Notes')} />
+      <DashboardMetricCard icon={<Network/>} label="Claims" value={dashboard.totals.claims} sub={`${dashboard.reviewBacklog.claims} awaiting claim review`} onClick={() => onDrilldown('metric-claims', 'Claims')} />
+      <DashboardMetricCard icon={<GitBranch/>} label="Relations" value={dashboard.totals.relations} sub={`${dashboard.reviewBacklog.relations} open relation reviews`} onClick={() => onDrilldown('metric-relations', 'Relations')} />
+      <DashboardMetricCard icon={<AlertTriangle/>} label="Signals" value={dashboard.signals.length} sub={`as of ${dashboard.asOf}`} onClick={() => onDrilldown('metric-relations', 'Signals')} />
     </section>}
 
     {dashboard && <>
@@ -1296,35 +1473,35 @@ function DashboardPage({
       <article className="dashboard-chart-card relation-mix-card">
         <div className="panel-title"><Workflow/> Relation mix</div>
         <div className="dashboard-bars">
-          {relationTypes.map(type => <div key={type} className={`dashboard-bar-row ${type}`}>
+          {relationTypes.map(type => <button type="button" key={type} className={`dashboard-bar-row ${type}`} onClick={() => onDrilldown('relation-type', type)}>
             <span>{relationLabel(type)}</span>
             <i><b style={{ ['--share' as string]: `${Math.round((dashboard.relationMix[type] / relationTotal) * 100)}%` }} /></i>
             <strong>{dashboard.relationMix[type]}</strong>
-          </div>)}
+          </button>)}
         </div>
       </article>
 
       <article className="dashboard-chart-card freshness-card">
         <div className="panel-title"><CircleDot/> Freshness</div>
-        <div className="dashboard-donut" style={{ ['--fresh' as string]: dashboardFreshnessShare(dashboard, 'fresh'), ['--aging' as string]: dashboardFreshnessShare(dashboard, 'aging') }}>
+        <button type="button" className="dashboard-donut" onClick={() => onDrilldown('freshness', 'fresh')} style={{ ['--fresh' as string]: dashboardFreshnessShare(dashboard, 'fresh'), ['--aging' as string]: dashboardFreshnessShare(dashboard, 'aging') }}>
           <b>{dashboard.freshness.fresh}</b>
-        </div>
+        </button>
         <div className="dashboard-donut-caption">fresh claims</div>
         <div className="dashboard-legend">
-          <span>Fresh {dashboard.freshness.fresh}</span>
-          <span>Aging {dashboard.freshness.aging}</span>
-          <span>Stale {dashboard.freshness.stale}</span>
+          <button type="button" onClick={() => onDrilldown('freshness', 'fresh')}>Fresh {dashboard.freshness.fresh}</button>
+          <button type="button" onClick={() => onDrilldown('freshness', 'aging')}>Aging {dashboard.freshness.aging}</button>
+          <button type="button" onClick={() => onDrilldown('freshness', 'stale')}>Stale {dashboard.freshness.stale}</button>
         </div>
       </article>
     </section>
 
     <section className="dashboard-widget-grid">
-      <DashboardTopList title="Companies" icon={<Building2/>} items={dashboard.topCompanies} onSelect={onSelectCompany} />
-      <DashboardTopList title="Themes" icon={<PanelLeft/>} items={dashboard.topThemes} />
-      <DashboardTopList title="KPIs" icon={<BarChart3/>} items={dashboard.topKpis} />
-      <DashboardTopList title="Securities" icon={<Layers3/>} items={dashboard.topSecurities} />
-      <DashboardTopList title="Watchlists" icon={<ListFilter/>} items={dashboard.topWatchlists} />
-      <DashboardTopList title="Source people" icon={<UsersRound/>} items={dashboard.topSourcePeople} onSelect={onSelectPerson} />
+      <DashboardTopList title="Companies" icon={<Building2/>} items={dashboard.topCompanies} onSelect={label => { onSelectCompany(label); onDrilldown('company', label); }} />
+      <DashboardTopList title="Themes" icon={<PanelLeft/>} items={dashboard.topThemes} onSelect={label => onDrilldown('theme', label)} />
+      <DashboardTopList title="KPIs" icon={<BarChart3/>} items={dashboard.topKpis} onSelect={label => onDrilldown('kpi', label)} />
+      <DashboardTopList title="Securities" icon={<Layers3/>} items={dashboard.topSecurities} onSelect={label => onDrilldown('security', label)} />
+      <DashboardTopList title="Watchlists" icon={<ListFilter/>} items={dashboard.topWatchlists} onSelect={label => onDrilldown('watchlist', label)} />
+      <DashboardTopList title="Source people" icon={<UsersRound/>} items={dashboard.topSourcePeople} onSelect={label => { onSelectPerson(label); onDrilldown('source-person', label); }} />
 
       <article className="dashboard-chart-card dashboard-widget-card signals-card">
         <div className="panel-title"><AlertTriangle/> Signals</div>
@@ -1339,8 +1516,8 @@ function DashboardPage({
   </div>;
 }
 
-function DashboardMetricCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: number; sub: string }) {
-  return <article className="dashboard-metric-card">{icon}<span>{label}</span><b>{value}</b><small>{sub}</small></article>;
+function DashboardMetricCard({ icon, label, value, sub, onClick }: { icon: React.ReactNode; label: string; value: number; sub: string; onClick?: () => void }) {
+  return <button type="button" className="dashboard-metric-card" onClick={onClick}>{icon}<span>{label}</span><b>{value}</b><small>{sub}</small></button>;
 }
 
 function DashboardTopList({ title, icon, items, onSelect }: { title: string; icon: React.ReactNode; items: DashboardTopItem[]; onSelect?: (label: string) => void }) {
@@ -1374,7 +1551,7 @@ function NoteRelationsPanel({ relations, onUpdate }: { relations: FrontendWorksp
     <div className="relation-list">
       {relations.map(relation => <RelationCard key={relation.id} relation={relation} selected={relation.id === selectedRelation?.id} onSelect={() => setSelectedRelationId(relation.id)} onUpdate={input => onUpdate(relation.id, input)} />)}
     </div>
-    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} />}
+    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} onUpdate={input => onUpdate(selectedRelation.id, input)} />}
   </div>;
 }
 
@@ -1545,7 +1722,32 @@ function activeMapFilterCount(filters: MapFilters, mapAsOf?: string, latestAsOf?
   return fieldCount + (mapAsOf && latestAsOf && mapAsOf !== latestAsOf ? 1 : 0);
 }
 
-function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange: (value: string) => void; onSubmit: () => void }) {
+function activeMapFilterEntries(filters: MapFilters, mapAsOf?: string, latestAsOf?: string) {
+  return [
+    filters.security && `Security: ${filters.security}`,
+    filters.industryOrTheme && `Industry/theme: ${filters.industryOrTheme}`,
+    filters.relationType && `Relation: ${relationLabel(filters.relationType)}`,
+    filters.freshness && `Freshness: ${filters.freshness}`,
+    filters.sourcePerson && `Participant: ${filters.sourcePerson}`,
+    filters.authorId && `Author: ${filters.authorId}`,
+    filters.team && `Team: ${filters.team}`,
+    mapAsOf && latestAsOf && mapAsOf !== latestAsOf && `As of: ${mapAsOf}`
+  ].filter(Boolean) as string[];
+}
+
+function MarkdownEditor({
+  value,
+  onChange,
+  onSubmit,
+  readOnly = false,
+  focusSignal = 0
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  readOnly?: boolean;
+  focusSignal?: number;
+}) {
   const editorRef = useRef<HTMLDivElement>(null);
   const renderedHtmlRef = useRef('');
   const [slashQuery, setSlashQuery] = useState('');
@@ -1585,7 +1787,12 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
     }
   }, [value]);
 
+  useEffect(() => {
+    if (focusSignal > 0 && !readOnly) editorRef.current?.focus();
+  }, [focusSignal, readOnly]);
+
   function syncFromEditor() {
+    if (readOnly) return;
     const editor = editorRef.current;
     if (!editor) return;
     const html = editor.innerHTML;
@@ -1629,6 +1836,7 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
   }
 
   function runCommand(command: RichMarkdownCommand) {
+    if (readOnly) return;
     closeSlashPalette();
     editorRef.current?.focus();
     if (command === 'undo') {
@@ -1690,6 +1898,7 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
   }
 
   function applySlashCommand(command: SlashMarkdownCommand) {
+    if (readOnly) return;
     editorRef.current?.focus();
     if (selectTextBeforeCursor(slashTriggerLength)) {
       document.execCommand('delete');
@@ -1699,6 +1908,7 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (readOnly) return;
     const modifier = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
     if (modifier && key === 'enter') {
@@ -1764,21 +1974,23 @@ function MarkdownEditor({ value, onChange, onSubmit }: { value: string; onChange
     }
   }
 
-  return <div className="markdown-editor">
+  return <div className={`markdown-editor ${readOnly ? 'read-only' : ''}`}>
     <div className="markdown-toolbar" role="toolbar" aria-label="Markdown formatting">
-      {tools.map(tool => <button type="button" key={tool.command} onClick={() => runCommand(tool.command)} title={`${tool.label} (${tool.shortcut})`} aria-label={tool.label}>{tool.icon}</button>)}
+      {tools.map(tool => <button type="button" key={tool.command} onClick={() => runCommand(tool.command)} title={`${tool.label} (${tool.shortcut})`} aria-label={tool.label} disabled={readOnly}>{tool.icon}</button>)}
     </div>
     <div
       ref={editorRef}
       className="markdown-display-editor"
-      contentEditable
+      contentEditable={!readOnly}
       suppressContentEditableWarning
       role="textbox"
+      aria-readonly={readOnly}
       aria-label="Research note display editor"
       onInput={syncFromEditor}
       onBlur={syncFromEditor}
       onKeyDown={onKeyDown}
       onPaste={event => {
+        if (readOnly) return;
         event.preventDefault();
         document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
         window.requestAnimationFrame(syncFromEditor);
@@ -1828,7 +2040,8 @@ function MetadataChipInput({
   options,
   onChange,
   placeholder,
-  transform = value => value
+  transform = value => value,
+  disabled = false
 }: {
   label: string;
   values: string[];
@@ -1836,10 +2049,15 @@ function MetadataChipInput({
   onChange: (values: string[]) => void;
   placeholder: string;
   transform?: (value: string) => string;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState('');
+  const tokenKind = metadataKindForLabel(label);
+  const tokenOptions = buildMetadataTokenOptions({ kind: tokenKind, values, options });
+  const visibleOptions = tokenOptions.filter(option => !values.some(value => value.toLowerCase() === option.value.toLowerCase())).slice(0, 4);
 
   function addValue(value: string) {
+    if (disabled) return;
     const next = transform(value).trim();
     if (!next) return;
     onChange(normalizeTags([...values, next]));
@@ -1847,13 +2065,14 @@ function MetadataChipInput({
   }
 
   function removeValue(value: string) {
+    if (disabled) return;
     onChange(values.filter(item => item.toLowerCase() !== value.toLowerCase()));
   }
 
   return <div className="metadata-chip-input">
     <div className="metadata-chip-head">
       <span>{label}</span>
-      <select value="" onChange={event => addValue(event.target.value)}><option value="">Choose</option>{options.map(option => <option key={option} value={option}>{option}</option>)}</select>
+      <select value="" onChange={event => addValue(event.target.value)} disabled={disabled}><option value="">Choose</option>{tokenOptions.map(option => <option key={option.value} value={option.value}>{option.label}{option.detail ? ` - ${option.detail}` : ''}</option>)}</select>
     </div>
     <div className="metadata-chip-entry">
       <input value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
@@ -1861,13 +2080,27 @@ function MetadataChipInput({
           event.preventDefault();
           addValue(draft);
         }
-      }} placeholder={placeholder} />
-      <button type="button" onClick={() => addValue(draft)}><Plus size={14}/></button>
+      }} placeholder={placeholder} disabled={disabled} />
+      <button type="button" onClick={() => addValue(draft)} disabled={disabled}><Plus size={14}/></button>
     </div>
+    {visibleOptions.length > 0 && <div className="metadata-token-options">
+      {visibleOptions.map(option => <button type="button" className="metadata-token-option" key={option.value} onClick={() => addValue(option.value)} disabled={disabled}>
+        <b>{option.label}</b>{option.detail && <small>{option.detail}</small>}
+      </button>)}
+    </div>}
     <div className="metadata-chip-list">
-      {values.map(value => <button type="button" key={value} onClick={() => removeValue(value)}>{value}<X size={12}/></button>)}
+      {values.map(value => <button type="button" key={value} onClick={() => removeValue(value)} disabled={disabled}>{value}<X size={12}/></button>)}
     </div>
   </div>;
+}
+
+function metadataKindForLabel(label: string) {
+  if (label.includes('Securities')) return 'security';
+  if (label.includes('Industries')) return 'industry';
+  if (label.includes('Watchlists')) return 'watchlist';
+  if (label.includes('Participants')) return 'source_person';
+  if (label.includes('KPI')) return 'kpi';
+  return 'theme';
 }
 
 function NoteMetadataChips({ note, compact = false }: { note: FrontendMetadata; compact?: boolean }) {
@@ -2104,6 +2337,10 @@ function RelationshipMap({
       {(['low', 'medium', 'high'] as MapDensity[]).map(value => <button key={value} type="button" className={density === value ? 'active' : ''} onClick={() => onDensityChange(value)}>{value}</button>)}
       <small>{densityLimits.graph} graph / {densityLimits.list} list</small>
     </div>
+    {activeMapFilterEntries(filters, mapAsOf, latestAsOf).length > 0 && <div className="map-active-filters" aria-label="Active map filters">
+      {activeMapFilterEntries(filters, mapAsOf, latestAsOf).map(item => <span key={item}>{item}</span>)}
+      <button type="button" onClick={onClearFilters}>Clear</button>
+    </div>}
     <div className="relation-legend"><span className="contradiction">red true contradiction</span><span className="open_tension">amber tension</span><span className="update_or_trend_reversal">blue trend reversal</span><span className="corroboration">green corroboration</span><span className="stale_evidence">grey stale evidence</span></div>
     {filteredRelations.length ? <div className="map-lanes">
       <section className="map-lane current">
@@ -2149,7 +2386,7 @@ function RelationshipMap({
         {historicalLane.hiddenListCount > 0 && <p className="map-lane-overflow">{historicalLane.hiddenListCount} list items hidden by density</p>}
       </section>
     </div> : <EmptyState title={relationEmptyState.title} body={relationEmptyState.body} actions={emptyStateActions(relationEmptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
-    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} asOf={asOf} />}
+    {selectedRelation && <RelationDetailDrawer relation={selectedRelation} asOf={asOf} onUpdate={input => onUpdate(selectedRelation.id, input)} />}
   </article>;
 }
 
@@ -2193,8 +2430,16 @@ function RelationCard({ relation, asOf = today(), selected, onSelect, onUpdate }
   </article>;
 }
 
-function RelationDetailDrawer({ relation, asOf = today() }: { relation: FrontendWorkspaceRelation; asOf?: string }) {
+function RelationDetailDrawer({ relation, asOf = today(), onUpdate }: { relation: FrontendWorkspaceRelation; asOf?: string; onUpdate?: (input: UpdateRelationInput) => void }) {
+  const [type, setType] = useState<RelationType>(relation.type);
+  const [reviewNote, setReviewNote] = useState(relation.reviewNote ?? '');
   const statuses = relationWindowStatuses(relation, asOf);
+
+  useEffect(() => {
+    setType(relation.type);
+    setReviewNote(relation.reviewNote ?? '');
+  }, [relation.id, relation.type, relation.reviewNote]);
+
   return <aside className="relation-detail-drawer" aria-label="Relation detail">
     <div className="panel-title"><PanelLeft/> Relation detail</div>
     <div className="relation-detail-grid">
@@ -2221,6 +2466,15 @@ function RelationDetailDrawer({ relation, asOf = today() }: { relation: Frontend
       </div>
     </div>
     <p>{relation.reason}</p>
+    {onUpdate && <div className="relation-detail-review">
+      <label className="relation-review-note"><span>Analyst review note</span><textarea value={reviewNote} onChange={event => setReviewNote(event.target.value)} /></label>
+      <div className="relation-actions">
+        <button onClick={() => onUpdate({ reviewStatus: 'confirmed', reviewNote })}><Check size={14}/> Confirm</button>
+        <button onClick={() => onUpdate({ reviewStatus: 'dismissed', reviewNote })}><Ban size={14}/> Dismiss</button>
+        <select value={type} onChange={event => setType(event.target.value as RelationType)}>{relationTypes.map(item => <option key={item} value={item}>{relationLabel(item)}</option>)}</select>
+        <button onClick={() => onUpdate({ reviewStatus: 'reclassified', type, reviewNote })}><Edit3 size={14}/> Reclassify</button>
+      </div>
+    </div>}
   </aside>;
 }
 

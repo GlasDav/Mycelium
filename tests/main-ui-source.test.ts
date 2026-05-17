@@ -33,7 +33,7 @@ test('sidebar note clicks load the note into the note workbench', () => {
 
 test('note workbench does not ask for source or claim validity metadata', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
-  const workbenchStart = source.indexOf('<section className="note-workbench">');
+  const workbenchStart = source.indexOf('note-workbench');
   const sideStart = source.indexOf('<aside className="note-side">', workbenchStart);
   assert(workbenchStart >= 0 && sideStart > workbenchStart, 'note workbench source is missing');
   const capture = source.slice(workbenchStart, sideStart);
@@ -107,6 +107,9 @@ test('markdown editor exposes display editing only with undo and redo controls',
 
   assert.match(editor, /markdown-display-editor/);
   assert.match(editor, /contentEditable/);
+  assert.match(editor, /contentEditable=\{!readOnly\}/);
+  assert.match(editor, /aria-readonly=\{readOnly\}/);
+  assert.match(editor, /focusSignal/);
   assert.doesNotMatch(editor, /<textarea/);
   assert.match(editor, /Undo2/);
   assert.match(editor, /Redo2/);
@@ -304,12 +307,60 @@ test('left rail modes render notes, dashboard, map, and archive page bodies', ()
   assert.match(appReturn, /setViewMode\('notes'\)/);
   assert.match(appReturn, /setViewMode\('dashboard'\)/);
   assert(appReturn.indexOf("setViewMode('notes')") < appReturn.indexOf("setViewMode('dashboard')"));
+  assert.match(appReturn, /aria-label="Open notes"/);
+  assert.match(appReturn, /aria-label="Open dashboard"/);
+  assert.match(appReturn, /aria-label="Open relationship map"/);
   assert.match(appReturn, /viewMode === 'notes' && <NotesPage/);
   assert.match(appReturn, /viewMode === 'dashboard' && <DashboardPage/);
   assert.match(appReturn, /viewMode === 'map' && <MapPage/);
   assert.match(appReturn, /viewMode === 'archive' && <ArchivePage/);
   assert.match(appReturn, /viewMode === 'admin' && <AdminPage/);
   assert.doesNotMatch(appReturn, /className="mode-tabs"/);
+});
+
+test('note workbench read-only and focus mode states are enforced in controls', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(source, /editorFocusSignal/);
+  assert.match(source, /focusCapture\(\{ focusEditor: true, enableFocusMode: true \}\)/);
+  assert.match(source, /function toggleFocusMode/);
+  assert.match(source, /viewMode !== 'notes' && focusMode/);
+  assert.match(appReturn, /canToggleFocusMode=\{viewMode === 'notes'\}/);
+  assert.match(appReturn, /disabled=\{!canEditSelectedNote\}/);
+  assert.match(appReturn, /readOnly=\{!canEditSelectedNote\}/);
+  assert.match(appReturn, /disabled=\{!canEditSelectedNote\} \/>/);
+});
+
+test('premium shell imports context header command palette and status toast', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+
+  assert.match(source, /ContextHeader/);
+  assert.match(source, /CommandPalette/);
+  assert.match(source, /StatusToastStack/);
+  assert.match(source, /buildContextHeaderModel/);
+  assert.match(source, /buildCommandItems/);
+  assert.match(source, /onKeyDown/);
+  assert.match(source, /key === 'k'/);
+  assert.match(source, /setNoteImportOpen\(open => !open\)/);
+});
+
+test('dashboard widgets expose drilldown callbacks', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const dashboardStart = source.indexOf('function DashboardPage');
+  const dashboardEnd = source.indexOf('function NoteRelationsPanel', dashboardStart);
+  assert(dashboardStart >= 0 && dashboardEnd > dashboardStart, 'Dashboard source is missing');
+  const dashboardSource = source.slice(dashboardStart, dashboardEnd);
+
+  assert.match(dashboardSource, /onDrilldown/);
+  assert.match(dashboardSource, /metric-notes/);
+  assert.match(dashboardSource, /metric-relations/);
+  assert.match(dashboardSource, /relation-type/);
+  assert.match(dashboardSource, /freshness/);
+  assert.match(dashboardSource, /source-person/);
 });
 
 test('claim review cards capture analyst review notes on every action', () => {
