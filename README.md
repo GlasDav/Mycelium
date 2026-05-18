@@ -74,7 +74,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, persistent page-aware premium context header, focus mode, compact save/draft/read-only status, status toasts, Notes-only pasted meeting-note/transcript and TXT/Markdown/DOCX/PDF file import that previews parsed fields before applying them to the unsaved workbench, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, persistent page-aware premium context header, focus mode, compact save/draft/read-only status, status toasts, Notes-only pasted meeting-note/transcript and TXT/Markdown/DOCX/PDF/VTT/SRT file import that previews parsed fields before applying them to the unsaved workbench, a preview-only audio-file shell for future transcription, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Ctrl + Enter` note intake.
 - `Ctrl+K` command palette for page switching, note actions, import/history, focus mode, and filter clearing.
 - Left-rail page navigation separates clean current-note Notes, scoped Dashboard, relationship map, full-width note archive, and Organisation admin so each surface has its own workspace.
 - Notes only shows the active note, live extraction, and saved claims/relations tied to the selected note; workspace/team/org pulse, signals, top metadata, and source-person coverage live on Dashboard.
@@ -172,8 +172,8 @@ npm run test:supabase:live
 
 ### Useful files
 
-- `src/note-import.ts` - pure parser for pasted meeting notes and transcripts, including header extraction, transcript cleanup, conservative date handling, participant detection, and linked metadata normalization.
-- `src/note-import-files.ts` - client-side TXT/Markdown/DOCX/PDF file validation and text import adapter for the Notes import panel.
+- `src/note-import.ts` - pure parser for pasted meeting notes and transcripts, including header extraction, transcript cleanup, timestamped VTT/SRT/plain-text chunks, conservative date handling, participant detection, and linked metadata normalization.
+- `src/note-import-files.ts` - client-side TXT/Markdown/DOCX/PDF/VTT/SRT file validation, text import adapter, and preview-only audio summary helper for the Notes import panel.
 - `src/note-import-docx.ts` and `src/note-import-pdf.ts` - client-side document text extraction helpers for DOCX document XML and selectable PDF text.
 - `src/map-layout.ts` - pure relationship-map lane/density/layout helper for current/historical lanes, node positions, selected relation fallback, and overflow counts.
 - `src/premium-ui.ts` - pure helpers for context-header status, command palette items/filtering, metadata token suggestions, dashboard drilldown routing, and save-state labels.
@@ -204,4 +204,4 @@ npm run test:supabase:live
 - Confidence scoring is deterministic and bounded on the existing `claims.confidence` and `relations.score` fields. It is evidence-strength guidance for review and ordering, not an automated investment or compliance decision.
 - Normalized research entities use deterministic/manual keys plus a small local ontology for the demo issuer/security set, parent industry sectors, and default demo watchlists. External security-master integration, portfolio-specific membership sync, and fuzzy source-person identity resolution are deferred.
 - Default automated RLS coverage is still migration/schema contract coverage; `npm run test:supabase:live` adds opt-in live local auth bootstrap/invite-gating coverage when Docker Desktop and Supabase are running.
-- Note import supports pasted text plus TXT/Markdown/DOCX/PDF file content import into the workbench. Scanned-PDF OCR, durable transcript chunks, audio transcription, and RMS integrations are deferred.
+- Note import supports pasted text plus TXT/Markdown/DOCX/PDF/VTT/SRT file content import into the workbench and preview-only audio file selection. Scanned-PDF OCR, durable transcript chunk storage, actual audio transcription, and RMS integrations are deferred.

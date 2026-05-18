@@ -186,14 +186,18 @@ test('note import is an inline notes panel without adding a rail mode', () => {
   const noteActions = notesPage.slice(noteActionsStart, noteActionsEnd);
 
   assert.match(source, /import \{ parsePastedNoteImport, type ParsedNoteImport \} from '\.\/note-import'/);
-  assert.match(source, /import \{ NOTE_IMPORT_FILE_ACCEPT, readNoteImportFile \} from '\.\/note-import-files'/);
+  assert.match(source, /import \{ NOTE_IMPORT_FILE_ACCEPT, AUDIO_IMPORT_FILE_ACCEPT, readNoteImportFile, summarizeAudioImportFile \} from '\.\/note-import-files'/);
   assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive' \| 'admin'/);
   assert.match(notesPage, /noteImportOpen/);
   assert.match(notesPage, /note-import-panel/);
   assert.match(notesPage, /note-import-input/);
   assert.match(notesPage, /type="file"/);
   assert.match(notesPage, /accept=\{NOTE_IMPORT_FILE_ACCEPT\}/);
-  assert.match(notesPage, /Choose TXT, Markdown, DOCX, or PDF/);
+  assert.match(notesPage, /Choose TXT, Markdown, DOCX, PDF, VTT, or SRT/);
+  assert.match(notesPage, /accept=\{AUDIO_IMPORT_FILE_ACCEPT\}/);
+  assert.match(notesPage, /Choose audio/);
+  assert.match(notesPage, /note-import-audio-status/);
+  assert.match(notesPage, /note-import-transcript-preview/);
   assert.match(notesPage, /note-import-preview/);
   assert.match(notesPage, /note-import-actions/);
   assert.match(notesPage, /note-import-warning/);
@@ -217,7 +221,12 @@ test('note import parses pasted content and applies only to workbench state', ()
   assert.match(fileSource, /setParsedFileNoteImport\(imported\)/);
   assert.match(fileSource, /setNoteImportFileError\(''\)/);
   assert.match(fileSource, /setNoteImportFileError\(error instanceof Error \? error\.message : String\(error\)\)/);
+  assert.match(fileSource, /setAudioImportSummary\(null\)/);
+  assert.match(source, /function importAudioFile/);
+  assert.match(source, /summarizeAudioImportFile\(file\)/);
   assert.match(source, /const parsedImport = parsedFileNoteImport \?\? parsedNoteImport/);
+  assert.match(source, /const canApplyParsedImport = Boolean\(parsedImport\.body\.trim\(\)\)/);
+  assert.match(source, /onClick=\{\(\) => applyImportedNoteToWorkbench\(parsedImport\)\}/);
   assert.match(source, />Apply to workbench</);
   assert.match(applySource, /setSelectedNoteId\(''\)/);
   assert.match(applySource, /setNoteTitle\(imported\.title \?\? ''\)/);

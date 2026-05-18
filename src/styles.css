@@ -647,6 +647,52 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.note-import-transcript-preview {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.note-import-transcript-preview span {
+  color: var(--accent);
+  font-weight: 760;
+}
+
+.note-import-audio-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink-2);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.note-import-audio-status b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-import-audio-status small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
 .note-import-actions {
   display: flex;
   flex-wrap: wrap;

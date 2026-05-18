@@ -9,15 +9,24 @@ export interface NoteImportFileLike {
   arrayBuffer?(): Promise<ArrayBuffer>;
 }
 
-export const NOTE_IMPORT_FILE_ACCEPT = '.txt,.md,.markdown,.docx,.pdf';
+export interface AudioImportFileSummary {
+  filename: string;
+  sizeBytes: number;
+  status: 'preview_only';
+  message: string;
+}
+
+export const NOTE_IMPORT_FILE_ACCEPT = '.txt,.md,.markdown,.docx,.pdf,.vtt,.srt';
+export const AUDIO_IMPORT_FILE_ACCEPT = '.mp3,.m4a,.wav,.webm,.mp4,.aac';
 export const NOTE_IMPORT_FILE_MAX_BYTES = 1048576;
 
-const supportedExtensions = new Set(['txt', 'md', 'markdown', 'docx', 'pdf']);
+const supportedExtensions = new Set(['txt', 'md', 'markdown', 'docx', 'pdf', 'vtt', 'srt']);
+const supportedAudioExtensions = new Set(['mp3', 'm4a', 'wav', 'webm', 'mp4', 'aac']);
 
 export async function readNoteImportFile(file: NoteImportFileLike): Promise<ParsedNoteImport> {
   const extension = fileExtension(file.name);
   if (!supportedExtensions.has(extension)) {
-    throw new Error('Unsupported note import file type. Choose a .txt, .md, .markdown, .docx, or .pdf file.');
+    throw new Error('Unsupported note import file type. Choose a .txt, .md, .markdown, .docx, .pdf, .vtt, or .srt file.');
   }
   if (file.size > NOTE_IMPORT_FILE_MAX_BYTES) {
     throw new Error('Note import file is too large. Choose a file up to 1 MB.');
@@ -25,6 +34,19 @@ export async function readNoteImportFile(file: NoteImportFileLike): Promise<Pars
 
   const text = await readFileTextByType(file, extension);
   return parsePastedNoteImport(text, { fallbackTitle: filenameWithoutExtension(file.name) });
+}
+
+export function summarizeAudioImportFile(file: Pick<NoteImportFileLike, 'name' | 'size'>): AudioImportFileSummary {
+  const extension = fileExtension(file.name);
+  if (!supportedAudioExtensions.has(extension)) {
+    throw new Error('Unsupported audio import file type. Choose a .mp3, .m4a, .wav, .webm, .mp4, or .aac file.');
+  }
+  return {
+    filename: filenameFromPath(file.name),
+    sizeBytes: file.size,
+    status: 'preview_only',
+    message: 'Audio transcription is not wired yet. Add a transcript fixture or pasted transcript text before applying.'
+  };
 }
 
 async function readFileTextByType(file: NoteImportFileLike, extension: string): Promise<string> {
@@ -60,6 +82,10 @@ function fileExtension(name: string): string {
 }
 
 function filenameWithoutExtension(name: string): string {
-  const base = name.trim().replace(/^.*[\\/]/u, '');
+  const base = filenameFromPath(name);
   return base.replace(/\.[^.]+$/u, '').trim() || 'Imported note';
+}
+
+function filenameFromPath(name: string): string {
+  return name.trim().replace(/^.*[\\/]/u, '');
 }

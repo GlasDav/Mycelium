@@ -33,6 +33,8 @@ body .map-filter-bar,
 body .map-density-control,
 body .metadata-chip-input,
 body .note-import-preview,
+body .note-import-transcript-preview,
+body .note-import-audio-status,
 body .markdown-slash-palette {
   background: var(--surface-elevated);
   border-color: rgba(15, 118, 110, 0.13);

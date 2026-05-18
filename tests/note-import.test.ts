@@ -9,6 +9,8 @@ import {
 import {
   NOTE_IMPORT_FILE_ACCEPT,
   NOTE_IMPORT_FILE_MAX_BYTES,
+  AUDIO_IMPORT_FILE_ACCEPT,
+  summarizeAudioImportFile,
   readNoteImportFile,
   type NoteImportFileLike
 } from '../src/note-import-files';
@@ -85,6 +87,56 @@ Operator: Thanks everyone.
   assert(parsed.body.includes('Morgan Chen: Blackwell supply is tight.'));
   assert.deepEqual(parsed.sourcePeople, ['Dana Lee', 'Morgan Chen']);
   assertIncludes(warningCodes(parsed), 'generic_speaker_ignored');
+});
+
+test('VTT transcript imports expose timestamped chunks and clean note body', () => {
+  const parsed = parsePastedNoteImport(`
+WEBVTT
+
+00:00:01.000 --> 00:00:05.000
+Dana Lee: Nvidia demand is strong.
+
+00:00:05.000 --> 00:00:08.500
+Speaker 1: Blackwell supply is improving.
+  `);
+
+  assert.equal(parsed.transcriptChunks?.length, 2);
+  assert.deepEqual(parsed.transcriptChunks?.[0], {
+    startTime: '00:00:01.000',
+    endTime: '00:00:05.000',
+    speaker: 'Dana Lee',
+    text: 'Nvidia demand is strong.'
+  });
+  assert.deepEqual(parsed.transcriptChunks?.[1], {
+    startTime: '00:00:05.000',
+    endTime: '00:00:08.500',
+    text: 'Blackwell supply is improving.'
+  });
+  assert.equal(parsed.body, 'Dana Lee: Nvidia demand is strong.\nBlackwell supply is improving.');
+  assert.deepEqual(parsed.sourcePeople, ['Dana Lee']);
+  assertIncludes(warningCodes(parsed), 'generic_speaker_ignored');
+});
+
+test('plain timestamped transcript text captures speaker and start time chunks', () => {
+  const parsed = parsePastedNoteImport(`
+[00:01] Dana Lee: Nvidia demand is strong.
+[00:04] Morgan Chen: GPU supply is tight.
+  `);
+
+  assert.deepEqual(parsed.transcriptChunks, [
+    {
+      startTime: '00:01',
+      speaker: 'Dana Lee',
+      text: 'Nvidia demand is strong.'
+    },
+    {
+      startTime: '00:04',
+      speaker: 'Morgan Chen',
+      text: 'GPU supply is tight.'
+    }
+  ]);
+  assert.equal(parsed.body, 'Dana Lee: Nvidia demand is strong.\nMorgan Chen: GPU supply is tight.');
+  assert.deepEqual(parsed.sourcePeople, ['Dana Lee', 'Morgan Chen']);
 });
 
 test('ambiguous numeric dates are not inferred and produce a warning', () => {
@@ -207,7 +259,7 @@ function binaryImportFile(name: string, bytes: Uint8Array): NoteImportFileLike &
 test('text note import reads client-side text and falls back to filename title', async () => {
   const parsed = await readNoteImportFile(importFile('Nvidia channel check.txt', 'Nvidia demand is strong.'));
 
-  assert.equal(NOTE_IMPORT_FILE_ACCEPT, '.txt,.md,.markdown,.docx,.pdf');
+  assert.equal(NOTE_IMPORT_FILE_ACCEPT, '.txt,.md,.markdown,.docx,.pdf,.vtt,.srt');
   assert.equal(parsed.title, 'Nvidia demand is strong.');
   assert.equal(parsed.body, 'Nvidia demand is strong.');
   assert.deepEqual(parsed.tickers, ['NVDA']);
@@ -225,6 +277,50 @@ test('markdown note import preserves markdown content', async () => {
 
   assert.equal(parsed.title, '# Nvidia meeting');
   assert.equal(parsed.body, '# Nvidia meeting\n- Demand remains **strong**.');
+});
+
+test('VTT and SRT transcript files are accepted as timestamped transcript fixtures', async () => {
+  const vtt = await readNoteImportFile(importFile('expert-call.vtt', `WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+Dana Lee: Nvidia demand is strong.`));
+  const srt = await readNoteImportFile(importFile('expert-call.srt', `1
+00:00:02,000 --> 00:00:06,000
+Morgan Chen: Blackwell supply is tight.`));
+
+  assert.equal(vtt.title, 'Nvidia demand is strong.');
+  assert.deepEqual(vtt.transcriptChunks, [{
+    startTime: '00:00:01.000',
+    endTime: '00:00:04.000',
+    speaker: 'Dana Lee',
+    text: 'Nvidia demand is strong.'
+  }]);
+  assert.equal(srt.title, 'Blackwell supply is tight.');
+  assert.deepEqual(srt.transcriptChunks, [{
+    startTime: '00:00:02,000',
+    endTime: '00:00:06,000',
+    speaker: 'Morgan Chen',
+    text: 'Blackwell supply is tight.'
+  }]);
+});
+
+test('audio import summary validates supported audio files without reading content', () => {
+  const summary = summarizeAudioImportFile({ name: 'expert-call.M4A', size: 4_200_000, text: async () => 'unused' });
+
+  assert.equal(AUDIO_IMPORT_FILE_ACCEPT, '.mp3,.m4a,.wav,.webm,.mp4,.aac');
+  assert.deepEqual(summary, {
+    filename: 'expert-call.M4A',
+    sizeBytes: 4_200_000,
+    status: 'preview_only',
+    message: 'Audio transcription is not wired yet. Add a transcript fixture or pasted transcript text before applying.'
+  });
+});
+
+test('audio import summary rejects unsupported audio file extensions', () => {
+  assert.throws(
+    () => summarizeAudioImportFile({ name: 'expert-call.mov', size: 42, text: async () => 'unused' }),
+    /Unsupported audio import file type/
+  );
 });
 
 test('binary note import routes DOCX and PDF files to document parsers', async () => {

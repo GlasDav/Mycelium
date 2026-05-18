@@ -13,6 +13,13 @@ export interface NoteImportParseOptions {
   fallbackDate?: string;
 }
 
+export interface TranscriptChunk {
+  startTime: string;
+  endTime?: string;
+  speaker?: string;
+  text: string;
+}
+
 export interface NoteImportWarning {
   code: 'ambiguous_date' | 'missing_body' | 'generic_speaker_ignored';
   message: string;
@@ -20,11 +27,14 @@ export interface NoteImportWarning {
   line?: number;
 }
 
+export type TranscriptImportWarning = NoteImportWarning;
+
 export interface ParsedNoteImport extends MetadataArrays {
   title: string;
   body: string;
   observedAt?: string;
   linkedEntities: LinkedEntity[];
+  transcriptChunks?: TranscriptChunk[];
   warnings: NoteImportWarning[];
 }
 
@@ -84,13 +94,15 @@ const monthNumbers: Record<string, string> = {
 
 const genericSpeakerLabels = new Set(['speaker', 'analyst', 'operator', 'moderator', 'q', 'a', 'unknown']);
 const timestamp = String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:[.,]\d{1,3})?`;
-const timestampRangeLine = new RegExp(String.raw`^\s*${timestamp}\s*-->\s*${timestamp}(?:\s+.*)?$`, 'u');
-const leadingTimestamp = new RegExp(String.raw`^\s*\[?\s*${timestamp}\s*\]?\s*`, 'u');
+const timestampRangeLine = new RegExp(String.raw`^\s*(${timestamp})\s*-->\s*(${timestamp})(?:\s+.*)?$`, 'u');
+const leadingTimestamp = new RegExp(String.raw`^\s*\[?\s*(${timestamp})\s*\]?\s*`, 'u');
 
 export function parsePastedNoteImport(raw: string, options: NoteImportParseOptions = {}): ParsedNoteImport {
   const warnings: NoteImportWarning[] = [];
   const metadata = emptyMetadataArrays();
   const bodyLines: string[] = [];
+  const transcriptChunks: TranscriptChunk[] = [];
+  let pendingCue: Pick<TranscriptChunk, 'startTime' | 'endTime'> | undefined;
   let titleHeader = '';
   let subjectHeader = '';
   let observedAt: string | undefined;
@@ -100,6 +112,12 @@ export function parsePastedNoteImport(raw: string, options: NoteImportParseOptio
 
   lines.forEach((rawLine, index) => {
     const lineNumber = index + 1;
+    const cue = parseTimestampRangeLine(rawLine);
+    if (cue) {
+      pendingCue = cue;
+      return;
+    }
+    const leadingTime = parseLeadingTimestamp(rawLine);
     const cleaned = cleanTranscriptLine(rawLine);
     if (!cleaned) return;
 
@@ -132,7 +150,18 @@ export function parsePastedNoteImport(raw: string, options: NoteImportParseOptio
     }
 
     const speakerCleaned = cleanSpeakerLine(cleaned, metadata, warnings, lineNumber);
-    if (speakerCleaned) bodyLines.push(speakerCleaned);
+    if (speakerCleaned.bodyLine) {
+      bodyLines.push(speakerCleaned.bodyLine);
+      const chunkTimes = pendingCue ?? (leadingTime ? { startTime: leadingTime } : undefined);
+      if (chunkTimes) {
+        transcriptChunks.push({
+          ...chunkTimes,
+          ...(speakerCleaned.speaker ? { speaker: speakerCleaned.speaker } : {}),
+          text: speakerCleaned.text
+        });
+      }
+    }
+    pendingCue = undefined;
   });
 
   if (!observedAt && options.fallbackDate) {
@@ -165,8 +194,19 @@ export function parsePastedNoteImport(raw: string, options: NoteImportParseOptio
     observedAt,
     ...canonicalMetadata,
     linkedEntities,
+    ...(transcriptChunks.length > 0 ? { transcriptChunks } : {}),
     warnings
   };
+}
+
+function parseTimestampRangeLine(rawLine: string): Pick<TranscriptChunk, 'startTime' | 'endTime'> | undefined {
+  const match = rawLine.trim().match(timestampRangeLine);
+  if (!match) return undefined;
+  return { startTime: match[1], endTime: match[2] };
+}
+
+function parseLeadingTimestamp(rawLine: string): string | undefined {
+  return rawLine.trim().match(leadingTimestamp)?.[1];
 }
 
 function cleanTranscriptLine(rawLine: string): string {
@@ -187,9 +227,14 @@ function parseHeader(line: string): { name: HeaderName; value: string } | undefi
   return { name, value: match[2].trim() };
 }
 
-function cleanSpeakerLine(line: string, metadata: MetadataArrays, warnings: NoteImportWarning[], lineNumber: number): string {
+function cleanSpeakerLine(
+  line: string,
+  metadata: MetadataArrays,
+  warnings: NoteImportWarning[],
+  lineNumber: number
+): { bodyLine: string; speaker?: string; text: string } {
   const speakerMatch = line.match(/^([A-Za-z][A-Za-z0-9 .'-]{0,70})\s*:\s*(.*)$/u);
-  if (!speakerMatch) return line;
+  if (!speakerMatch) return { bodyLine: line, text: line };
 
   const label = speakerMatch[1].trim();
   const text = speakerMatch[2].trim();
@@ -200,15 +245,15 @@ function cleanSpeakerLine(line: string, metadata: MetadataArrays, warnings: Note
       value: label,
       line: lineNumber
     });
-    return text;
+    return { bodyLine: text, text };
   }
 
   if (isNamedSpeaker(label)) {
     metadata.sourcePeople.push(label);
-    return text ? `${label}: ${text}` : `${label}:`;
+    return { bodyLine: text ? `${label}: ${text}` : `${label}:`, speaker: label, text };
   }
 
-  return line;
+  return { bodyLine: line, text: line };
 }
 
 function isGenericSpeaker(label: string): boolean {

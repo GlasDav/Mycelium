@@ -51,7 +51,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 188 default tests.
+- [x] Validation passing: build + 193 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -120,14 +120,18 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - Notes-only import panel parses pasted meeting notes and transcript text into title, observed date, body, participants, and linked metadata,
   - imports apply to the unsaved workbench for analyst review instead of auto-saving,
   - existing `/api/notes` creation handles import-shaped payloads with no new route, schema, or RLS changes.
-- [x] TXT/Markdown file import v1 added:
-  - Notes-only import panel reads `.txt`, `.md`, and `.markdown` files client-side,
+- [x] TXT/Markdown/VTT/SRT file import v1 added:
+  - Notes-only import panel reads `.txt`, `.md`, `.markdown`, `.vtt`, and `.srt` files client-side,
   - imported file text uses the same parser preview and unsaved workbench apply path,
   - no backend upload route or attachment storage was added.
 - [x] DOCX/PDF file import v1 added:
   - Notes-only import panel reads `.docx` and `.pdf` files client-side,
   - DOCX document text and selectable PDF text use the same parser preview and unsaved workbench apply path,
   - scanned/image-only PDF OCR, durable file storage, and backend upload routes remain deferred.
+- [x] Client-only transcript/audio foundation added:
+  - VTT/SRT/plain transcript timestamps are exposed as typed preview chunks while saved notes remain clean text,
+  - the Notes import panel has a preview-only audio file selector for supported audio extensions,
+  - no audio upload, storage, provider call, or transcription route was added.
 - [x] Optional extraction-provider seam added:
   - server graph materialization can use an injected async claim extraction provider,
   - provider drafts are normalized through deterministic temporal/provenance/confidence helpers,
@@ -172,7 +176,7 @@ Expected result:
   - note filtering and sorting helpers.
   - premium context header, command palette, metadata token options, dashboard drilldowns, and imported premium CSS contracts.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
-  - pasted note/transcript plus TXT/Markdown/DOCX/PDF file import parsing, UI contracts, and existing note-create route contracts.
+  - pasted note/transcript plus TXT/Markdown/DOCX/PDF/VTT/SRT file import parsing, preview-only audio shell UI contracts, and existing note-create route contracts.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
   - organization admin lifecycle, invite/team/member tests, multi-team access scopes, and personal-note graph privacy.
@@ -327,9 +331,9 @@ Goal: move from in-browser mock to production-shaped architecture.
 Goal: reduce friction for actual analysts by capturing research where it already happens: calls, meetings, transcripts, files, chat, and mobile notes.
 
 - [x] Import pasted meeting notes with templates. **Done for Notes-only pasted note/transcript import v1.**
-- [x] Add transcript/file upload path. **Done for client-side TXT/Markdown/DOCX/PDF content import; durable file storage remains deferred.**
-- [x] Parse DOCX/PDF/TXT/Markdown. **Done for client-side text extraction; scanned-PDF OCR remains deferred.**
-- [ ] Add audio upload transcription for expert calls, company meetings, and internal research discussions.
+- [x] Add transcript/file upload path. **Done for client-side TXT/Markdown/DOCX/PDF/VTT/SRT content import; durable file storage remains deferred.**
+- [x] Parse DOCX/PDF/TXT/Markdown/VTT/SRT. **Done for client-side text extraction and timestamped transcript previews; scanned-PDF OCR remains deferred.**
+- [ ] Add audio upload transcription for expert calls, company meetings, and internal research discussions. **Preview-only audio selection exists; real upload/transcription remains deferred.**
 - [ ] Add live/near-live meeting transcription design:
   - speaker diarization,
   - timestamped transcript chunks,

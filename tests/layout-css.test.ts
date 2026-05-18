@@ -79,6 +79,8 @@ test('note import layout selectors keep pasted imports compact', () => {
     '.note-import-panel',
     '.note-import-input',
     '.note-import-preview',
+    '.note-import-transcript-preview',
+    '.note-import-audio-status',
     '.note-import-actions',
     '.note-import-warning'
   ]) {

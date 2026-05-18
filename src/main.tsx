@@ -112,7 +112,7 @@ import {
 } from './note-filters';
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
-import { NOTE_IMPORT_FILE_ACCEPT, readNoteImportFile } from './note-import-files';
+import { NOTE_IMPORT_FILE_ACCEPT, AUDIO_IMPORT_FILE_ACCEPT, readNoteImportFile, summarizeAudioImportFile } from './note-import-files';
 import {
   buildMapLaneModel,
   mapDensityLimits,
@@ -287,6 +287,7 @@ function App() {
   const [noteImportText, setNoteImportText] = useState('');
   const [parsedFileNoteImport, setParsedFileNoteImport] = useState<ParsedNoteImport | null>(null);
   const [noteImportFileError, setNoteImportFileError] = useState('');
+  const [audioImportSummary, setAudioImportSummary] = useState<ReturnType<typeof summarizeAudioImportFile> | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('notes');
   const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>('workspace');
@@ -793,8 +794,20 @@ function App() {
       const imported = await readNoteImportFile(file);
       setParsedFileNoteImport(imported);
       setNoteImportFileError('');
+      setAudioImportSummary(null);
     } catch (error) {
       setParsedFileNoteImport(null);
+      setNoteImportFileError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function importAudioFile(file: File | undefined) {
+    if (!file) return;
+    try {
+      setAudioImportSummary(summarizeAudioImportFile(file));
+      setNoteImportFileError('');
+    } catch (error) {
+      setAudioImportSummary(null);
       setNoteImportFileError(error instanceof Error ? error.message : String(error));
     }
   }
@@ -880,6 +893,8 @@ function App() {
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
   const parsedImport = parsedFileNoteImport ?? parsedNoteImport as ParsedNoteImportForUi;
+  const canApplyParsedImport = Boolean(parsedImport.body.trim());
+  const transcriptChunkPreview = parsedImport.transcriptChunks?.slice(0, 2) ?? [];
   const noteImportWarnings = noteImportFileError ? [noteImportFileError, ...(parsedImport.warnings ?? [])] : parsedImport.warnings ?? [];
   const noteImportMetadata = metadataArraysFromSource(metadataFromParsedNoteImport(parsedImport));
   const noteImportTags = [
@@ -1115,15 +1130,37 @@ function App() {
                     event.currentTarget.value = '';
                   }}
                 />
-                Choose TXT, Markdown, DOCX, or PDF
+                Choose TXT, Markdown, DOCX, PDF, VTT, or SRT
+              </label>
+              <label className="note-import-file-button">
+                <input
+                  type="file"
+                  accept={AUDIO_IMPORT_FILE_ACCEPT}
+                  onChange={event => {
+                    importAudioFile(event.target.files?.[0]);
+                    event.currentTarget.value = '';
+                  }}
+                />
+                Choose audio
               </label>
             </div>
+            {audioImportSummary && <div className="note-import-audio-status">
+              <b>{audioImportSummary.filename}</b>
+              <span>{formatBytes(audioImportSummary.sizeBytes)}</span>
+              <small>{audioImportSummary.message}</small>
+            </div>}
             <div className="note-import-preview">
               <b>{parsedImport.title || 'Untitled import'}</b>
               <span>{parsedImport.observedAt || 'Observed date not found'}</span>
               <p>{parsedImport.body.trim() || 'Paste note text to preview the imported workbench draft.'}</p>
               {noteImportTags.length > 0 && <small>{noteImportTags.slice(0, 8).join(' / ')}</small>}
             </div>
+            {parsedImport.transcriptChunks && parsedImport.transcriptChunks.length > 0 && <div className="note-import-transcript-preview">
+              <span>{parsedImport.transcriptChunks.length} timestamped chunk{parsedImport.transcriptChunks.length === 1 ? '' : 's'}</span>
+              {transcriptChunkPreview.map((chunk, index) => <small key={`${chunk.startTime}-${index}`}>
+                {chunk.startTime}{chunk.endTime ? `-${chunk.endTime}` : ''}{chunk.speaker ? ` ${chunk.speaker}` : ''}: {chunk.text}
+              </small>)}
+            </div>}
             {noteImportWarnings.length > 0 && <div className="note-import-warning">
               {noteImportWarnings.map((warning, index) => {
                 const message = noteImportWarningMessage(warning);
@@ -1131,7 +1168,7 @@ function App() {
               })}
             </div>}
             <div className="note-import-actions">
-              <button type="button" onClick={() => applyImportedNoteToWorkbench(parsedNoteImport)} disabled={!parsedImport.body.trim()}>Apply to workbench</button>
+              <button type="button" onClick={() => applyImportedNoteToWorkbench(parsedImport)} disabled={!canApplyParsedImport}>Apply to workbench</button>
               <button type="button" onClick={() => setNoteImportOpen(false)}>Close</button>
             </div>
           </section>}
@@ -2623,6 +2660,14 @@ function metadataFromParsedNoteImport(imported: ParsedNoteImport): FrontendMetad
 
 function noteImportWarningMessage(warning: NoteImportWarningForUi): string {
   return typeof warning === 'string' ? warning : warning.message;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(kb >= 10 ? 0 : 1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
 }
 
 function addTag(values: string[], value: string, transform: (value: string) => string = item => item): string[] {
