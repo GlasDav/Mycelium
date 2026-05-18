@@ -19,7 +19,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Initial polished dark editorial UX pass inspired by Notion, Granola, and Obsidian.
 - [x] Minimal note-taking-first UI pass with headerless aligned workbench, large primary editor, live extraction side panel, workspace pulse, recent notes rail, and responsive mobile layout.
 - [x] Premium institutional workstation UI pass added:
-  - persistent context header with page/note/scope/as-of/save state,
+  - persistent page-aware context header with note/scope/as-of/save state,
   - compact status toasts and disabled/read-only/saving feedback,
   - `Ctrl+K` command palette with keyboard selection,
   - focus mode for note capture,
@@ -51,7 +51,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 187 default tests.
+- [x] Validation passing: build + 188 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,

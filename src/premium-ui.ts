@@ -132,6 +132,14 @@ const pageLabels: Record<PremiumViewMode, string> = {
   admin: 'Organisation admin'
 };
 
+const pageHeadings: Record<PremiumViewMode, string> = {
+  notes: 'Untitled note',
+  dashboard: 'Dashboard',
+  map: 'Relationship map',
+  archive: 'Note archive',
+  admin: 'Organisation admin'
+};
+
 const scopeLabels: Record<AccessScope, string> = {
   personal: 'Personal',
   team: 'Team',
@@ -142,6 +150,7 @@ export function buildContextHeaderModel(input: ContextHeaderInput): ContextHeade
   const scopeLabel = input.accessScope ? scopeLabels[input.accessScope] : '';
   const asOfLabel = input.mapAsOf ? `As of ${input.mapAsOf}` : '';
   const statusLabel = saveStatusLabel(input);
+  const noteTitle = input.selectedNoteTitle?.trim();
   const badges = [
     scopeLabel,
     input.viewMode === 'map' && input.mapAsOf && input.latestAsOf
@@ -153,7 +162,7 @@ export function buildContextHeaderModel(input: ContextHeaderInput): ContextHeade
   return {
     pageLabel: pageLabels[input.viewMode],
     workspaceLabel: workspaceLabel(input.userRole, input.teamName),
-    noteLabel: input.selectedNoteTitle?.trim() || 'Untitled note',
+    noteLabel: input.viewMode === 'notes' ? noteTitle || pageHeadings.notes : pageHeadings[input.viewMode],
     scopeLabel,
     asOfLabel,
     statusLabel,

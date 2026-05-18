@@ -21,7 +21,7 @@ const baseCommandContext: PremiumCommandContext = {
   selectedNoteTitle: 'Nvidia channel check'
 };
 
-test('context header model summarizes page, note, scope, as-of, and save state', () => {
+test('context header model summarizes page, scope, as-of, and save state', () => {
   const model = buildContextHeaderModel({
     viewMode: 'map',
     userRole: 'PM',
@@ -38,11 +38,25 @@ test('context header model summarizes page, note, scope, as-of, and save state',
 
   assert.equal(model.pageLabel, 'Relationship map');
   assert.equal(model.workspaceLabel, 'PM / Semis');
-  assert.equal(model.noteLabel, 'Nvidia channel check');
+  assert.equal(model.noteLabel, 'Relationship map');
   assert.equal(model.scopeLabel, 'Team');
   assert.equal(model.asOfLabel, 'As of 2026-05-01');
   assert.equal(model.statusLabel, 'Unsaved changes');
   assert.deepEqual(model.badges, ['Team', 'Historical']);
+});
+
+test('context header title is note-specific only on the notes page', () => {
+  const notesModel = buildContextHeaderModel({
+    viewMode: 'notes',
+    selectedNoteTitle: 'Nvidia channel check'
+  });
+  const dashboardModel = buildContextHeaderModel({
+    viewMode: 'dashboard',
+    selectedNoteTitle: 'Nvidia channel check'
+  });
+
+  assert.equal(notesModel.noteLabel, 'Nvidia channel check');
+  assert.equal(dashboardModel.noteLabel, 'Dashboard');
 });
 
 test('command palette items expose workflow actions and filter by label or shortcut', () => {
