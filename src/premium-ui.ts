@@ -179,7 +179,7 @@ export function buildCommandItems(context: PremiumCommandContext): CommandItem[]
       id: 'save-note',
       section: 'Notes',
       label: noteTitle ? `Save ${noteTitle}` : 'Save note',
-      shortcut: 'Cmd/Ctrl+Enter',
+      shortcut: 'Ctrl+Enter',
       disabled: !context.canSaveNote
     },
     {

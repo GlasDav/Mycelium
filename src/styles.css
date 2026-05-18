@@ -65,6 +65,10 @@ button {
   grid-template-columns: 64px 56px minmax(0, 1fr);
 }
 
+.app-main.without-notes-sidebar {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
 .left-rail {
   position: sticky;
   top: 14px;
@@ -2787,7 +2791,8 @@ textarea::placeholder {
 }
 
 @media (max-width: 760px) {
-  .app-main {
+  .app-main,
+  .app-main.without-notes-sidebar {
     grid-template-columns: 1fr;
     padding: 10px;
   }

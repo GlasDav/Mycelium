@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Command, Search, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
 import { filterCommandItems, type CommandItem, type ContextHeaderModel } from './premium-ui';
 
 export function ContextHeader({
@@ -25,7 +25,7 @@ export function ContextHeader({
       {model.badges.map(badge => <span key={badge}>{badge}</span>)}
       <strong className={model.statusTone}>{model.statusLabel}</strong>
       {canToggleFocusMode && <button type="button" onClick={onToggleFocusMode}>{focusMode ? 'Exit focus' : 'Focus'}</button>}
-      <button type="button" className="command-trigger" onClick={onOpenCommands}><Command size={14}/>K</button>
+      <button type="button" className="command-trigger" onClick={onOpenCommands}><Search size={14}/>Ctrl+K</button>
     </div>
   </header>;
 }

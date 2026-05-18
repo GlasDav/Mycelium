@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-17_
+_Last updated: 2026-05-18_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -21,14 +21,14 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Premium institutional workstation UI pass added:
   - persistent context header with page/note/scope/as-of/save state,
   - compact status toasts and disabled/read-only/saving feedback,
-  - `Cmd/Ctrl+K` command palette with keyboard selection,
+  - `Ctrl+K` command palette with keyboard selection,
   - focus mode for note capture,
   - ontology-backed metadata token suggestions while preserving manual entries,
   - actionable dashboard drilldowns into Map and Archive,
   - active map filter chips, polished current/historical lanes, and selected-relation density pinning,
   - relation review controls in the detail drawer,
   - imported premium CSS partial with focus-visible and responsive layout coverage.
-- [x] Collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, access scope/location, and team filters.
+- [x] Notes-only collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, access scope/location, and team filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
 - [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
 - [x] Left-rail page navigation now renders separate notes, dashboard, relationship map, and full-width archive pages instead of crowding every surface into the front page.
@@ -51,7 +51,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 184 default tests.
+- [x] Validation passing: build + 187 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,

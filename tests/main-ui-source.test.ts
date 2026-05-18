@@ -21,6 +21,17 @@ test('notes sidebar has independently collapsible filters', () => {
   assert.match(source, /sidebar-note-row/);
 });
 
+test('notes sidebar is only mounted for the notes page', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const appReturnEnd = source.indexOf('function NotesSidebar');
+  assert(appReturnStart >= 0 && appReturnEnd > appReturnStart, 'App render source is missing');
+  const appReturn = source.slice(appReturnStart, appReturnEnd);
+
+  assert.match(appReturn, /viewMode === 'notes' && <NotesSidebar/);
+  assert.match(source, /viewMode !== 'notes' \? 'without-notes-sidebar' : ''/);
+});
+
 test('sidebar note clicks load the note into the note workbench', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
 
@@ -117,6 +128,21 @@ test('markdown editor exposes display editing only with undo and redo controls',
   assert.match(editor, /execCommand\('redo'\)/);
   assert.match(editor, /key === 'z'/);
   assert.match(editor, /key === 'y'/);
+});
+
+test('visible keyboard hints avoid Apple-specific command labels', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const editorStart = source.indexOf('function MarkdownEditor');
+  const editorEnd = source.indexOf('function MarkdownPreview');
+  assert(editorStart >= 0 && editorEnd > editorStart, 'MarkdownEditor source is missing');
+  const editor = source.slice(editorStart, editorEnd);
+
+  assert.doesNotMatch(source, /<Command\s/);
+  assert.doesNotMatch(source, /Ctrl\/Cmd|Cmd\/Ctrl|⌘/);
+  assert.doesNotMatch(source, /metaKey/);
+  assert.match(source, /Ctrl\+Enter/);
+  assert.match(editor, /Ctrl\+Z/);
+  assert.match(editor, /Ctrl\+Y/);
 });
 
 test('markdown editor exposes slash command palette keyboard wiring', () => {

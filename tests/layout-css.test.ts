@@ -29,6 +29,7 @@ test('notes sidebar and metadata controls have stable layout selectors', () => {
     '.context-header',
     '.command-palette',
     '.status-toast-stack',
+    '.app-main.without-notes-sidebar',
     '.notes-sidebar',
     '.notes-sidebar.collapsed',
     '.note-filter-panel',
@@ -61,6 +62,14 @@ test('notes sidebar and metadata controls have stable layout selectors', () => {
   ]) {
     assert.match(css, new RegExp(`${selector.replace('.', '\\.')}\\s*\\{`), `${selector} rule is missing`);
   }
+});
+
+test('non-notes pages reclaim the notes sidebar grid column', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const match = css.match(/\.app-main\.without-notes-sidebar\s*\{(?<body>[^}]+)\}/);
+  assert(match?.groups?.body, 'without-notes-sidebar shell rule is missing');
+
+  assert.match(match.groups.body, /grid-template-columns\s*:\s*64px\s+minmax\(0,\s*1fr\)/);
 });
 
 test('note import layout selectors keep pasted imports compact', () => {

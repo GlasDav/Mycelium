@@ -23,7 +23,6 @@ import {
   ChevronRight,
   CircleDot,
   ClipboardPaste,
-  Command,
   Edit3,
   Eye,
   FilePlus2,
@@ -869,6 +868,11 @@ function App() {
   const selectedNote = selectedNoteId ? graph?.visibleNotes.find(note => note.id === selectedNoteId) : undefined;
   const canEditSelectedNote = !selectedNoteId || selectedNote?.authorId === user?.id;
   const workbenchActionLabel = selectedNoteId ? 'Save note' : 'Add note';
+  const appMainClass = [
+    'app-main',
+    viewMode === 'notes' && notesCollapsed ? 'notes-collapsed' : '',
+    viewMode !== 'notes' ? 'without-notes-sidebar' : ''
+  ].filter(Boolean).join(' ');
   const subjects = graph ? [...graph.companies, ...graph.themes] : [];
   const selectedSynth = subjects.find(s => s.subject === selected) ?? graph?.companies[0] ?? graph?.themes[0];
   const subjectRelations = mapGraph?.relations.filter(r => !selectedSynth || relationMatchesSubject(r, selectedSynth.subject)) ?? [];
@@ -989,7 +993,7 @@ function App() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const key = event.key.toLowerCase();
-      const modifier = event.metaKey || event.ctrlKey;
+      const modifier = event.ctrlKey;
       if (modifier && key === 'k') {
         event.preventDefault();
         setCommandPaletteOpen(open => !open);
@@ -1012,7 +1016,7 @@ function App() {
     return <AuthScreen authClient={authClient} error={authError || appError} onError={setAuthError} />;
   }
 
-  return <main className={`app-main ${notesCollapsed ? 'notes-collapsed' : ''}`}>
+  return <main className={appMainClass}>
     <aside className="left-rail" aria-label="Workspace navigation">
       <div className="mark"><span>M</span></div>
       <nav>
@@ -1025,7 +1029,7 @@ function App() {
       <button className="rail-footer" type="button" onClick={signOut} title="Sign out" aria-label="Sign out"><LogOut size={16}/><span>{user.role}</span></button>
     </aside>
 
-    <NotesSidebar
+    {viewMode === 'notes' && <NotesSidebar
       collapsed={notesCollapsed}
       filters={noteFilters}
       notes={filteredNotes}
@@ -1065,7 +1069,7 @@ function App() {
         clearedDraftSignatureRef.current = '';
         setViewMode('notes');
       }}
-    />
+    />}
 
     <section className={`shell page-shell ${viewMode}-page`}>
       <ContextHeader
@@ -1151,7 +1155,7 @@ function App() {
             <MetadataChipInput label="Participants" values={sourcePeople} options={noteFilterOptions.sourcePeople} onChange={setSourcePeople} placeholder="Add person" disabled={!canEditSelectedNote} />
           </div>
           <div className="capture-actions">
-            <button onClick={saveWorkbenchNote} disabled={!draft.trim() || !canEditSelectedNote || workbenchSaving}>{workbenchSaving ? 'Saving...' : workbenchActionLabel} <span><Command size={13}/> Enter</span></button>
+            <button onClick={saveWorkbenchNote} disabled={!draft.trim() || !canEditSelectedNote || workbenchSaving}>{workbenchSaving ? 'Saving...' : workbenchActionLabel} <span><Save size={13}/> Ctrl+Enter</span></button>
           </div>
           {selectedNoteId && !canEditSelectedNote && <p className="note-edit-lock"><LockKeyhole size={13}/> Only the note author can save changes.</p>}
         </article>
@@ -1754,16 +1758,16 @@ function MarkdownEditor({
   const [slashTriggerLength, setSlashTriggerLength] = useState(0);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const tools: { command: RichMarkdownCommand; label: string; shortcut: string; icon: React.ReactNode }[] = [
-    { command: 'undo', label: 'Undo', shortcut: 'Ctrl/Cmd+Z', icon: <Undo2 size={15}/> },
-    { command: 'redo', label: 'Redo', shortcut: 'Ctrl/Cmd+Y', icon: <Redo2 size={15}/> },
-    { command: 'bold', label: 'Bold', shortcut: 'Ctrl/Cmd+B', icon: <Bold size={15}/> },
-    { command: 'italic', label: 'Italic', shortcut: 'Ctrl/Cmd+I', icon: <Italic size={15}/> },
-    { command: 'underline', label: 'Underline', shortcut: 'Ctrl/Cmd+U', icon: <Underline size={15}/> },
-    { command: 'heading-1', label: 'Heading 1', shortcut: 'Ctrl/Cmd+Alt+1', icon: <Heading1 size={15}/> },
-    { command: 'heading-2', label: 'Heading 2', shortcut: 'Ctrl/Cmd+Alt+2', icon: <Heading2 size={15}/> },
-    { command: 'heading-3', label: 'Heading 3', shortcut: 'Ctrl/Cmd+Alt+3', icon: <Heading3 size={15}/> },
-    { command: 'font-small', label: 'Small text', shortcut: 'Ctrl/Cmd+Shift+,', icon: <CaseLower size={15}/> },
-    { command: 'font-large', label: 'Large text', shortcut: 'Ctrl/Cmd+Shift+.', icon: <CaseUpper size={15}/> },
+    { command: 'undo', label: 'Undo', shortcut: 'Ctrl+Z', icon: <Undo2 size={15}/> },
+    { command: 'redo', label: 'Redo', shortcut: 'Ctrl+Y', icon: <Redo2 size={15}/> },
+    { command: 'bold', label: 'Bold', shortcut: 'Ctrl+B', icon: <Bold size={15}/> },
+    { command: 'italic', label: 'Italic', shortcut: 'Ctrl+I', icon: <Italic size={15}/> },
+    { command: 'underline', label: 'Underline', shortcut: 'Ctrl+U', icon: <Underline size={15}/> },
+    { command: 'heading-1', label: 'Heading 1', shortcut: 'Ctrl+Alt+1', icon: <Heading1 size={15}/> },
+    { command: 'heading-2', label: 'Heading 2', shortcut: 'Ctrl+Alt+2', icon: <Heading2 size={15}/> },
+    { command: 'heading-3', label: 'Heading 3', shortcut: 'Ctrl+Alt+3', icon: <Heading3 size={15}/> },
+    { command: 'font-small', label: 'Small text', shortcut: 'Ctrl+Shift+,', icon: <CaseLower size={15}/> },
+    { command: 'font-large', label: 'Large text', shortcut: 'Ctrl+Shift+.', icon: <CaseUpper size={15}/> },
     { command: 'bullet-list', label: 'Bulleted list', shortcut: 'Toolbar', icon: <List size={15}/> },
     { command: 'numbered-list', label: 'Numbered list', shortcut: 'Toolbar', icon: <ListOrdered size={15}/> },
     { command: 'quote', label: 'Quote', shortcut: 'Toolbar', icon: <Quote size={15}/> },
@@ -1909,7 +1913,7 @@ function MarkdownEditor({
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (readOnly) return;
-    const modifier = event.metaKey || event.ctrlKey;
+    const modifier = event.ctrlKey;
     const key = event.key.toLowerCase();
     if (modifier && key === 'enter') {
       event.preventDefault();

@@ -48,7 +48,7 @@ test('context header model summarizes page, note, scope, as-of, and save state',
 test('command palette items expose workflow actions and filter by label or shortcut', () => {
   const items = buildCommandItems(baseCommandContext);
 
-  assert(items.some(item => item.id === 'save-note' && item.shortcut === 'Cmd/Ctrl+Enter' && !item.disabled));
+  assert(items.some(item => item.id === 'save-note' && item.shortcut === 'Ctrl+Enter' && !item.disabled));
   assert(items.some(item => item.id === 'open-history' && item.label.includes('history')));
   assert(items.some(item => item.id === 'clear-filters'));
   assert(!items.some(item => item.id === 'open-admin'));
