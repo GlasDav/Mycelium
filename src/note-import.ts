@@ -18,6 +18,7 @@ export interface TranscriptChunk {
   endTime?: string;
   speaker?: string;
   text: string;
+  confidence?: number;
 }
 
 export interface NoteImportWarning {

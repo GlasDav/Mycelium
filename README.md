@@ -74,7 +74,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 
 ### What it demonstrates
 
-- Calm research-capture workspace with editable note titles, persistent page-aware premium context header, focus mode, compact save/draft/read-only status, status toasts, Notes-only pasted meeting-note/transcript and TXT/Markdown/DOCX/PDF/VTT/SRT file import that previews parsed fields before applying them to the unsaved workbench, a preview-only audio-file shell for future transcription, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Ctrl + Enter` note intake.
+- Calm research-capture workspace with editable note titles, persistent page-aware premium context header, focus mode, compact save/draft/read-only status, status toasts, Notes-only pasted meeting-note/transcript and TXT/Markdown/DOCX/PDF/VTT/SRT file import that previews parsed fields before applying them to the unsaved workbench, consent-gated transcript-only audio import through an injectable provider seam, display-mode markdown editing, formatting toolbar, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note save mode, and keyboard-friendly `Ctrl + Enter` note intake.
 - `Ctrl+K` command palette for page switching, note actions, import/history, focus mode, and filter clearing.
 - Left-rail page navigation separates clean current-note Notes, scoped Dashboard, relationship map, full-width note archive, and Organisation admin so each surface has its own workspace.
 - Notes only shows the active note, live extraction, and saved claims/relations tied to the selected note; workspace/team/org pulse, signals, top metadata, and source-person coverage live on Dashboard.
@@ -84,7 +84,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Server-backed recoverable workbench drafts, explicit saved-note editing, author-only note update enforcement, and read-only note revision history.
 - Supabase Auth-backed sign-in/sign-up flow where the first organization user becomes org admin and later same-domain signups require pending invites.
 - Supabase Postgres schema, raw migrations, RLS policies, and audit/event tables for a production path from day one.
-- Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, exposes scoped dashboard aggregates through `/api/dashboard`, returns historical graph projections through `/api/workspace?asOf=YYYY-MM-DD`, provides organization admin lifecycle routes, and can serve the built React app as one deployable Node service.
+- Fastify backend-for-frontend that serves `/api/*`, materializes the temporal claim graph, exposes scoped dashboard aggregates through `/api/dashboard`, returns historical graph projections through `/api/workspace?asOf=YYYY-MM-DD`, provides organization admin lifecycle routes, handles transcript-only audio import jobs and transcript chunks, and can serve the built React app as one deployable Node service.
 - Authenticated workspace JSON export/import routes for demo restore workflows, including dismissed relation review decisions.
 - Deterministic local extraction of companies, tickers, industries, themes, KPIs, and claims with ontology-backed aliases, live preview, and addable metadata suggestions.
 - Claim direction classification with citation snippets, approve/reject/edit review state, analyst review notes, participant correction, and persisted relation review controls.
@@ -105,7 +105,7 @@ This repo now includes a production-shaped Mycelium foundation for the investmen
 - Fastify
 - Supabase Auth/Postgres/RLS/Storage-ready local project
 - Local heuristic intelligence engine (`src/engine.ts`)
-- No paid APIs, secrets, or hosted model calls required
+- No paid APIs, secrets, hosted model calls, or default transcription provider required
 
 ### Setup
 
@@ -133,7 +133,7 @@ PORT=5174
 
 The local Supabase config uses `55321`-series host ports instead of the default `5432x` range to avoid Windows/Docker reserved-port conflicts.
 
-The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes with stock/theme/KPI metadata arrays, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies. The follow-up `supabase/migrations/202605090001_note_persistence_spine.sql` migration adds note drafts, note revision history, and author-only note update RLS. `supabase/migrations/202605090002_normalized_research_entities.sql` adds normalized research entities, note/claim entity links, linked-entity draft/history storage, access-following RLS policies, and indexes. `supabase/migrations/202605100001_organization_admin_structure.sql` adds org admin/member status, active/archived teams, pending invites, nullable team links for personal/organization notes, and canonical note/claim access scopes.
+The migration in `supabase/migrations/202605060001_production_foundation.sql` creates organizations, profiles, teams, notes with stock/theme/KPI metadata arrays, claims, relations, audit events, extraction jobs, auth bootstrap triggers, and RLS policies. The follow-up `supabase/migrations/202605090001_note_persistence_spine.sql` migration adds note drafts, note revision history, and author-only note update RLS. `supabase/migrations/202605090002_normalized_research_entities.sql` adds normalized research entities, note/claim entity links, linked-entity draft/history storage, access-following RLS policies, and indexes. `supabase/migrations/202605100001_organization_admin_structure.sql` adds org admin/member status, active/archived teams, pending invites, nullable team links for personal/organization notes, and canonical note/claim access scopes. `supabase/migrations/202605220001_audio_transcription_imports.sql` adds transcript-only audio import jobs, transcript chunks, draft audio-job linkage, note-access-following applied chunks, and a null-only raw audio storage path guard.
 
 ### Run locally
 
@@ -173,7 +173,8 @@ npm run test:supabase:live
 ### Useful files
 
 - `src/note-import.ts` - pure parser for pasted meeting notes and transcripts, including header extraction, transcript cleanup, timestamped VTT/SRT/plain-text chunks, conservative date handling, participant detection, and linked metadata normalization.
-- `src/note-import-files.ts` - client-side TXT/Markdown/DOCX/PDF/VTT/SRT file validation, text import adapter, and preview-only audio summary helper for the Notes import panel.
+- `src/audio-transcription.ts` - pure normalization from completed audio transcription jobs into the existing parsed note import shape.
+- `src/note-import-files.ts` - client-side TXT/Markdown/DOCX/PDF/VTT/SRT file validation, text import adapter, and audio file extension/size summary helper for the Notes import panel.
 - `src/note-import-docx.ts` and `src/note-import-pdf.ts` - client-side document text extraction helpers for DOCX document XML and selectable PDF text.
 - `src/map-layout.ts` - pure relationship-map lane/density/layout helper for current/historical lanes, node positions, selected relation fallback, and overflow counts.
 - `src/premium-ui.ts` - pure helpers for context-header status, command palette items/filtering, metadata token suggestions, dashboard drilldown routing, and save-state labels.
@@ -184,24 +185,24 @@ npm run test:supabase:live
 
 - `MVP_PLAN.md` — concise implementation plan and validation approach.
 - `src/engine.ts` — deterministic extraction, async extraction-provider fallback exports, confidence scoring, temporal relation detection, synthesis, and alerts.
-- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, Personal/Team/Organisation access scopes, multi-team membership, organization admin lifecycle, role-gated dashboard aggregation, workspace JSON export/import, note editing/history/drafts, claim/relation review behavior, and extraction provider boundary.
-- `server/app.ts` — Fastify BFF routes for workspace, scoped dashboard aggregates, organization admin lifecycle, workspace export/import, notes, note draft recovery, note history, claim review, relation review, audit events, and auth bootstrap.
-- `server/supabase-repository.ts` — Supabase repository adapter used by the BFF.
-- `supabase/migrations/202605060001_production_foundation.sql`, `supabase/migrations/202605090001_note_persistence_spine.sql`, `supabase/migrations/202605090002_normalized_research_entities.sql`, and `supabase/migrations/202605100001_organization_admin_structure.sql` — production-shaped Postgres schema, persistence spine tables, normalized entity links, organization administration, access scopes, and RLS policies.
-- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, note history drawer, observed/location controls, active team selection, organization admin page, stock/theme/KPI metadata token controls, action-backed empty states, Notes-only notes sidebar, page-aware premium context header/command palette/toasts, page-level notes/dashboard/map/archive/admin navigation, slash-command markdown editing, live extraction, current-note claim/relation review, dashboard metrics/charts/signals/source-person coverage/drilldowns, relationship map as-of timeline/lanes/filters/density/review/detail drawer, and archive.
+- `server/workspace-service.ts` — server-side graph materialization, permission-filtered workspace snapshots, Personal/Team/Organisation access scopes, multi-team membership, organization admin lifecycle, role-gated dashboard aggregation, workspace JSON export/import, note editing/history/drafts, audio transcription provider boundary, transcript job/chunk application, claim/relation review behavior, and extraction provider boundary.
+- `server/app.ts` — Fastify BFF routes for workspace, scoped dashboard aggregates, organization admin lifecycle, workspace export/import, notes, audio import jobs, transcript chunks, note draft recovery, note history, claim review, relation review, audit events, and auth bootstrap.
+- `server/supabase-repository.ts` — Supabase repository adapter used by the BFF, including audio import job/chunk mapping.
+- `supabase/migrations/202605060001_production_foundation.sql`, `supabase/migrations/202605090001_note_persistence_spine.sql`, `supabase/migrations/202605090002_normalized_research_entities.sql`, `supabase/migrations/202605100001_organization_admin_structure.sql`, and `supabase/migrations/202605220001_audio_transcription_imports.sql` — production-shaped Postgres schema, persistence spine tables, normalized entity links, organization administration, access scopes, transcript-only audio import persistence, and RLS policies.
+- `src/main.tsx` — Supabase Auth-backed workspace UI: capture, selected-note save mode, server draft recovery, audio import preview/apply wiring, note history drawer, observed/location controls, active team selection, organization admin page, stock/theme/KPI metadata token controls, action-backed empty states, Notes-only notes sidebar, page-aware premium context header/command palette/toasts, page-level notes/dashboard/map/archive/admin navigation, slash-command markdown editing, live extraction, current-note claim/relation review, dashboard metrics/charts/signals/source-person coverage/drilldowns, relationship map as-of timeline/lanes/filters/density/review/detail drawer, and archive.
 - `src/demo-guide.ts` and `src/empty-states.ts` — pure frontend guidance helpers for walkthrough content/storage and empty-state copy/action contracts.
 - `src/note-filters.ts` — pure helpers for note metadata normalization, filter option derivation, filtering, and sorting.
-- `tests/*.test.ts` — validation coverage for engine behavior, extraction-provider fallback, confidence scoring, direct temporal/as-of helpers, schema contract, workspace service behavior, organization admin lifecycle, multi-team access scopes, personal-note privacy, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, premium shell/helpers/CSS contracts, map timeline/layout contracts, document imports, page layout, markdown commands, and BFF routes.
+- `tests/*.test.ts` — validation coverage for engine behavior, extraction-provider fallback, confidence scoring, direct temporal/as-of helpers, schema contract, workspace service behavior, audio transcription import contracts, organization admin lifecycle, multi-team access scopes, personal-note privacy, historical workspace projections, dashboard aggregation/BFF routes, note update/draft/history persistence, workspace export/import, note filtering, guide helpers, empty-state helpers, premium shell/helpers/CSS contracts, map timeline/layout contracts, document imports, page layout, markdown commands, and BFF routes.
 - `tests/supabase-rls-live.ts` — opt-in local Supabase smoke test for auth bootstrap and invite gating.
 
 - `src/markdown-tools.ts` — pure helpers for markdown toolbar and slash-command formatting commands.
 
 ### Tradeoffs in this MVP
 
-- Extraction is deterministic and transparent by default. An async provider seam exists for future model-backed extraction, but no provider SDKs, paid APIs, secrets, or hosted model calls are wired in.
+- Extraction is deterministic and transparent by default. Async provider seams exist for future model-backed claim extraction and audio transcription, but no provider SDKs, paid APIs, secrets, hosted model calls, or default transcription provider are wired in.
 - Supabase local development requires Docker Desktop to be running.
 - The first extraction provider remains deterministic and transparent. Evidence-bearing saved-note edits reset derived claim/relation review state so stale analyst decisions do not silently attach to changed evidence.
 - Confidence scoring is deterministic and bounded on the existing `claims.confidence` and `relations.score` fields. It is evidence-strength guidance for review and ordering, not an automated investment or compliance decision.
 - Normalized research entities use deterministic/manual keys plus a small local ontology for the demo issuer/security set, parent industry sectors, and default demo watchlists. External security-master integration, portfolio-specific membership sync, and fuzzy source-person identity resolution are deferred.
 - Default automated RLS coverage is still migration/schema contract coverage; `npm run test:supabase:live` adds opt-in live local auth bootstrap/invite-gating coverage when Docker Desktop and Supabase are running.
-- Note import supports pasted text plus TXT/Markdown/DOCX/PDF/VTT/SRT file content import into the workbench and preview-only audio file selection. Scanned-PDF OCR, durable transcript chunk storage, actual audio transcription, and RMS integrations are deferred.
+- Note import supports pasted text plus TXT/Markdown/DOCX/PDF/VTT/SRT file content import into the workbench and transcript-only audio import through an injectable provider. Raw audio is not durably stored; applied transcript jobs/chunks persist as provenance metadata. Scanned-PDF OCR, durable file storage, real/default transcription provider wiring, and RMS integrations are deferred.

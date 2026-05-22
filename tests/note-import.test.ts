@@ -311,8 +311,8 @@ test('audio import summary validates supported audio files without reading conte
   assert.deepEqual(summary, {
     filename: 'expert-call.M4A',
     sizeBytes: 4_200_000,
-    status: 'preview_only',
-    message: 'Audio transcription is not wired yet. Add a transcript fixture or pasted transcript text before applying.'
+    status: 'selected',
+    message: 'Ready to transcribe after consent is confirmed.'
   });
 });
 

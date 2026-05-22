@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMemoryWorkspaceRepository, createWorkspaceService } from '../server/workspace-service';
+import {
+  createMemoryWorkspaceRepository,
+  createWorkspaceService,
+  type AudioTranscriptionProvider
+} from '../server/workspace-service';
 import { buildApp } from '../server/app';
 import type { Note, User } from '../src/engine';
 
@@ -28,16 +32,39 @@ const notes: Note[] = [
   }
 ];
 
-function buildTestApp(inputNotes: Note[] = notes) {
+function buildTestApp(inputNotes: Note[] = notes, audioProvider?: AudioTranscriptionProvider) {
   const repository = createMemoryWorkspaceRepository();
   repository.seed({ organizationId: 'org1', users, notes: inputNotes });
-  const service = createWorkspaceService(repository);
+  const service = createWorkspaceService(repository, undefined, audioProvider);
   const app = buildApp({
     service,
     resolveUserId: async request => request.headers.authorization?.replace(/^Bearer\s+/i, '') || undefined,
     authConfig: { supabaseUrl: 'http://localhost:55321', supabaseAnonKey: 'anon-test-key' }
   });
   return { app, repository };
+}
+
+function multipartBody(fields: Record<string, string>, file?: { name: string; contentType: string; content: string }) {
+  const boundary = `----mycelium-test-${Math.random().toString(36).slice(2)}`;
+  const chunks: Buffer[] = [];
+  const push = (value: string) => chunks.push(Buffer.from(value, 'utf8'));
+  for (const [name, value] of Object.entries(fields)) {
+    push(`--${boundary}\r\n`);
+    push(`Content-Disposition: form-data; name="${name}"\r\n\r\n`);
+    push(`${value}\r\n`);
+  }
+  if (file) {
+    push(`--${boundary}\r\n`);
+    push(`Content-Disposition: form-data; name="file"; filename="${file.name}"\r\n`);
+    push(`Content-Type: ${file.contentType}\r\n\r\n`);
+    push(file.content);
+    push('\r\n');
+  }
+  push(`--${boundary}--\r\n`);
+  return {
+    payload: Buffer.concat(chunks),
+    contentType: `multipart/form-data; boundary=${boundary}`
+  };
 }
 
 test('BFF requires auth and returns the permission-filtered workspace', async () => {
@@ -247,6 +274,205 @@ test('BFF accepts pasted transcript imports through the existing note create rou
   assert(claim.themes.includes('AI infrastructure'));
 });
 
+test('BFF creates audio import jobs from authenticated consented multipart uploads', async () => {
+  const providerCalls: { fileName: string; contentType: string; bytes: number }[] = [];
+  const audioProvider: AudioTranscriptionProvider = {
+    name: 'test-transcriber',
+    async transcribe(input) {
+      providerCalls.push({
+        fileName: input.fileName,
+        contentType: input.contentType,
+        bytes: input.bytes.byteLength
+      });
+      return {
+        text: 'Dana Lee: Nvidia demand remains strong through Q3.',
+        chunks: [{
+          chunkIndex: 0,
+          startMs: 1000,
+          endMs: 4500,
+          speaker: 'Dana Lee',
+          text: 'Nvidia demand remains strong through Q3.',
+          confidence: 0.89
+        }]
+      };
+    }
+  };
+  const { app } = buildTestApp(notes, audioProvider);
+  const upload = multipartBody({
+    consentConfirmed: 'true',
+    accessScope: 'team',
+    teamId: 'team-semis',
+    language: 'en'
+  }, {
+    name: 'expert-call.m4a',
+    contentType: 'audio/mp4',
+    content: 'audio-bytes'
+  });
+
+  const unauthorized = await app.inject({
+    method: 'POST',
+    url: '/api/audio-import-jobs',
+    headers: { 'content-type': upload.contentType },
+    payload: upload.payload
+  });
+  assert.equal(unauthorized.statusCode, 401);
+
+  const missingConsentUpload = multipartBody({ accessScope: 'team', teamId: 'team-semis' }, {
+    name: 'expert-call.m4a',
+    contentType: 'audio/mp4',
+    content: 'audio-bytes'
+  });
+  const missingConsent = await app.inject({
+    method: 'POST',
+    url: '/api/audio-import-jobs',
+    headers: { authorization: 'Bearer u1', 'content-type': missingConsentUpload.contentType },
+    payload: missingConsentUpload.payload
+  });
+  assert.equal(missingConsent.statusCode, 400);
+  assert.match(missingConsent.json().error, /consent/i);
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/audio-import-jobs',
+    headers: { authorization: 'Bearer u1', 'content-type': upload.contentType },
+    payload: upload.payload
+  });
+  assert.equal(created.statusCode, 200);
+  const body = created.json();
+  assert.equal(body.job.status, 'ready');
+  assert.equal(body.job.fileName, 'expert-call.m4a');
+  assert.equal(body.job.provider, 'test-transcriber');
+  assert.equal(body.job.accessScope, 'team');
+  assert.deepEqual(body.transcriptChunks.map((chunk: { speaker?: string; text: string; confidence?: number }) => [chunk.speaker, chunk.text, chunk.confidence]), [
+    ['Dana Lee', 'Nvidia demand remains strong through Q3.', 0.89]
+  ]);
+  assert.deepEqual(providerCalls, [{ fileName: 'expert-call.m4a', contentType: 'audio/mp4', bytes: 'audio-bytes'.length }]);
+
+  const loaded = await app.inject({
+    method: 'GET',
+    url: `/api/audio-import-jobs/${encodeURIComponent(body.job.id)}`,
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(loaded.statusCode, 200);
+  assert.equal(loaded.json().job.id, body.job.id);
+  assert.equal(loaded.json().transcriptChunks.length, 1);
+});
+
+test('BFF rejects invalid audio multipart upload shape before provider execution', async () => {
+  let providerCalls = 0;
+  const audioProvider: AudioTranscriptionProvider = {
+    name: 'test-transcriber',
+    async transcribe() {
+      providerCalls += 1;
+      return { text: 'Should not run' };
+    }
+  };
+  const { app } = buildTestApp(notes, audioProvider);
+
+  const invalidMime = multipartBody({ consentConfirmed: 'true', accessScope: 'personal' }, {
+    name: 'expert-call.wav',
+    contentType: 'text/plain',
+    content: 'not audio'
+  });
+  const invalidMimeResponse = await app.inject({
+    method: 'POST',
+    url: '/api/audio-import-jobs',
+    headers: { authorization: 'Bearer u1', 'content-type': invalidMime.contentType },
+    payload: invalidMime.payload
+  });
+  assert.equal(invalidMimeResponse.statusCode, 400);
+  assert.match(invalidMimeResponse.json().error, /mime|content type/i);
+
+  const missingTeam = multipartBody({ consentConfirmed: 'true', accessScope: 'team' }, {
+    name: 'expert-call.wav',
+    contentType: 'audio/wav',
+    content: 'audio-bytes'
+  });
+  const missingTeamResponse = await app.inject({
+    method: 'POST',
+    url: '/api/audio-import-jobs',
+    headers: { authorization: 'Bearer u1', 'content-type': missingTeam.contentType },
+    payload: missingTeam.payload
+  });
+  assert.equal(missingTeamResponse.statusCode, 400);
+  assert.match(missingTeamResponse.json().error, /team/i);
+  assert.equal(providerCalls, 0);
+});
+
+test('BFF note creation with audioImportJobId links transcript chunks to the saved note', async () => {
+  const audioProvider: AudioTranscriptionProvider = {
+    name: 'test-transcriber',
+    async transcribe() {
+      return {
+        text: 'Dana Lee: Nvidia demand remains strong through Q3.',
+        chunks: [{
+          chunkIndex: 0,
+          startMs: 1000,
+          endMs: 4500,
+          speaker: 'Dana Lee',
+          text: 'Nvidia demand remains strong through Q3.'
+        }]
+      };
+    }
+  };
+  const { app } = buildTestApp(notes, audioProvider);
+  const upload = multipartBody({
+    consentConfirmed: 'true',
+    accessScope: 'team',
+    teamId: 'team-semis'
+  }, {
+    name: 'expert-call.wav',
+    contentType: 'audio/wav',
+    content: 'audio-bytes'
+  });
+
+  const createdJob = await app.inject({
+    method: 'POST',
+    url: '/api/audio-import-jobs',
+    headers: { authorization: 'Bearer u1', 'content-type': upload.contentType },
+    payload: upload.payload
+  });
+  assert.equal(createdJob.statusCode, 200);
+  const jobId = createdJob.json().job.id;
+
+  const createdNote = await app.inject({
+    method: 'POST',
+    url: '/api/notes',
+    headers: { authorization: 'Bearer u1' },
+    payload: {
+      title: 'Dana Lee audio transcript',
+      body: 'Dana Lee: Nvidia demand remains strong through Q3.',
+      sourceType: 'Meeting transcript',
+      accessScope: 'team',
+      teamId: 'team-semis',
+      audioImportJobId: jobId,
+      linkedEntities: [{ type: 'source_person', role: 'source_person', key: 'dana-lee', name: 'Dana Lee' }]
+    }
+  });
+  assert.equal(createdNote.statusCode, 200);
+  const note = createdNote.json().visibleNotes.find((item: { title: string }) => item.title === 'Dana Lee audio transcript');
+  assert(note);
+
+  const chunks = await app.inject({
+    method: 'GET',
+    url: `/api/notes/${encodeURIComponent(note.id)}/transcript-chunks`,
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(chunks.statusCode, 200);
+  assert.deepEqual(chunks.json().transcriptChunks.map((chunk: { noteId?: string; text: string }) => [chunk.noteId, chunk.text]), [
+    [note.id, 'Nvidia demand remains strong through Q3.']
+  ]);
+
+  const appliedJob = await app.inject({
+    method: 'GET',
+    url: `/api/audio-import-jobs/${encodeURIComponent(jobId)}`,
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(appliedJob.statusCode, 200);
+  assert.equal(appliedJob.json().job.status, 'applied');
+  assert.equal(appliedJob.json().job.noteId, note.id);
+});
+
 test('BFF updates notes, exposes history, and reloads persisted review state', async () => {
   const { app } = buildTestApp();
 
@@ -346,6 +572,7 @@ test('BFF note draft routes persist and clear the recoverable workbench draft', 
       tickers: ['NVDA'],
       manualThemes: ['AI infrastructure'],
       kpis: ['demand'],
+      audioImportJobId: 'audio-job-draft',
       linkedEntities: [
         { type: 'source_person', role: 'source_person', key: 'dana-lee', name: 'Dana Lee' },
         { type: 'watchlist', role: 'watchlist', key: 'ai-capex', name: 'AI Capex' }
@@ -364,6 +591,7 @@ test('BFF note draft routes persist and clear the recoverable workbench draft', 
   assert.deepEqual(loaded.json().draft.tickers, ['NVDA']);
   assert.deepEqual(loaded.json().draft.sourcePeople, ['Dana Lee']);
   assert.deepEqual(loaded.json().draft.watchlistTags, ['AI Capex']);
+  assert.equal(loaded.json().draft.audioImportJobId, 'audio-job-draft');
 
   const deleted = await app.inject({
     method: 'DELETE',

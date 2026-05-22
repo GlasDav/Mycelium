@@ -8,7 +8,8 @@ const migrationFiles = [
   '202605060001_production_foundation.sql',
   '202605090001_note_persistence_spine.sql',
   '202605090002_normalized_research_entities.sql',
-  '202605100001_organization_admin_structure.sql'
+  '202605100001_organization_admin_structure.sql',
+  '202605220001_audio_transcription_imports.sql'
 ];
 const migrationsSql = migrationFiles
   .map(file => readFileSync(join(process.cwd(), 'supabase', 'migrations', file), 'utf8'))
@@ -116,4 +117,31 @@ test('organization admin migration adds access scopes, lifecycle state, and invi
   assert.match(sql, /create policy organization_invites_select_admin/i);
   assert.match(sql, /public\.handle_new_user\(\)[\s\S]*organization_invites/i);
   assert.match(sql, /No pending invitation/i);
+});
+
+test('audio transcription import migration adds transcript job and chunk persistence contracts', () => {
+  const sql = migrationsSql;
+
+  for (const table of ['audio_import_jobs', 'transcript_chunks']) {
+    assert.match(sql, new RegExp(`create table(?: if not exists)? public\\.${table}`, 'i'), `${table} table is missing`);
+    assert.match(sql, new RegExp(`alter table public\\.${table}\\s+enable row level security`, 'i'), `${table} RLS is missing`);
+  }
+
+  assert.match(sql, /status\s+text\s+not null\s+default 'processing'[\s\S]*check\s*\(\s*status\s+in\s*\('processing',\s*'ready',\s*'failed',\s*'applied'\)\s*\)/i);
+  assert.match(sql, /access_scope\s+text\s+not null[\s\S]*check\s*\(\s*access_scope\s+in\s*\('organization',\s*'team',\s*'personal'\)\s*\)/i);
+  assert.match(sql, /raw_storage_path/i, 'migration should explicitly block durable raw audio paths');
+  assert.match(sql, /selected_note_id\s+text\s+references public\.notes\(id\)/i);
+  assert.match(sql, /language\s+text/i);
+  assert.match(sql, /confidence\s+numeric\s+check\s*\(\s*confidence\s+is\s+null\s+or\s+\(confidence\s+>=\s+0\s+and\s+confidence\s+<=\s+1\)\s*\)/i);
+  assert.match(sql, /alter table public\.note_drafts[\s\S]*audio_import_job_id\s+text\s+references public\.audio_import_jobs\(id\)/i);
+  assert.match(sql, /check\s*\(\s*raw_storage_path\s+is\s+null\s*\)/i);
+  assert.match(sql, /create policy audio_import_jobs_select_self_or_note/i);
+  assert.match(sql, /create policy transcript_chunks_select_self_or_note/i);
+  assert.match(sql, /author_id\s*=\s*auth\.uid\(\)/i);
+  assert.match(sql, /transcript_chunks\.note_id\s+is\s+null/i);
+  assert.match(sql, /app\.can_access_note\(n\.org_id,\s*n\.access_scope,\s*n\.team_id,\s*n\.author_id\)/i);
+  assert.match(sql, /create index(?: if not exists)? audio_import_jobs_org_author_status_idx/i);
+  assert.match(sql, /create index(?: if not exists)? audio_import_jobs_note_id_idx/i);
+  assert.match(sql, /create index(?: if not exists)? transcript_chunks_note_id_idx/i);
+  assert.match(sql, /unique\s*\(\s*import_job_id,\s*chunk_index\s*\)/i);
 });

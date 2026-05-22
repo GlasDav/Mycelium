@@ -4,6 +4,7 @@ import type { ClaimExtractionProvider, Note, User } from '../src/engine';
 import {
   createMemoryWorkspaceRepository,
   createWorkspaceService,
+  type AudioTranscriptionProvider,
   type ClaimReviewStatus,
   type RelationReviewStatus,
   type WorkspaceExport
@@ -38,6 +39,13 @@ function buildService() {
   const repository = createMemoryWorkspaceRepository();
   const service = createWorkspaceService(repository);
   repository.seed({ organizationId: 'org1', users, notes });
+  return { repository, service };
+}
+
+function buildAudioService(provider?: AudioTranscriptionProvider) {
+  const repository = createMemoryWorkspaceRepository();
+  const service = createWorkspaceService(repository, undefined, provider);
+  repository.seed({ organizationId: 'org1', users, notes: [] });
   return { repository, service };
 }
 
@@ -100,6 +108,171 @@ test('workspace extraction fallback preserves graph materialization and audit be
     && event.metadata.claimCount === claims.length
     && event.metadata.relationCount === relations.length
   )));
+});
+
+test('audio import job persists deterministic provider transcript and chunks', async () => {
+  const providerCalls: string[] = [];
+  const provider: AudioTranscriptionProvider = {
+    name: 'deterministic-test',
+    async transcribe(input) {
+      providerCalls.push(`${input.fileName}:${input.contentType}:${input.bytes.byteLength}:${input.accessScope}:${input.teamId}`);
+      return {
+        text: 'Speaker 1: Nvidia demand is strong into Q3.',
+        chunks: [
+          { chunkIndex: 0, startMs: 0, endMs: 1500, speaker: 'Speaker 1', text: 'Nvidia demand is strong into Q3.', confidence: 0.91 }
+        ]
+      };
+    }
+  };
+  const { service } = buildAudioService(provider);
+
+  const job = await service.createAudioImportJob('u1', {
+    fileName: 'expert-call.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1, 2, 3, 4]),
+    accessScope: 'team',
+    teamId: 'team-semis'
+  });
+
+  assert.deepEqual(providerCalls, ['expert-call.wav:audio/wav:4:team:team-semis']);
+  assert.equal(job.status, 'ready');
+  assert.equal(job.provider, 'deterministic-test');
+  assert.equal(job.transcriptText, 'Speaker 1: Nvidia demand is strong into Q3.');
+  assert.equal(job.rawStoragePath, undefined);
+  assert.equal((await service.getAudioImportJob('u1', job.id))?.status, 'ready');
+});
+
+test('audio import job fails clearly when no transcription provider is configured', async () => {
+  const { repository, service } = buildAudioService();
+
+  const job = await service.createAudioImportJob('u1', {
+    fileName: 'company-meeting.m4a',
+    contentType: 'audio/mp4',
+    bytes: new Uint8Array([9, 8, 7]),
+    accessScope: 'personal'
+  });
+
+  assert.equal(job.status, 'failed');
+  assert.match(job.error ?? '', /audio transcription provider is not configured/i);
+  assert.equal(job.rawStoragePath, undefined);
+  assert.equal(repository.audioImportJobs[0].transcriptText, undefined);
+  assert.equal(repository.transcriptChunks.length, 0);
+});
+
+test('audio import job fails clearly when provider returns no transcript content', async () => {
+  const provider: AudioTranscriptionProvider = {
+    name: 'empty-test',
+    async transcribe() {
+      return { text: '   ', chunks: [{ chunkIndex: 0, text: '   ' }] };
+    }
+  };
+  const { repository, service } = buildAudioService(provider);
+
+  const job = await service.createAudioImportJob('u1', {
+    fileName: 'empty.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1]),
+    accessScope: 'personal'
+  });
+
+  assert.equal(job.status, 'failed');
+  assert.match(job.error ?? '', /no transcript text/i);
+  assert.equal(repository.transcriptChunks.length, 0);
+});
+
+test('applying a ready audio import job to note creation links chunks, audits, and materializes graph', async () => {
+  const provider: AudioTranscriptionProvider = {
+    name: 'deterministic-test',
+    async transcribe() {
+      return {
+        text: 'Nvidia Blackwell demand is strong into Q3 and GPU supply is tight.',
+        chunks: [
+          { chunkIndex: 0, startMs: 0, endMs: 2200, speaker: 'Dana', text: 'Nvidia Blackwell demand is strong into Q3.', confidence: 0.92 },
+          { chunkIndex: 1, startMs: 2200, endMs: 4100, speaker: 'Dana', text: 'GPU supply is tight.' }
+        ]
+      };
+    }
+  };
+  const { repository, service } = buildAudioService(provider);
+  const job = await service.createAudioImportJob('u1', {
+    fileName: 'expert-call.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1]),
+    accessScope: 'team',
+    teamId: 'team-semis'
+  });
+
+  const snapshot = await service.createNote('u1', {
+    title: 'transcribed expert call',
+    body: job.transcriptText ?? '',
+    visibility: 'team',
+    teamId: 'team-semis',
+    observedAt: '2026-05-06',
+    audioImportJobId: job.id
+  });
+
+  const note = snapshot.visibleNotes.find(item => item.title === 'transcribed expert call');
+  assert(note);
+  const appliedJob = await service.getAudioImportJob('u1', job.id);
+  assert.equal(appliedJob?.status, 'applied');
+  assert.equal(appliedJob?.noteId, note.id);
+  const chunks = await service.listNoteTranscriptChunks('u1', note.id);
+  assert.deepEqual(chunks.map(chunk => [chunk.noteId, chunk.chunkIndex, chunk.speaker, chunk.text, chunk.confidence]), [
+    [note.id, 0, 'Dana', 'Nvidia Blackwell demand is strong into Q3.', 0.92],
+    [note.id, 1, 'Dana', 'GPU supply is tight.', undefined]
+  ]);
+  assert(snapshot.claims.some(claim => claim.noteId === note.id && claim.text.includes('Blackwell demand')));
+  assert(repository.auditEvents.some(event => event.action === 'audio_import_job.created'));
+  assert(repository.auditEvents.some(event => event.action === 'audio_import_job.applied' && event.entityId === job.id));
+  assert(repository.auditEvents.some(event => event.action === 'graph.materialized'));
+});
+
+test('audio import job application rejects other-user and failed jobs', async () => {
+  const provider: AudioTranscriptionProvider = {
+    name: 'deterministic-test',
+    async transcribe() {
+      return { text: 'Nvidia demand is strong.', chunks: [{ chunkIndex: 0, text: 'Nvidia demand is strong.' }] };
+    }
+  };
+  const ready = buildAudioService(provider);
+  const otherUserJob = await ready.service.createAudioImportJob('u1', {
+    fileName: 'maya-call.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1]),
+    accessScope: 'team',
+    teamId: 'team-semis'
+  });
+
+  await assert.rejects(
+    () => ready.service.createNote('u2', {
+      title: 'wrong owner',
+      body: otherUserJob.transcriptText ?? '',
+      visibility: 'team',
+      teamId: 'team-consumer',
+      audioImportJobId: otherUserJob.id
+    }),
+    /not accessible|not ready/i
+  );
+
+  const failed = buildAudioService();
+  const failedJob = await failed.service.createAudioImportJob('u1', {
+    fileName: 'failed.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1]),
+    accessScope: 'team',
+    teamId: 'team-semis'
+  });
+
+  await assert.rejects(
+    () => failed.service.createNote('u1', {
+      title: 'failed transcript',
+      body: '',
+      visibility: 'team',
+      teamId: 'team-semis',
+      audioImportJobId: failedJob.id
+    }),
+    /not ready/i
+  );
 });
 
 test('workspace access scopes support organization, team, and author-only personal notes', async () => {
@@ -878,6 +1051,54 @@ test('workspace export and import preserve dismissed relation decisions', async 
   )));
 });
 
+test('workspace export and import include applied transcript jobs for visible notes only', async () => {
+  const provider: AudioTranscriptionProvider = {
+    name: 'deterministic-test',
+    async transcribe(input) {
+      return {
+        text: input.fileName.includes('visible')
+          ? 'Nvidia demand is strong from the visible transcript.'
+          : 'Apple services revenue is strong from the private transcript.',
+        chunks: [{ chunkIndex: 0, startMs: 0, endMs: 1000, speaker: 'Speaker 1', text: input.fileName }]
+      };
+    }
+  };
+  const source = buildAudioService(provider);
+  const visibleJob = await source.service.createAudioImportJob('u1', {
+    fileName: 'visible-call.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1]),
+    accessScope: 'team',
+    teamId: 'team-semis'
+  });
+  const privateUnappliedJob = await source.service.createAudioImportJob('u2', {
+    fileName: 'hidden-call.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([2]),
+    accessScope: 'personal'
+  });
+  await source.service.createNote('u1', {
+    title: 'visible transcribed note',
+    body: visibleJob.transcriptText ?? '',
+    visibility: 'team',
+    teamId: 'team-semis',
+    audioImportJobId: visibleJob.id
+  });
+
+  const exported = await source.service.exportWorkspace('u1');
+  assert(exported.audioImportJobs.some(job => job.id === visibleJob.id && job.status === 'applied'));
+  assert(!exported.audioImportJobs.some(job => job.id === privateUnappliedJob.id));
+  assert(exported.transcriptChunks.some(chunk => chunk.importJobId === visibleJob.id));
+
+  const targetRepository = createMemoryWorkspaceRepository();
+  targetRepository.seed({ organizationId: 'org2', users, notes: [] });
+  const targetService = createWorkspaceService(targetRepository);
+  const restored = await targetService.importWorkspace('u1', exported satisfies WorkspaceExport);
+  const restoredNote = restored.visibleNotes.find(note => note.title === 'visible transcribed note');
+  assert(restoredNote);
+  assert.deepEqual((await targetService.listNoteTranscriptChunks('u1', restoredNote.id)).map(chunk => chunk.text), ['visible-call.wav']);
+});
+
 test('workspace import does not apply reviewed relation state to pre-existing notes', async () => {
   const targetRepository = createMemoryWorkspaceRepository();
   targetRepository.seed({ organizationId: 'org1', users, notes });
@@ -895,7 +1116,9 @@ test('workspace import does not apply reviewed relation state to pre-existing no
       ...existingRelation,
       reviewStatus: 'dismissed',
       reviewNote: 'Should not apply to existing workspace.'
-    }]
+    }],
+    audioImportJobs: [],
+    transcriptChunks: []
   };
 
   await targetService.importWorkspace('u3', maliciousExport);

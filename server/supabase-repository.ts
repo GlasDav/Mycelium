@@ -10,11 +10,13 @@ import {
   type LinkedEntity
 } from '../src/entity-links';
 import type {
+  AudioImportJob,
   AuditEvent,
   OrganizationInvite,
   OrganizationTeam,
   NoteDraft,
   NoteRevision,
+  TranscriptChunkRecord,
   WorkspaceClaim,
   WorkspaceNote,
   WorkspaceRelation,
@@ -227,6 +229,31 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
     },
     async updateRelation(relation) {
       const { error } = await client.from('relations').update(mapRelationToRow(relation)).eq('id', relation.id);
+      if (error) throw error;
+    },
+    async listAudioImportJobs(orgId) {
+      const { data, error } = await client.from('audio_import_jobs').select('*').eq('org_id', orgId).order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapAudioImportJobFromRow);
+    },
+    async insertAudioImportJob(job) {
+      const { error } = await client.from('audio_import_jobs').insert(mapAudioImportJobToRow(job));
+      if (error) throw error;
+    },
+    async updateAudioImportJob(job) {
+      const { error } = await client.from('audio_import_jobs').update(mapAudioImportJobToRow(job)).eq('id', job.id);
+      if (error) throw error;
+    },
+    async listTranscriptChunks(orgId) {
+      const { data, error } = await client.from('transcript_chunks').select('*').eq('org_id', orgId).order('chunk_index', { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map(mapTranscriptChunkFromRow);
+    },
+    async replaceTranscriptChunksForJob(orgId, importJobId, chunks) {
+      const deleteResult = await client.from('transcript_chunks').delete().eq('org_id', orgId).eq('import_job_id', importJobId);
+      if (deleteResult.error) throw deleteResult.error;
+      if (!chunks.length) return;
+      const { error } = await client.from('transcript_chunks').insert(chunks.map(mapTranscriptChunkToRow));
       if (error) throw error;
     },
     async addAuditEvent(event) {
@@ -603,6 +630,7 @@ function mapNoteDraftFromRow(row: Record<string, any>): NoteDraft {
     tickers: row.tickers ?? [],
     manualThemes: row.manual_themes ?? [],
     kpis: row.kpis ?? [],
+    audioImportJobId: row.audio_import_job_id,
     updatedAt: row.updated_at
   }, linkedEntitiesFromJson(row.linked_entities));
 }
@@ -622,6 +650,7 @@ function mapNoteDraftToRow(draft: NoteDraft) {
     manual_themes: draft.manualThemes,
     kpis: draft.kpis,
     linked_entities: draft.linkedEntities ?? [],
+    audio_import_job_id: draft.audioImportJobId,
     updated_at: draft.updatedAt
   };
 }
@@ -719,6 +748,90 @@ function mapRelationToRow(relation: WorkspaceRelation) {
     review_note: relation.reviewNote,
     reviewer_id: relation.reviewerId,
     updated_at: relation.updatedAt
+  };
+}
+
+function mapAudioImportJobFromRow(row: Record<string, any>): AudioImportJob {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    authorId: row.author_id,
+    authorName: row.author_name,
+    team: row.team_name,
+    teamId: row.team_id,
+    visibility: row.visibility,
+    accessScope: row.access_scope ?? accessScopeFromVisibility(row.visibility),
+    provider: row.provider,
+    status: row.status,
+    fileName: row.file_name,
+    contentType: row.content_type,
+    selectedNoteId: row.selected_note_id,
+    language: row.language,
+    durationSeconds: row.duration_seconds == null ? undefined : Number(row.duration_seconds),
+    transcriptText: row.transcript_text,
+    error: row.error,
+    noteId: row.note_id,
+    rawStoragePath: undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapAudioImportJobToRow(job: AudioImportJob) {
+  return {
+    id: job.id,
+    org_id: job.orgId,
+    author_id: job.authorId,
+    author_name: job.authorName,
+    team_id: job.teamId,
+    team_name: job.team,
+    visibility: job.visibility,
+    access_scope: job.accessScope,
+    provider: job.provider,
+    status: job.status,
+    file_name: job.fileName,
+    content_type: job.contentType,
+    selected_note_id: job.selectedNoteId,
+    language: job.language,
+    duration_seconds: job.durationSeconds,
+    transcript_text: job.transcriptText,
+    error: job.error,
+    note_id: job.noteId,
+    raw_storage_path: null,
+    created_at: job.createdAt,
+    updated_at: job.updatedAt
+  };
+}
+
+function mapTranscriptChunkFromRow(row: Record<string, any>): TranscriptChunkRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    importJobId: row.import_job_id,
+    noteId: row.note_id,
+    chunkIndex: row.chunk_index,
+    startMs: row.start_ms,
+    endMs: row.end_ms,
+    speaker: row.speaker,
+    text: row.chunk_text,
+    confidence: row.confidence == null ? undefined : Number(row.confidence),
+    createdAt: row.created_at
+  };
+}
+
+function mapTranscriptChunkToRow(chunk: TranscriptChunkRecord) {
+  return {
+    id: chunk.id,
+    org_id: chunk.orgId,
+    import_job_id: chunk.importJobId,
+    note_id: chunk.noteId,
+    chunk_index: chunk.chunkIndex,
+    start_ms: chunk.startMs,
+    end_ms: chunk.endMs,
+    speaker: chunk.speaker,
+    chunk_text: chunk.text,
+    confidence: chunk.confidence,
+    created_at: chunk.createdAt
   };
 }
 

@@ -80,6 +80,8 @@ test('note import layout selectors keep pasted imports compact', () => {
     '.note-import-input',
     '.note-import-preview',
     '.note-import-transcript-preview',
+    '.note-import-consent',
+    '.note-import-audio-controls',
     '.note-import-audio-status',
     '.note-import-actions',
     '.note-import-warning'
@@ -98,6 +100,8 @@ test('note import layout selectors keep pasted imports compact', () => {
   assert.match(inputMatch.groups.body, /max-height\s*:\s*(2[4-9][0-9]|[3-5][0-9]{2})px/);
   assert.match(actionsMatch.groups.body, /display\s*:\s*flex/);
   assert.match(actionsMatch.groups.body, /flex-wrap\s*:\s*wrap/);
+  assert.match(css, /\.note-import-audio-controls\s*\{[^}]*flex-wrap\s*:\s*wrap/s);
+  assert.match(css, /\.note-import-consent\s*\{[^}]*grid-template-columns\s*:\s*auto\s+minmax\(0,\s*1fr\)/s);
 });
 
 test('note import panel does not shift the workbench editor row or button styling', () => {

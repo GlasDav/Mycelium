@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-18_
+_Last updated: 2026-05-22_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -51,7 +51,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 193 default tests.
+- [x] Validation passing: build + 208 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -128,10 +128,15 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - Notes-only import panel reads `.docx` and `.pdf` files client-side,
   - DOCX document text and selectable PDF text use the same parser preview and unsaved workbench apply path,
   - scanned/image-only PDF OCR, durable file storage, and backend upload routes remain deferred.
-- [x] Client-only transcript/audio foundation added:
+- [x] Transcript/audio foundation added:
   - VTT/SRT/plain transcript timestamps are exposed as typed preview chunks while saved notes remain clean text,
-  - the Notes import panel has a preview-only audio file selector for supported audio extensions,
-  - no audio upload, storage, provider call, or transcription route was added.
+  - the Notes import panel supports consent-gated audio selection for supported audio extensions,
+  - completed audio jobs normalize into the existing parsed import preview before save.
+- [x] Transcript-only audio capture v1 added:
+  - `POST /api/audio-import-jobs`, `GET /api/audio-import-jobs/:id`, and `GET /api/notes/:id/transcript-chunks` are authenticated BFF routes,
+  - audio bytes are passed only in memory to an injectable transcription provider; the default provider is intentionally not configured,
+  - applied jobs persist transcript job metadata and timestamped/speaker/confidence chunks while raw audio storage is explicitly blocked,
+  - note create/update can apply a ready audio import job, link chunks to the saved note, audit the event, and preserve claim-window inference at the graph layer.
 - [x] Optional extraction-provider seam added:
   - server graph materialization can use an injected async claim extraction provider,
   - provider drafts are normalized through deterministic temporal/provenance/confidence helpers,
@@ -176,10 +181,10 @@ Expected result:
   - note filtering and sorting helpers.
   - premium context header, command palette, metadata token options, dashboard drilldowns, and imported premium CSS contracts.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
-  - pasted note/transcript plus TXT/Markdown/DOCX/PDF/VTT/SRT file import parsing, preview-only audio shell UI contracts, and existing note-create route contracts.
+  - pasted note/transcript plus TXT/Markdown/DOCX/PDF/VTT/SRT file import parsing, audio transcription normalization/UI contracts, audio import BFF routes, and existing note-create/update route contracts.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
-  - organization admin lifecycle, invite/team/member tests, multi-team access scopes, and personal-note graph privacy.
+  - organization admin lifecycle, invite/team/member tests, multi-team access scopes, personal-note graph privacy, and transcript chunk export/import contracts.
 
 ## Priority Ladder
 
@@ -333,14 +338,15 @@ Goal: reduce friction for actual analysts by capturing research where it already
 - [x] Import pasted meeting notes with templates. **Done for Notes-only pasted note/transcript import v1.**
 - [x] Add transcript/file upload path. **Done for client-side TXT/Markdown/DOCX/PDF/VTT/SRT content import; durable file storage remains deferred.**
 - [x] Parse DOCX/PDF/TXT/Markdown/VTT/SRT. **Done for client-side text extraction and timestamped transcript previews; scanned-PDF OCR remains deferred.**
-- [ ] Add audio upload transcription for expert calls, company meetings, and internal research discussions. **Preview-only audio selection exists; real upload/transcription remains deferred.**
+- [x] Add transcript-only audio transcription capture foundation for expert calls, company meetings, and internal research discussions. **Done with consent-gated multipart upload, injectable provider seam, preview/apply-to-workbench flow, applied transcript chunk persistence, and no durable raw audio storage. The default provider remains not configured.**
+- [ ] Wire a real transcription provider once compliance, cost, and data-retention requirements are explicit.
 - [ ] Add live/near-live meeting transcription design:
   - speaker diarization,
-  - timestamped transcript chunks,
-  - source confidence,
+  - richer timestamped transcript chunks,
+  - source confidence review,
   - correction workflow,
-  - explicit consent/compliance controls.
-- [ ] Convert transcript chunks into reviewed claims with source timestamps and temporal windows.
+  - expanded consent/compliance controls.
+- [ ] Convert transcript chunks directly into reviewed claims with source timestamps and temporal windows. **Current v1 materializes claims from the reviewed saved note body; chunk-level claim provenance remains deferred.**
 - [ ] Add calendar/meeting metadata attachment.
 - [ ] Add Slack/Teams/email ingest design, not necessarily implementation.
 - [ ] Add source licensing/compliance notes for external data.

@@ -12,13 +12,14 @@ export interface NoteImportFileLike {
 export interface AudioImportFileSummary {
   filename: string;
   sizeBytes: number;
-  status: 'preview_only';
+  status: 'selected';
   message: string;
 }
 
 export const NOTE_IMPORT_FILE_ACCEPT = '.txt,.md,.markdown,.docx,.pdf,.vtt,.srt';
 export const AUDIO_IMPORT_FILE_ACCEPT = '.mp3,.m4a,.wav,.webm,.mp4,.aac';
 export const NOTE_IMPORT_FILE_MAX_BYTES = 1048576;
+export const AUDIO_IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024;
 
 const supportedExtensions = new Set(['txt', 'md', 'markdown', 'docx', 'pdf', 'vtt', 'srt']);
 const supportedAudioExtensions = new Set(['mp3', 'm4a', 'wav', 'webm', 'mp4', 'aac']);
@@ -41,11 +42,14 @@ export function summarizeAudioImportFile(file: Pick<NoteImportFileLike, 'name' |
   if (!supportedAudioExtensions.has(extension)) {
     throw new Error('Unsupported audio import file type. Choose a .mp3, .m4a, .wav, .webm, .mp4, or .aac file.');
   }
+  if (file.size > AUDIO_IMPORT_FILE_MAX_BYTES) {
+    throw new Error('Audio import file is too large. Choose a file up to 50 MB.');
+  }
   return {
     filename: filenameFromPath(file.name),
     sizeBytes: file.size,
-    status: 'preview_only',
-    message: 'Audio transcription is not wired yet. Add a transcript fixture or pasted transcript text before applying.'
+    status: 'selected',
+    message: 'Ready to transcribe after consent is confirmed.'
   };
 }
 

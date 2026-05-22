@@ -145,7 +145,89 @@ export interface NoteDraft {
   companyTags: string[];
   watchlistTags: string[];
   sourcePeople: string[];
+  audioImportJobId?: string;
   updatedAt: string;
+}
+
+export type AudioImportJobStatus = 'processing' | 'ready' | 'failed' | 'applied';
+
+export interface AudioImportJob {
+  id: string;
+  orgId: string;
+  authorId: string;
+  authorName: string;
+  team?: string;
+  teamId?: string;
+  visibility: Visibility;
+  accessScope: AccessScope;
+  provider: string;
+  status: AudioImportJobStatus;
+  fileName: string;
+  contentType: string;
+  selectedNoteId?: string;
+  language?: string;
+  durationSeconds?: number;
+  transcriptText?: string;
+  error?: string;
+  noteId?: string;
+  rawStoragePath?: undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TranscriptChunkRecord {
+  id: string;
+  orgId: string;
+  importJobId: string;
+  noteId?: string;
+  chunkIndex: number;
+  startMs?: number;
+  endMs?: number;
+  speaker?: string;
+  text: string;
+  confidence?: number;
+  createdAt: string;
+}
+
+export interface CreateAudioImportJobInput {
+  fileName: string;
+  contentType: string;
+  bytes: Uint8Array;
+  selectedNoteId?: string;
+  language?: string;
+  durationSeconds?: number;
+  visibility?: Visibility;
+  accessScope?: AccessScope;
+  teamId?: string;
+}
+
+export interface AudioTranscriptionProviderInput extends CreateAudioImportJobInput {
+  orgId: string;
+  userId: string;
+  userName: string;
+  visibility: Visibility;
+  accessScope: AccessScope;
+  teamId?: string;
+  teamName?: string;
+}
+
+export interface AudioTranscriptionChunkOutput {
+  chunkIndex?: number;
+  startMs?: number;
+  endMs?: number;
+  speaker?: string;
+  text: string;
+  confidence?: number;
+}
+
+export interface AudioTranscriptionOutput {
+  text: string;
+  chunks?: AudioTranscriptionChunkOutput[];
+}
+
+export interface AudioTranscriptionProvider {
+  name: string;
+  transcribe(input: AudioTranscriptionProviderInput): Promise<AudioTranscriptionOutput>;
 }
 
 export interface WorkspaceSummary {
@@ -312,6 +394,8 @@ export interface WorkspaceExport {
   exportedAt: string;
   snapshot: WorkspaceSnapshot;
   reviewedRelations: WorkspaceRelation[];
+  audioImportJobs: AudioImportJob[];
+  transcriptChunks: TranscriptChunkRecord[];
 }
 
 export interface CreateNoteInput {
@@ -333,6 +417,7 @@ export interface CreateNoteInput {
   companyTags?: string[];
   watchlistTags?: string[];
   sourcePeople?: string[];
+  audioImportJobId?: string;
 }
 
 export interface UpdateNoteInput {
@@ -350,6 +435,7 @@ export interface UpdateNoteInput {
   companyTags?: string[];
   watchlistTags?: string[];
   sourcePeople?: string[];
+  audioImportJobId?: string;
 }
 
 export interface UpsertNoteDraftInput {
@@ -368,6 +454,7 @@ export interface UpsertNoteDraftInput {
   companyTags?: string[];
   watchlistTags?: string[];
   sourcePeople?: string[];
+  audioImportJobId?: string;
 }
 
 export interface UpdateClaimInput {
@@ -422,13 +509,19 @@ export interface WorkspaceRepository {
   listRelations(orgId: string): Promise<WorkspaceRelation[]>;
   replaceRelations(orgId: string, relations: WorkspaceRelation[]): Promise<void>;
   updateRelation(relation: WorkspaceRelation): Promise<void>;
+  listAudioImportJobs(orgId: string): Promise<AudioImportJob[]>;
+  insertAudioImportJob(job: AudioImportJob): Promise<void>;
+  updateAudioImportJob(job: AudioImportJob): Promise<void>;
+  listTranscriptChunks(orgId: string): Promise<TranscriptChunkRecord[]>;
+  replaceTranscriptChunksForJob(orgId: string, importJobId: string, chunks: TranscriptChunkRecord[]): Promise<void>;
   addAuditEvent(event: AuditEvent): Promise<void>;
   listAuditEvents(orgId: string): Promise<AuditEvent[]>;
 }
 
 export function createWorkspaceService(
   repository: WorkspaceRepository,
-  primaryExtractionProvider?: ClaimExtractionProvider
+  primaryExtractionProvider?: ClaimExtractionProvider,
+  audioTranscriptionProvider: AudioTranscriptionProvider = defaultAudioTranscriptionProvider
 ) {
   const extractionProvider = createFallbackClaimExtractionProvider(primaryExtractionProvider);
 
@@ -585,11 +678,19 @@ export function createWorkspaceService(
   async function exportWorkspace(viewerId: string): Promise<WorkspaceExport> {
     const viewer = await requireViewer(viewerId);
     const snapshot = await getWorkspace(viewerId);
+    const visibleNoteIds = new Set(snapshot.visibleNotes.map(note => note.id));
+    const audioImportJobs = (await repository.listAudioImportJobs(viewer.orgId))
+      .filter(job => job.status === 'applied' && Boolean(job.noteId && visibleNoteIds.has(job.noteId)));
+    const exportedJobIds = new Set(audioImportJobs.map(job => job.id));
+    const transcriptChunks = (await repository.listTranscriptChunks(viewer.orgId))
+      .filter(chunk => Boolean(chunk.noteId && visibleNoteIds.has(chunk.noteId)) && exportedJobIds.has(chunk.importJobId));
     return {
       kind: 'mycelium.workspace.v1',
       exportedAt: new Date().toISOString(),
       snapshot,
-      reviewedRelations: await listAccessibleRelations(viewer)
+      reviewedRelations: await listAccessibleRelations(viewer),
+      audioImportJobs,
+      transcriptChunks
     };
   }
 
@@ -620,6 +721,7 @@ export function createWorkspaceService(
     }
 
     await materializeGraph(viewer.orgId, viewer.id);
+    await restoreImportedTranscriptJobs(viewer, input, usersById, importedNoteIds);
     await restoreImportedClaimState(viewer, snapshot, importedNoteIds);
     await restoreImportedRelationState(viewer, input.reviewedRelations ?? snapshot.relations, importedNoteIds);
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'workspace.imported', 'organization', viewer.orgId, {
@@ -642,6 +744,9 @@ export function createWorkspaceService(
     const date = now.slice(0, 10);
     const metadata = metadataFromInput(input);
     const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId);
+    const audioJob = input.audioImportJobId
+      ? await requireReadyAudioImportJob(viewer, input.audioImportJobId, access)
+      : undefined;
     const note: WorkspaceNote = {
       id: `n-${Date.now()}-${slug(input.body.slice(0, 32))}`,
       orgId: viewer.orgId,
@@ -664,6 +769,9 @@ export function createWorkspaceService(
     };
 
     await repository.insertNote(note);
+    if (audioJob) {
+      await applyAudioImportJobToNote(viewer, audioJob, note);
+    }
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.created', 'note', note.id, {
       visibility: note.visibility,
       accessScope: note.accessScope,
@@ -687,34 +795,39 @@ export function createWorkspaceService(
     if (note.authorId !== viewer.id) throw new Error('Only the note author can edit this note');
 
     const changedFields = noteChangedFields(note, input);
-    if (!changedFields.length) return getWorkspace(viewerId);
+    if (!changedFields.length && !input.audioImportJobId) return getWorkspace(viewerId);
 
     const now = new Date().toISOString();
-    await repository.insertNoteRevision({
-      id: `revision-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      orgId: viewer.orgId,
-      noteId: note.id,
-      editorId: viewer.id,
-      editorName: viewer.name,
-      previousTitle: note.title,
-      previousBody: note.body,
-      previousVisibility: note.visibility,
-      previousSourceType: note.sourceType,
-      previousObservedAt: note.observedAt,
-      previousTickers: note.tickers ?? [],
-      previousManualThemes: note.manualThemes ?? [],
-      previousKpis: note.kpis ?? [],
-      previousLinkedEntities: note.linkedEntities ?? [],
-      previousIndustries: note.industries ?? [],
-      previousCompanyTags: note.companyTags ?? [],
-      previousWatchlistTags: note.watchlistTags ?? [],
-      previousSourcePeople: note.sourcePeople ?? [],
-      changedFields,
-      createdAt: now
-    });
+    if (changedFields.length) {
+      await repository.insertNoteRevision({
+        id: `revision-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        orgId: viewer.orgId,
+        noteId: note.id,
+        editorId: viewer.id,
+        editorName: viewer.name,
+        previousTitle: note.title,
+        previousBody: note.body,
+        previousVisibility: note.visibility,
+        previousSourceType: note.sourceType,
+        previousObservedAt: note.observedAt,
+        previousTickers: note.tickers ?? [],
+        previousManualThemes: note.manualThemes ?? [],
+        previousKpis: note.kpis ?? [],
+        previousLinkedEntities: note.linkedEntities ?? [],
+        previousIndustries: note.industries ?? [],
+        previousCompanyTags: note.companyTags ?? [],
+        previousWatchlistTags: note.watchlistTags ?? [],
+        previousSourcePeople: note.sourcePeople ?? [],
+        changedFields,
+        createdAt: now
+      });
+    }
 
     const metadata = metadataFromInput(input, note.linkedEntities);
     const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId, note);
+    const audioJob = input.audioImportJobId
+      ? await requireReadyAudioImportJob(viewer, input.audioImportJobId, access)
+      : undefined;
     const updated: WorkspaceNote = {
       ...note,
       title: input.title?.trim() || note.title,
@@ -728,20 +841,162 @@ export function createWorkspaceService(
       updatedAt: now
     };
 
-    await repository.updateNote(updated);
-    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.revision.created', 'note', note.id, {
-      changedFields
-    }));
-    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.updated', 'note', note.id, {
-      changedFields
-    }));
+    if (changedFields.length) {
+      await repository.updateNote(updated);
+    }
+    if (audioJob) {
+      await applyAudioImportJobToNote(viewer, audioJob, updated);
+    }
+    if (changedFields.length) {
+      await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.revision.created', 'note', note.id, {
+        changedFields
+      }));
+      await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'note.updated', 'note', note.id, {
+        changedFields
+      }));
+    }
 
-    if (requiresDerivedReviewReset(changedFields)) {
+    if (requiresDerivedReviewReset(changedFields) || audioJob) {
       await resetDerivedReviewsForNote(viewer.orgId, note.id, now);
       await materializeGraph(viewer.orgId, viewer.id);
     }
 
     return getWorkspace(viewerId);
+  }
+
+  async function createAudioImportJob(viewerId: string, input: CreateAudioImportJobInput): Promise<AudioImportJob> {
+    const viewer = await requireViewer(viewerId);
+    const now = new Date().toISOString();
+    const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId);
+    if (input.selectedNoteId) {
+      const selectedNote = (await repository.listNotes(viewer.orgId)).find(note => note.id === input.selectedNoteId);
+      if (!selectedNote || !canAccess(viewer, selectedNote)) throw new Error(`Note ${input.selectedNoteId} is not accessible`);
+    }
+    const baseJob: AudioImportJob = {
+      id: `audio-job-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      orgId: viewer.orgId,
+      authorId: viewer.id,
+      authorName: viewer.name,
+      team: access.teamName,
+      teamId: access.teamId,
+      visibility: access.visibility,
+      accessScope: access.accessScope,
+      provider: audioTranscriptionProvider.name,
+      status: 'processing',
+      fileName: input.fileName,
+      contentType: input.contentType,
+      selectedNoteId: input.selectedNoteId,
+      language: input.language,
+      durationSeconds: input.durationSeconds,
+      createdAt: now,
+      updatedAt: now
+    };
+    await repository.insertAudioImportJob(baseJob);
+
+    let completedJob: AudioImportJob;
+    let chunks: TranscriptChunkRecord[] = [];
+    try {
+      const output = await audioTranscriptionProvider.transcribe({
+        ...input,
+        orgId: viewer.orgId,
+        userId: viewer.id,
+        userName: viewer.name,
+        visibility: access.visibility,
+        accessScope: access.accessScope,
+        teamId: access.teamId,
+        teamName: access.teamName
+      });
+      const transcriptText = typeof output?.text === 'string' ? output.text.trim() : '';
+      const providerChunks = Array.isArray(output?.chunks) ? output.chunks : undefined;
+      chunks = normalizeTranscriptChunks(viewer.orgId, baseJob.id, providerChunks ?? chunksFromTranscript(transcriptText));
+      const materializedTranscript = transcriptText || chunks.map(chunk => chunk.text).join('\n').trim();
+      if (!materializedTranscript) throw new Error('Audio transcription produced no transcript text');
+      completedJob = {
+        ...baseJob,
+        status: 'ready',
+        transcriptText: materializedTranscript,
+        updatedAt: new Date().toISOString()
+      };
+    } catch (error) {
+      completedJob = {
+        ...baseJob,
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Audio transcription failed',
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    await repository.updateAudioImportJob(completedJob);
+    await repository.replaceTranscriptChunksForJob(viewer.orgId, completedJob.id, chunks);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'audio_import_job.created', 'audio_import_job', completedJob.id, {
+      status: completedJob.status,
+      provider: completedJob.provider,
+      fileName: completedJob.fileName,
+      contentType: completedJob.contentType,
+      chunkCount: chunks.length,
+      error: completedJob.error
+    }));
+    return completedJob;
+  }
+
+  async function getAudioImportJob(viewerId: string, jobId: string): Promise<AudioImportJob | undefined> {
+    const viewer = await requireViewer(viewerId);
+    const job = (await repository.listAudioImportJobs(viewer.orgId)).find(item => item.id === jobId);
+    if (!job) return undefined;
+    if (job.authorId === viewer.id) return job;
+    if (!job.noteId) return undefined;
+    const note = (await repository.listNotes(viewer.orgId)).find(item => item.id === job.noteId);
+    return note && canAccess(viewer, note) ? job : undefined;
+  }
+
+  async function listAudioImportJobTranscriptChunks(viewerId: string, jobId: string): Promise<TranscriptChunkRecord[]> {
+    const viewer = await requireViewer(viewerId);
+    const job = await getAudioImportJob(viewerId, jobId);
+    if (!job) throw new Error(`Audio import job ${jobId} is not accessible`);
+    return (await repository.listTranscriptChunks(viewer.orgId))
+      .filter(chunk => chunk.importJobId === jobId)
+      .sort((a, b) => a.chunkIndex - b.chunkIndex);
+  }
+
+  async function listNoteTranscriptChunks(viewerId: string, noteId: string): Promise<TranscriptChunkRecord[]> {
+    const viewer = await requireViewer(viewerId);
+    const note = (await repository.listNotes(viewer.orgId)).find(item => item.id === noteId);
+    if (!note || !canAccess(viewer, note)) throw new Error(`Note ${noteId} is not accessible`);
+    return (await repository.listTranscriptChunks(viewer.orgId))
+      .filter(chunk => chunk.noteId === noteId)
+      .sort((a, b) => a.chunkIndex - b.chunkIndex);
+  }
+
+  async function requireReadyAudioImportJob(
+    viewer: WorkspaceUser,
+    jobId: string,
+    access: { accessScope: AccessScope; visibility: Visibility; teamId?: string; teamName?: string }
+  ): Promise<AudioImportJob> {
+    const job = (await repository.listAudioImportJobs(viewer.orgId)).find(item => item.id === jobId);
+    if (!job || job.authorId !== viewer.id) throw new Error(`Audio import job ${jobId} is not accessible`);
+    if (job.status !== 'ready') throw new Error(`Audio import job ${jobId} is not ready`);
+    if (job.accessScope !== access.accessScope || job.visibility !== access.visibility || (job.accessScope === 'team' && job.teamId !== access.teamId)) {
+      throw new Error(`Audio import job ${jobId} access does not match the note`);
+    }
+    return job;
+  }
+
+  async function applyAudioImportJobToNote(viewer: WorkspaceUser, job: AudioImportJob, note: WorkspaceNote): Promise<void> {
+    const now = new Date().toISOString();
+    const chunks = (await repository.listTranscriptChunks(viewer.orgId))
+      .filter(chunk => chunk.importJobId === job.id)
+      .map(chunk => ({ ...chunk, noteId: note.id }));
+    await repository.replaceTranscriptChunksForJob(viewer.orgId, job.id, chunks);
+    await repository.updateAudioImportJob({
+      ...job,
+      status: 'applied',
+      noteId: note.id,
+      updatedAt: now
+    });
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'audio_import_job.applied', 'audio_import_job', job.id, {
+      noteId: note.id,
+      chunkCount: chunks.length
+    }));
   }
 
   async function getNoteDraft(viewerId: string): Promise<NoteDraft | undefined> {
@@ -1047,6 +1302,40 @@ export function createWorkspaceService(
     await materializeGraph(viewer.orgId, viewer.id);
   }
 
+  async function restoreImportedTranscriptJobs(
+    viewer: WorkspaceUser,
+    input: WorkspaceExport,
+    usersById: Map<string, WorkspaceUser>,
+    importedNoteIds: Set<string>
+  ): Promise<void> {
+    const jobs = (input.audioImportJobs ?? [])
+      .filter(job => job.status === 'applied' && Boolean(job.noteId && importedNoteIds.has(job.noteId)));
+    if (!jobs.length) return;
+
+    const jobIds = new Set(jobs.map(job => job.id));
+    const chunksByJob = new Map<string, TranscriptChunkRecord[]>();
+    for (const chunk of input.transcriptChunks ?? []) {
+      if (!jobIds.has(chunk.importJobId) || !chunk.noteId || !importedNoteIds.has(chunk.noteId)) continue;
+      chunksByJob.set(chunk.importJobId, [...chunksByJob.get(chunk.importJobId) ?? [], chunk]);
+    }
+
+    for (const job of jobs) {
+      const author = usersById.get(job.authorId) ?? viewer;
+      const restoredJob: AudioImportJob = {
+        ...job,
+        orgId: viewer.orgId,
+        authorId: author.id,
+        authorName: author.name,
+        rawStoragePath: undefined
+      };
+      await repository.insertAudioImportJob(restoredJob);
+      await repository.replaceTranscriptChunksForJob(viewer.orgId, restoredJob.id, (chunksByJob.get(job.id) ?? []).map(chunk => ({
+        ...chunk,
+        orgId: viewer.orgId
+      })));
+    }
+  }
+
   async function restoreImportedRelationState(viewer: WorkspaceUser, relationsToRestore: WorkspaceRelation[], importedNoteIds: Set<string>): Promise<void> {
     const exportedRelations = new Map(relationsToRestore
       .filter(relation => importedNoteIds.has(relation.a.noteId) && importedNoteIds.has(relation.b.noteId))
@@ -1141,6 +1430,10 @@ export function createWorkspaceService(
     importWorkspace,
     createNote,
     updateNote,
+    createAudioImportJob,
+    getAudioImportJob,
+    listAudioImportJobTranscriptChunks,
+    listNoteTranscriptChunks,
     getNoteDraft,
     upsertNoteDraft,
     deleteNoteDraft,
@@ -1163,6 +1456,44 @@ function readWorkspaceExport(input: WorkspaceExport): WorkspaceExport {
     throw new Error('Invalid workspace export');
   }
   return input;
+}
+
+const defaultAudioTranscriptionProvider: AudioTranscriptionProvider = {
+  name: 'not-configured',
+  async transcribe() {
+    throw new Error('Audio transcription provider is not configured');
+  }
+};
+
+function normalizeTranscriptChunks(
+  orgId: string,
+  importJobId: string,
+  chunks: AudioTranscriptionChunkOutput[]
+): TranscriptChunkRecord[] {
+  const createdAt = new Date().toISOString();
+  return chunks
+    .map((chunk, index) => ({
+      id: `transcript-chunk-${importJobId}-${chunk.chunkIndex ?? index}`,
+      orgId,
+      importJobId,
+      chunkIndex: chunk.chunkIndex ?? index,
+      startMs: chunk.startMs,
+      endMs: chunk.endMs,
+      speaker: chunk.speaker?.trim() || undefined,
+      text: chunk.text.trim(),
+      confidence: normalizeConfidence(chunk.confidence),
+      createdAt
+    }))
+    .filter(chunk => chunk.text);
+}
+
+function chunksFromTranscript(text: string): AudioTranscriptionChunkOutput[] {
+  const normalized = text.trim();
+  return normalized ? [{ chunkIndex: 0, text: normalized }] : [];
+}
+
+function normalizeConfidence(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
 }
 
 interface DashboardBuildInput {
@@ -1521,6 +1852,8 @@ export function createMemoryWorkspaceRepository() {
     auditEvents: AuditEvent[] = [];
     noteRevisions: NoteRevision[] = [];
     noteDrafts: NoteDraft[] = [];
+    audioImportJobs: AudioImportJob[] = [];
+    transcriptChunks: TranscriptChunkRecord[] = [];
 
     seed(input: { organizationId: string; users: User[]; notes: Note[] }) {
       this.organization = { id: input.organizationId, name: 'Mycelium Capital', domain: 'example.test' };
@@ -1588,6 +1921,8 @@ export function createMemoryWorkspaceRepository() {
       this.auditEvents = [];
       this.noteRevisions = [];
       this.noteDrafts = [];
+      this.audioImportJobs = [];
+      this.transcriptChunks = [];
       this.invites = [];
     }
 
@@ -1666,6 +2001,24 @@ export function createMemoryWorkspaceRepository() {
     }
     async updateRelation(relation: WorkspaceRelation) {
       this.relations = this.relations.map(item => item.id === relation.id ? relation : item);
+    }
+    async listAudioImportJobs(orgId: string) {
+      return this.audioImportJobs.filter(job => job.orgId === orgId);
+    }
+    async insertAudioImportJob(job: AudioImportJob) {
+      this.audioImportJobs.unshift(job);
+    }
+    async updateAudioImportJob(job: AudioImportJob) {
+      this.audioImportJobs = this.audioImportJobs.map(item => item.id === job.id ? job : item);
+    }
+    async listTranscriptChunks(orgId: string) {
+      return this.transcriptChunks.filter(chunk => chunk.orgId === orgId);
+    }
+    async replaceTranscriptChunksForJob(orgId: string, importJobId: string, chunks: TranscriptChunkRecord[]) {
+      this.transcriptChunks = [
+        ...this.transcriptChunks.filter(chunk => chunk.orgId !== orgId || chunk.importJobId !== importJobId),
+        ...chunks
+      ];
     }
     async addAuditEvent(event: AuditEvent) {
       this.auditEvents.unshift(event);

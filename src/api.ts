@@ -1,6 +1,7 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import type {
   AdminOrganizationSnapshot,
+  AudioImportJob,
   ClaimReviewStatus,
   CreateNoteInput,
   DashboardRange,
@@ -11,6 +12,7 @@ import type {
   NoteDraft,
   NoteRevision,
   RelationReviewStatus,
+  TranscriptChunkRecord,
   UpdateClaimInput,
   UpdateNoteInput,
   UpdateRelationInput,
@@ -18,7 +20,7 @@ import type {
   WorkspaceOptions,
   WorkspaceSnapshot
 } from '../server/workspace-service';
-import type { OrgRole, Role, TeamStatus, UserStatus, RelationType } from './engine';
+import type { AccessScope, OrgRole, Role, TeamStatus, UserStatus, RelationType } from './engine';
 
 export interface AuthBootstrap {
   supabaseUrl: string;
@@ -76,6 +78,48 @@ export async function updateNote(session: Session, id: string, input: UpdateNote
     body: JSON.stringify(input)
   });
   return readJson(response);
+}
+
+export interface AudioImportJobResponse {
+  job: AudioImportJob;
+  transcriptChunks: TranscriptChunkRecord[];
+}
+
+export async function createAudioImportJob(
+  session: Session,
+  file: File,
+  input: {
+    consentConfirmed: boolean;
+    accessScope?: AccessScope;
+    teamId?: string;
+    selectedNoteId?: string;
+    language?: string;
+  }
+): Promise<AudioImportJobResponse> {
+  const form = new FormData();
+  form.set('file', file);
+  form.set('consentConfirmed', input.consentConfirmed ? 'true' : 'false');
+  if (input.accessScope) form.set('accessScope', input.accessScope);
+  if (input.teamId) form.set('teamId', input.teamId);
+  if (input.selectedNoteId) form.set('selectedNoteId', input.selectedNoteId);
+  if (input.language) form.set('language', input.language);
+  const response = await fetch('/api/audio-import-jobs', {
+    method: 'POST',
+    headers: authHeaders(session),
+    body: form
+  });
+  return readJson(response);
+}
+
+export async function loadAudioImportJob(session: Session, id: string): Promise<AudioImportJobResponse> {
+  const response = await fetch(`/api/audio-import-jobs/${encodeURIComponent(id)}`, { headers: authHeaders(session) });
+  return readJson(response);
+}
+
+export async function loadNoteTranscriptChunks(session: Session, id: string): Promise<TranscriptChunkRecord[]> {
+  const response = await fetch(`/api/notes/${encodeURIComponent(id)}/transcript-chunks`, { headers: authHeaders(session) });
+  const body = await readJson<{ transcriptChunks: TranscriptChunkRecord[] }>(response);
+  return body.transcriptChunks;
 }
 
 export async function loadNoteDraft(session: Session): Promise<NoteDraft | null> {

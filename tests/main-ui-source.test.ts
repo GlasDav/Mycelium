@@ -187,6 +187,8 @@ test('note import is an inline notes panel without adding a rail mode', () => {
 
   assert.match(source, /import \{ parsePastedNoteImport, type ParsedNoteImport \} from '\.\/note-import'/);
   assert.match(source, /import \{ NOTE_IMPORT_FILE_ACCEPT, AUDIO_IMPORT_FILE_ACCEPT, readNoteImportFile, summarizeAudioImportFile \} from '\.\/note-import-files'/);
+  assert.match(source, /import \{ normalizeReadyAudioTranscriptionJob/);
+  assert.match(source, /createAudioImportJob/);
   assert.match(source, /type ViewMode = 'notes' \| 'dashboard' \| 'map' \| 'archive' \| 'admin'/);
   assert.match(notesPage, /noteImportOpen/);
   assert.match(notesPage, /note-import-panel/);
@@ -196,6 +198,8 @@ test('note import is an inline notes panel without adding a rail mode', () => {
   assert.match(notesPage, /Choose TXT, Markdown, DOCX, PDF, VTT, or SRT/);
   assert.match(notesPage, /accept=\{AUDIO_IMPORT_FILE_ACCEPT\}/);
   assert.match(notesPage, /Choose audio/);
+  assert.match(notesPage, /note-import-consent/);
+  assert.match(notesPage, /note-import-audio-controls/);
   assert.match(notesPage, /note-import-audio-status/);
   assert.match(notesPage, /note-import-transcript-preview/);
   assert.match(notesPage, /note-import-preview/);
@@ -224,9 +228,11 @@ test('note import parses pasted content and applies only to workbench state', ()
   assert.match(fileSource, /setAudioImportSummary\(null\)/);
   assert.match(source, /function importAudioFile/);
   assert.match(source, /summarizeAudioImportFile\(file\)/);
-  assert.match(source, /const parsedImport = parsedFileNoteImport \?\? parsedNoteImport/);
+  assert.match(source, /createAudioImportJob\(session, file,/);
+  assert.match(source, /normalizeReadyAudioTranscriptionJob/);
+  assert.match(source, /const parsedImport = parsedAudioNoteImport \?\? parsedFileNoteImport \?\? parsedNoteImport/);
   assert.match(source, /const canApplyParsedImport = Boolean\(parsedImport\.body\.trim\(\)\)/);
-  assert.match(source, /onClick=\{\(\) => applyImportedNoteToWorkbench\(parsedImport\)\}/);
+  assert.match(source, /onClick=\{\(\) => applyImportedNoteToWorkbench\(parsedImport, parsedImport === parsedAudioNoteImport \? audioImportJobId : undefined\)\}/);
   assert.match(source, />Apply to workbench</);
   assert.match(applySource, /setSelectedNoteId\(''\)/);
   assert.match(applySource, /setNoteTitle\(imported\.title \?\? ''\)/);
@@ -240,10 +246,33 @@ test('note import parses pasted content and applies only to workbench state', ()
   assert.match(applySource, /setNoteHistory\(\[\]\)/);
   assert.match(applySource, /setHistoryDrawerOpen\(false\)/);
   assert.match(applySource, /setNoteSourceType\(IMPORTED_NOTE_SOURCE_TYPE\)/);
+  assert.match(applySource, /setWorkbenchAudioImportJobId\(audioJobId \?\? ''\)/);
   assert.doesNotMatch(applySource, /createNote\(/);
   assert.doesNotMatch(fileSource, /createNote\(/);
   assert.match(source, /async function saveWorkbenchNote\(\)[\s\S]*await addNote\(\)/);
   assert.match(source, /onClick=\{saveWorkbenchNote\}/);
+});
+
+test('audio transcription import stays preview-first and saves through the workbench', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const audioStart = source.indexOf('async function importAudioFile');
+  const audioEnd = source.indexOf('function applyImportedNoteToWorkbench', audioStart);
+  const addStart = source.indexOf('async function addNote');
+  const addEnd = source.indexOf('async function saveExistingNote', addStart);
+  const saveExistingStart = source.indexOf('async function saveExistingNote');
+  const saveExistingEnd = source.indexOf('async function openNoteHistory', saveExistingStart);
+  assert(audioStart >= 0 && audioEnd > audioStart, 'Audio import handler source is missing');
+  const audioSource = source.slice(audioStart, audioEnd);
+
+  assert.match(source, /const \[audioImportConsent, setAudioImportConsent\] = useState\(false\)/);
+  assert.match(source, /const \[audioImportJobId, setAudioImportJobId\] = useState\(''\)/);
+  assert.match(source, /const \[workbenchAudioImportJobId, setWorkbenchAudioImportJobId\] = useState\(''\)/);
+  assert.match(audioSource, /if \(!session\)/);
+  assert.match(audioSource, /if \(!audioImportConsent\)/);
+  assert.match(audioSource, /setParsedAudioNoteImport\(parsedAudio\)/);
+  assert.doesNotMatch(audioSource, /createNote\(/);
+  assert.match(source.slice(addStart, addEnd), /audioImportJobId: workbenchAudioImportJobId \|\| undefined/);
+  assert.match(source.slice(saveExistingStart, saveExistingEnd), /audioImportJobId: workbenchAudioImportJobId \|\| undefined/);
 });
 
 test('imported source type is saved only through new-note creation', () => {

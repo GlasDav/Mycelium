@@ -64,6 +64,7 @@ import {
   createAuthClient,
   archiveAdminTeam,
   cancelAdminInvite,
+  createAudioImportJob,
   createAdminInvite,
   createAdminTeam,
   createNote,
@@ -113,6 +114,7 @@ import {
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
 import { NOTE_IMPORT_FILE_ACCEPT, AUDIO_IMPORT_FILE_ACCEPT, readNoteImportFile, summarizeAudioImportFile } from './note-import-files';
+import { normalizeReadyAudioTranscriptionJob } from './audio-transcription';
 import {
   buildMapLaneModel,
   mapDensityLimits,
@@ -136,9 +138,11 @@ import type {
   DashboardScope,
   DashboardSnapshot,
   DashboardTopItem,
+  AudioImportJob,
   OrganizationTeam,
   NoteDraft,
   NoteRevision,
+  TranscriptChunkRecord,
   UpdateClaimInput,
   UpdateRelationInput,
   WorkspaceClaim,
@@ -215,6 +219,7 @@ type FrontendNotePayload = {
   visibility?: Note['visibility'];
   observedAt?: string;
   sourceType?: string;
+  audioImportJobId?: string;
 } & MetadataArrays & { linkedEntities: LinkedEntity[] };
 type FrontendDraftPayload = Partial<FrontendNotePayload> & { selectedNoteId?: string };
 type FrontendUpdateClaimInput = UpdateClaimInput & FrontendMetadata;
@@ -286,8 +291,13 @@ function App() {
   const [noteImportOpen, setNoteImportOpen] = useState(false);
   const [noteImportText, setNoteImportText] = useState('');
   const [parsedFileNoteImport, setParsedFileNoteImport] = useState<ParsedNoteImport | null>(null);
+  const [parsedAudioNoteImport, setParsedAudioNoteImport] = useState<ParsedNoteImport | null>(null);
   const [noteImportFileError, setNoteImportFileError] = useState('');
   const [audioImportSummary, setAudioImportSummary] = useState<ReturnType<typeof summarizeAudioImportFile> | null>(null);
+  const [audioImportConsent, setAudioImportConsent] = useState(false);
+  const [audioImportLoading, setAudioImportLoading] = useState(false);
+  const [audioImportJobId, setAudioImportJobId] = useState('');
+  const [workbenchAudioImportJobId, setWorkbenchAudioImportJobId] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('notes');
   const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>('workspace');
@@ -558,6 +568,7 @@ function App() {
       accessScope,
       teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
       observedAt,
+      audioImportJobId: workbenchAudioImportJobId || undefined,
       ...currentMetadataArrays(),
       linkedEntities: currentLinkedEntities()
     });
@@ -577,6 +588,7 @@ function App() {
       setNoteTeamId(savedDraft.teamId ?? linkedNote?.teamId ?? nextWorkspace.viewer.primaryTeamId ?? nextWorkspace.viewer.teamId ?? '');
       setObservedAt(savedDraft.observedAt ?? today());
       setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
+      setWorkbenchAudioImportJobId(savedDraft.audioImportJobId ?? '');
       applyWorkbenchMetadata(savedDraft);
       clearedDraftSignatureRef.current = draftSignature(savedDraft);
       workbenchBaselineSignatureRef.current = draftSignature(savedDraft);
@@ -597,6 +609,7 @@ function App() {
       accessScope,
       teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
       observedAt,
+      audioImportJobId: workbenchAudioImportJobId || undefined,
       ...currentMetadataArrays(),
       linkedEntities: currentLinkedEntities()
     };
@@ -611,7 +624,7 @@ function App() {
     }, 700);
 
     return () => window.clearTimeout(handle);
-  }, [session, workspace, selectedNoteId, noteTitle, draft, accessScope, noteTeamId, observedAt, tickers, manualThemes, kpis, industries, companyTags, watchlistTags, sourcePeople]);
+  }, [session, workspace, selectedNoteId, noteTitle, draft, accessScope, noteTeamId, observedAt, workbenchAudioImportJobId, tickers, manualThemes, kpis, industries, companyTags, watchlistTags, sourcePeople]);
 
   async function saveWorkbenchNote() {
     if (workbenchSaving) return;
@@ -636,6 +649,7 @@ function App() {
         accessScope,
         teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
         sourceType: noteSourceType,
+        audioImportJobId: workbenchAudioImportJobId || undefined,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -649,6 +663,7 @@ function App() {
       setDraft('');
       resetWorkbenchMetadata();
       setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
+      setWorkbenchAudioImportJobId('');
       setSelectedNoteId('');
       setViewMode('notes');
       clearedDraftSignatureRef.current = '';
@@ -678,6 +693,7 @@ function App() {
         body: draft,
         accessScope,
         teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+        audioImportJobId: workbenchAudioImportJobId || undefined,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -691,6 +707,7 @@ function App() {
         body: draft,
         accessScope,
         teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+        audioImportJobId: workbenchAudioImportJobId || undefined,
         observedAt,
         ...currentMetadataArrays(),
         linkedEntities: currentLinkedEntities()
@@ -702,6 +719,7 @@ function App() {
       workbenchBaselineSignatureRef.current = currentWorkbenchSignature();
       setLastSavedAt(new Date().toISOString());
       setDraftRecovered(false);
+      setWorkbenchAudioImportJobId('');
       pushToast({ tone: 'success', title: 'Note saved', body: 'Review state and map snapshots were refreshed.' });
       void refreshDashboard(session);
     } catch (error) {
@@ -774,6 +792,7 @@ function App() {
     setNoteTeamId(workspace?.viewer.primaryTeamId ?? workspace?.viewer.teamId ?? '');
     setObservedAt(date);
     setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
+    setWorkbenchAudioImportJobId('');
     resetWorkbenchMetadata();
     setNoteHistory([]);
     setHistoryDrawerOpen(false);
@@ -793,6 +812,8 @@ function App() {
     try {
       const imported = await readNoteImportFile(file);
       setParsedFileNoteImport(imported);
+      setParsedAudioNoteImport(null);
+      setAudioImportJobId('');
       setNoteImportFileError('');
       setAudioImportSummary(null);
     } catch (error) {
@@ -801,18 +822,41 @@ function App() {
     }
   }
 
-  function importAudioFile(file: File | undefined) {
+  async function importAudioFile(file: File | undefined) {
     if (!file) return;
     try {
       setAudioImportSummary(summarizeAudioImportFile(file));
+      if (!session) throw new Error('Sign in before transcribing audio.');
+      if (!audioImportConsent) throw new Error('Confirm consent before transcribing audio.');
+      setAudioImportLoading(true);
       setNoteImportFileError('');
+      const result = await createAudioImportJob(session, file, {
+        consentConfirmed: true,
+        accessScope,
+        teamId: accessScope === 'team' ? effectiveNoteTeamId : undefined,
+        selectedNoteId: selectedNoteId || undefined,
+        language: 'en'
+      });
+      setAudioImportJobId(result.job.id);
+      if (result.job.status !== 'ready') {
+        setParsedAudioNoteImport(null);
+        setNoteImportFileError(result.job.error ?? 'Audio transcription did not produce a ready transcript.');
+        return;
+      }
+      const parsedAudio = normalizeAudioImportJobForWorkbench(result.job, result.transcriptChunks);
+      setParsedAudioNoteImport(parsedAudio);
+      setParsedFileNoteImport(null);
     } catch (error) {
+      setParsedAudioNoteImport(null);
+      setAudioImportJobId('');
       setAudioImportSummary(null);
       setNoteImportFileError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAudioImportLoading(false);
     }
   }
 
-  function applyImportedNoteToWorkbench(parsed: ParsedNoteImport) {
+  function applyImportedNoteToWorkbench(parsed: ParsedNoteImport, audioJobId?: string) {
     const imported = parsed as ParsedNoteImportForUi;
     if (!imported.body.trim()) return;
     setSelectedNoteId('');
@@ -820,6 +864,7 @@ function App() {
     setDraft(imported.body);
     setObservedAt(imported.observedAt ?? today());
     applyWorkbenchMetadata(metadataFromParsedNoteImport(imported));
+    setWorkbenchAudioImportJobId(audioJobId ?? '');
     setNoteHistory([]);
     setHistoryDrawerOpen(false);
     setNoteSourceType(IMPORTED_NOTE_SOURCE_TYPE);
@@ -892,7 +937,7 @@ function App() {
   const mapRelations = mapGraph ? (subjectRelations.length ? subjectRelations : mapGraph.relations) : [];
   const preview = previewNote();
   const previewClaims = extractClaims(preview);
-  const parsedImport = parsedFileNoteImport ?? parsedNoteImport as ParsedNoteImportForUi;
+  const parsedImport = parsedAudioNoteImport ?? parsedFileNoteImport ?? parsedNoteImport as ParsedNoteImportForUi;
   const canApplyParsedImport = Boolean(parsedImport.body.trim());
   const transcriptChunkPreview = parsedImport.transcriptChunks?.slice(0, 2) ?? [];
   const noteImportWarnings = noteImportFileError ? [noteImportFileError, ...(parsedImport.warnings ?? [])] : parsedImport.warnings ?? [];
@@ -1065,6 +1110,7 @@ function App() {
           accessScope: note.accessScope ?? accessScopeFromVisibility(note.visibility),
           teamId: note.teamId,
           observedAt: note.observedAt ?? note.createdAt,
+          audioImportJobId: undefined,
           ...metadataArraysFromSource(note),
           linkedEntities: (note as FrontendWorkspaceNote).linkedEntities ?? []
         });
@@ -1077,6 +1123,7 @@ function App() {
         setNoteTeamId(note.teamId ?? user.primaryTeamId ?? user.teamId ?? '');
         setObservedAt(note.observedAt ?? note.createdAt);
         setNoteSourceType(DEFAULT_NOTE_SOURCE_TYPE);
+        setWorkbenchAudioImportJobId('');
         applyWorkbenchMetadata(note as FrontendWorkspaceNote);
         setNoteHistory([]);
         setHistoryDrawerOpen(false);
@@ -1116,6 +1163,8 @@ function App() {
               onChange={event => {
                 setNoteImportText(event.target.value);
                 setParsedFileNoteImport(null);
+                setParsedAudioNoteImport(null);
+                setAudioImportJobId('');
                 setNoteImportFileError('');
               }}
               placeholder="Paste meeting notes or transcript text"
@@ -1137,17 +1186,25 @@ function App() {
                   type="file"
                   accept={AUDIO_IMPORT_FILE_ACCEPT}
                   onChange={event => {
-                    importAudioFile(event.target.files?.[0]);
+                    void importAudioFile(event.target.files?.[0]);
                     event.currentTarget.value = '';
                   }}
                 />
                 Choose audio
               </label>
             </div>
-            {audioImportSummary && <div className="note-import-audio-status">
+            <label className="note-import-consent">
+              <input type="checkbox" checked={audioImportConsent} onChange={event => setAudioImportConsent(event.target.checked)} />
+              <span>I have permission to transcribe this audio and share the transcript in the selected workspace location.</span>
+            </label>
+            <div className="note-import-audio-controls">
+              {audioImportLoading && <span>Transcribing audio...</span>}
+              {audioImportJobId && parsedAudioNoteImport && <span>Transcript job ready</span>}
+            </div>
+            {audioImportSummary && <div className={`note-import-audio-status ${parsedAudioNoteImport ? 'ready' : noteImportFileError ? 'failed' : ''}`}>
               <b>{audioImportSummary.filename}</b>
               <span>{formatBytes(audioImportSummary.sizeBytes)}</span>
-              <small>{audioImportSummary.message}</small>
+              <small>{parsedAudioNoteImport ? 'Audio transcript is ready to apply to the workbench.' : audioImportLoading ? 'Transcribing audio in memory.' : audioImportSummary.message}</small>
             </div>}
             <div className="note-import-preview">
               <b>{parsedImport.title || 'Untitled import'}</b>
@@ -1168,7 +1225,7 @@ function App() {
               })}
             </div>}
             <div className="note-import-actions">
-              <button type="button" onClick={() => applyImportedNoteToWorkbench(parsedImport)} disabled={!canApplyParsedImport}>Apply to workbench</button>
+              <button type="button" onClick={() => applyImportedNoteToWorkbench(parsedImport, parsedImport === parsedAudioNoteImport ? audioImportJobId : undefined)} disabled={!canApplyParsedImport}>Apply to workbench</button>
               <button type="button" onClick={() => setNoteImportOpen(false)}>Close</button>
             </div>
           </section>}
@@ -2615,6 +2672,7 @@ function hasDraftContent(draft: Partial<FrontendNoteDraft>) {
     || metadata.companyTags.length
     || metadata.watchlistTags.length
     || metadata.sourcePeople.length
+    || draft.audioImportJobId
   );
 }
 
@@ -2627,6 +2685,7 @@ function draftSignature(draft: Partial<FrontendNoteDraft>) {
     accessScope: draft.accessScope ?? (draft.visibility ? accessScopeFromVisibility(draft.visibility) : 'personal'),
     teamId: draft.teamId ?? '',
     observedAt: draft.observedAt ?? '',
+    audioImportJobId: draft.audioImportJobId ?? '',
     ...metadata,
     linkedEntities: draft.linkedEntities ?? legacyArraysToLinkedEntities(metadata)
   });
@@ -2660,6 +2719,30 @@ function metadataFromParsedNoteImport(imported: ParsedNoteImport): FrontendMetad
 
 function noteImportWarningMessage(warning: NoteImportWarningForUi): string {
   return typeof warning === 'string' ? warning : warning.message;
+}
+
+function normalizeAudioImportJobForWorkbench(job: AudioImportJob, transcriptChunks: TranscriptChunkRecord[]): ParsedNoteImport {
+  return normalizeReadyAudioTranscriptionJob({
+    id: job.id,
+    status: job.status === 'ready' ? 'ready' : job.status === 'failed' ? 'failed' : 'processing',
+    filename: job.fileName,
+    chunks: transcriptChunks.map(chunk => ({
+      startTime: audioMsToTimestamp(chunk.startMs),
+      endTime: audioMsToTimestamp(chunk.endMs) || undefined,
+      speaker: chunk.speaker,
+      text: chunk.text,
+      confidence: chunk.confidence
+    }))
+  });
+}
+
+function audioMsToTimestamp(value: number | undefined): string {
+  if (value == null) return '';
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  const milliseconds = Math.max(0, value % 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
 }
 
 function formatBytes(bytes: number): string {
