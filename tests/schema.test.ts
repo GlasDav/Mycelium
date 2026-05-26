@@ -9,7 +9,8 @@ const migrationFiles = [
   '202605090001_note_persistence_spine.sql',
   '202605090002_normalized_research_entities.sql',
   '202605100001_organization_admin_structure.sql',
-  '202605220001_audio_transcription_imports.sql'
+  '202605220001_audio_transcription_imports.sql',
+  '202605260001_external_evidence_events.sql'
 ];
 const migrationsSql = migrationFiles
   .map(file => readFileSync(join(process.cwd(), 'supabase', 'migrations', file), 'utf8'))
@@ -144,4 +145,30 @@ test('audio transcription import migration adds transcript job and chunk persist
   assert.match(sql, /create index(?: if not exists)? audio_import_jobs_note_id_idx/i);
   assert.match(sql, /create index(?: if not exists)? transcript_chunks_note_id_idx/i);
   assert.match(sql, /unique\s*\(\s*import_job_id,\s*chunk_index\s*\)/i);
+});
+
+test('external evidence migration defines licensed event schema and access policies', () => {
+  const sql = migrationsSql;
+
+  for (const table of ['external_evidence_items', 'external_events']) {
+    assert.match(sql, new RegExp(`create table(?: if not exists)? public\\.${table}`, 'i'), `${table} table is missing`);
+    assert.match(sql, new RegExp(`alter table public\\.${table}\\s+enable row level security`, 'i'), `${table} RLS is missing`);
+  }
+
+  assert.match(sql, /source_kind\s+text\s+not null[\s\S]*check\s*\(\s*source_kind\s+in\s*\('news',\s*'filing',\s*'press_release',\s*'transcript',\s*'other'\)\s*\)/i);
+  assert.match(sql, /access_scope\s+text\s+not null[\s\S]*check\s*\(\s*access_scope\s+in\s*\('organization',\s*'team',\s*'personal'\)\s*\)/i);
+  assert.match(sql, /license_metadata\s+jsonb\s+not null\s+default '\{\}'::jsonb/i);
+  assert.match(sql, /raw_body\s+text/i);
+  assert.match(sql, /check\s*\(\s*raw_body\s+is\s+null\s*\)/i);
+  assert.match(sql, /direction\s+text\s+not null[\s\S]*check\s*\(\s*direction\s+in\s*\('positive',\s*'negative',\s*'neutral'\)\s*\)/i);
+  assert.match(sql, /confidence\s+numeric\s+not null\s+check\s*\(\s*confidence\s+>=\s+0\s+and\s+confidence\s+<=\s+1\s*\)/i);
+  assert.match(sql, /create policy external_evidence_items_select_accessible/i);
+  assert.match(sql, /create policy external_events_select_accessible/i);
+  assert.match(sql, /create policy external_evidence_items_insert_member on public\.external_evidence_items[\s\S]*app\.can_access_note\(external_evidence_items\.org_id,\s*external_evidence_items\.access_scope,\s*external_evidence_items\.team_id,\s*external_evidence_items\.author_id\)/i);
+  assert.match(sql, /create policy external_evidence_items_update_author on public\.external_evidence_items[\s\S]*with check[\s\S]*app\.can_access_note\(external_evidence_items\.org_id,\s*external_evidence_items\.access_scope,\s*external_evidence_items\.team_id,\s*external_evidence_items\.author_id\)/i);
+  assert.match(sql, /app\.can_access_note\(external_evidence_items\.org_id,\s*external_evidence_items\.access_scope,\s*external_evidence_items\.team_id,\s*external_evidence_items\.author_id\)/i);
+  assert.match(sql, /app\.can_access_note\(i\.org_id,\s*i\.access_scope,\s*i\.team_id,\s*i\.author_id\)/i);
+  assert.match(sql, /create index(?: if not exists)? external_evidence_items_org_published_idx/i);
+  assert.match(sql, /create index(?: if not exists)? external_evidence_items_source_idx/i);
+  assert.match(sql, /create index(?: if not exists)? external_events_item_idx/i);
 });

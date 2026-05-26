@@ -14,6 +14,8 @@ import type {
   AuditEvent,
   OrganizationInvite,
   OrganizationTeam,
+  WorkspaceExternalEvent,
+  WorkspaceExternalEvidenceItem,
   NoteDraft,
   NoteRevision,
   TranscriptChunkRecord,
@@ -28,9 +30,15 @@ export interface SupabaseServerConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   supabaseServiceRoleKey: string;
+  audioTranscription?: {
+    provider: 'http';
+    providerName?: string;
+    endpointUrl: string;
+    apiKey?: string;
+  };
 }
 
-export function readSupabaseServerConfig(env = process.env, envPath = '.env'): SupabaseServerConfig {
+export function readSupabaseServerConfig(env: Record<string, string | undefined> = process.env, envPath = '.env'): SupabaseServerConfig {
   const fileEnv = loadDotenv({ path: envPath, processEnv: {}, quiet: true }).parsed ?? {};
   const supabaseUrl = env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
   const supabaseAnonKey = env.SUPABASE_ANON_KEY ?? fileEnv.SUPABASE_ANON_KEY;
@@ -38,7 +46,26 @@ export function readSupabaseServerConfig(env = process.env, envPath = '.env'): S
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
     throw new Error('Missing SUPABASE_URL, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY');
   }
-  return { supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey };
+  return {
+    supabaseUrl,
+    supabaseAnonKey,
+    supabaseServiceRoleKey,
+    audioTranscription: readAudioTranscriptionConfig(env, fileEnv)
+  };
+}
+
+function readAudioTranscriptionConfig(env: Record<string, string | undefined>, fileEnv: Record<string, string | undefined>): SupabaseServerConfig['audioTranscription'] {
+  const provider = (env.MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER ?? fileEnv.MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER)?.trim().toLowerCase();
+  if (!provider) return undefined;
+  if (provider !== 'http') throw new Error(`Unsupported MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER ${provider}`);
+  const endpointUrl = env.MYCELIUM_AUDIO_TRANSCRIPTION_ENDPOINT ?? fileEnv.MYCELIUM_AUDIO_TRANSCRIPTION_ENDPOINT;
+  if (!endpointUrl) throw new Error('Missing MYCELIUM_AUDIO_TRANSCRIPTION_ENDPOINT for HTTP audio transcription provider');
+  return {
+    provider: 'http',
+    providerName: env.MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER_NAME ?? fileEnv.MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER_NAME,
+    endpointUrl,
+    apiKey: env.MYCELIUM_AUDIO_TRANSCRIPTION_API_KEY ?? fileEnv.MYCELIUM_AUDIO_TRANSCRIPTION_API_KEY
+  };
 }
 
 export function createSupabaseClients(config: SupabaseServerConfig) {
@@ -254,6 +281,27 @@ export function createSupabaseWorkspaceRepository(client: SupabaseClient): Works
       if (deleteResult.error) throw deleteResult.error;
       if (!chunks.length) return;
       const { error } = await client.from('transcript_chunks').insert(chunks.map(mapTranscriptChunkToRow));
+      if (error) throw error;
+    },
+    async listExternalEvidenceItems(orgId) {
+      const { data, error } = await client.from('external_evidence_items').select('*').eq('org_id', orgId).order('published_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapExternalEvidenceItemFromRow);
+    },
+    async insertExternalEvidenceItem(item) {
+      const { error } = await client.from('external_evidence_items').insert(mapExternalEvidenceItemToRow(item));
+      if (error) throw error;
+    },
+    async listExternalEvents(orgId) {
+      const { data, error } = await client.from('external_events').select('*').eq('org_id', orgId).order('observed_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapExternalEventFromRow);
+    },
+    async replaceExternalEventsForItem(orgId, evidenceItemId, events) {
+      const deleteResult = await client.from('external_events').delete().eq('org_id', orgId).eq('evidence_item_id', evidenceItemId);
+      if (deleteResult.error) throw deleteResult.error;
+      if (!events.length) return;
+      const { error } = await client.from('external_events').insert(events.map(mapExternalEventToRow));
       if (error) throw error;
     },
     async addAuditEvent(event) {
@@ -678,6 +726,7 @@ function mapClaimFromRow(row: Record<string, any>, linkedEntities: LinkedEntity[
     teamId: row.team_id,
     visibility: row.visibility,
     accessScope: row.access_scope ?? accessScopeFromVisibility(row.visibility),
+    transcriptCitations: Array.isArray(row.transcript_citations) ? row.transcript_citations : undefined,
     reviewStatus: row.review_status,
     reviewNote: row.review_note,
     reviewerId: row.reviewer_id,
@@ -708,6 +757,7 @@ function mapClaimToRow(claim: WorkspaceClaim) {
     applies_to_end: claim.appliesToEnd,
     horizon: claim.horizon,
     freshness: claim.freshness,
+    transcript_citations: claim.transcriptCitations ?? [],
     review_status: claim.reviewStatus,
     review_note: claim.reviewNote,
     reviewer_id: claim.reviewerId,
@@ -832,6 +882,85 @@ function mapTranscriptChunkToRow(chunk: TranscriptChunkRecord) {
     chunk_text: chunk.text,
     confidence: chunk.confidence,
     created_at: chunk.createdAt
+  };
+}
+
+function mapExternalEvidenceItemFromRow(row: Record<string, any>): WorkspaceExternalEvidenceItem {
+  return withDerivedMetadata({
+    id: row.id,
+    orgId: row.org_id,
+    title: row.title,
+    summary: row.summary,
+    sourceKind: row.source_kind,
+    sourceUrl: row.source_url,
+    sourceId: row.source_id,
+    provider: row.provider,
+    publishedAt: row.published_at,
+    observedAt: row.observed_at,
+    authorId: row.author_id,
+    authorName: row.author_name,
+    team: row.team_name,
+    teamId: row.team_id,
+    visibility: row.visibility,
+    accessScope: row.access_scope ?? accessScopeFromVisibility(row.visibility),
+    licenseMetadata: row.license_metadata ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }, linkedEntitiesFromJson(row.linked_entities));
+}
+
+function mapExternalEvidenceItemToRow(item: WorkspaceExternalEvidenceItem) {
+  return {
+    id: item.id,
+    org_id: item.orgId,
+    author_id: item.authorId,
+    author_name: item.authorName,
+    team_id: item.teamId,
+    team_name: item.team,
+    visibility: item.visibility,
+    access_scope: item.accessScope,
+    source_kind: item.sourceKind,
+    title: item.title,
+    summary: item.summary,
+    source_url: item.sourceUrl,
+    source_id: item.sourceId,
+    provider: item.provider,
+    published_at: item.publishedAt,
+    observed_at: item.observedAt,
+    linked_entities: item.linkedEntities ?? [],
+    license_metadata: item.licenseMetadata ?? {},
+    raw_body: null,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt
+  };
+}
+
+function mapExternalEventFromRow(row: Record<string, any>): WorkspaceExternalEvent {
+  return withDerivedMetadata({
+    id: row.id,
+    orgId: row.org_id,
+    evidenceItemId: row.evidence_item_id,
+    subject: row.subject,
+    text: row.event_text,
+    direction: row.direction,
+    evidence: row.evidence,
+    confidence: Number(row.confidence),
+    observedAt: row.observed_at
+  }, linkedEntitiesFromJson(row.linked_entities));
+}
+
+function mapExternalEventToRow(event: WorkspaceExternalEvent) {
+  return {
+    id: event.id,
+    org_id: event.orgId,
+    evidence_item_id: event.evidenceItemId,
+    subject: event.subject,
+    event_text: event.text,
+    direction: event.direction,
+    evidence: event.evidence,
+    confidence: event.confidence,
+    observed_at: event.observedAt,
+    linked_entities: event.linkedEntities ?? []
   };
 }
 

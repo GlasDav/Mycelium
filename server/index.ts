@@ -1,5 +1,9 @@
 import { buildApp, defaultStaticRoot } from './app';
-import { createWorkspaceService } from './workspace-service';
+import {
+  createConfiguredAudioTranscriptionProvider,
+  createHttpAudioTranscriptionProvider,
+  createWorkspaceService
+} from './workspace-service';
 import {
   createSupabaseClients,
   createSupabaseWorkspaceRepository,
@@ -10,7 +14,14 @@ async function main() {
   const config = readSupabaseServerConfig();
   const clients = createSupabaseClients(config);
   const repository = createSupabaseWorkspaceRepository(clients.serviceClient);
-  const service = createWorkspaceService(repository);
+  const audioProvider = config.audioTranscription
+    ? createHttpAudioTranscriptionProvider({
+      name: config.audioTranscription.providerName,
+      endpointUrl: config.audioTranscription.endpointUrl,
+      apiKey: config.audioTranscription.apiKey
+    })
+    : createConfiguredAudioTranscriptionProvider(process.env);
+  const service = createWorkspaceService(repository, undefined, audioProvider);
   const app = buildApp({
     service,
     resolveUserId: clients.resolveUserId,

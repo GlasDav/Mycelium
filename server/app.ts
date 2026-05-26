@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   AudioImportJob,
+  CreateExternalEvidenceInput,
   CreateNoteInput,
   CreateAudioImportJobInput,
   AdminOrganizationSnapshot,
@@ -13,6 +14,7 @@ import type {
   DashboardSnapshot,
   OrganizationInvite,
   OrganizationTeam,
+  ExternalEvidenceListing,
   NoteDraft,
   NoteRevision,
   TranscriptChunkRecord,
@@ -21,6 +23,7 @@ import type {
   UpdateRelationInput,
   UpsertNoteDraftInput,
   WorkspaceExport,
+  WorkspaceExternalEvidenceItem,
   WorkspaceOptions,
   WorkspaceSnapshot
 } from './workspace-service';
@@ -37,6 +40,8 @@ export interface WorkspaceServiceApi {
   getAudioImportJob(viewerId: string, jobId: string): Promise<AudioImportJob | undefined>;
   listAudioImportJobTranscriptChunks(viewerId: string, jobId: string): Promise<TranscriptChunkRecord[]>;
   listNoteTranscriptChunks(viewerId: string, noteId: string): Promise<TranscriptChunkRecord[]>;
+  createExternalEvidenceItem(viewerId: string, input: CreateExternalEvidenceInput): Promise<WorkspaceExternalEvidenceItem>;
+  listExternalEvidence(viewerId: string): Promise<ExternalEvidenceListing>;
   getNoteDraft(viewerId: string): Promise<NoteDraft | undefined>;
   upsertNoteDraft(viewerId: string, input: UpsertNoteDraftInput): Promise<NoteDraft>;
   deleteNoteDraft(viewerId: string): Promise<void>;
@@ -157,6 +162,21 @@ export function buildApp(options: BuildAppOptions) {
     return { transcriptChunks: await options.service.listNoteTranscriptChunks(viewerId, request.params.id) };
   });
 
+  app.get('/api/external-evidence', async request => {
+    const viewerId = await requireViewerId(options, request);
+    return options.service.listExternalEvidence(viewerId);
+  });
+
+  app.post<{ Body: CreateExternalEvidenceInput }>('/api/external-evidence', async request => {
+    const viewerId = await requireViewerId(options, request);
+    const item = await options.service.createExternalEvidenceItem(viewerId, request.body);
+    const listing = await options.service.listExternalEvidence(viewerId);
+    return {
+      item,
+      events: listing.events.filter(event => event.evidenceItemId === item.id)
+    };
+  });
+
   app.patch<{ Params: { id: string }; Body: UpdateClaimInput }>('/api/claims/:id', async request => {
     const viewerId = await requireViewerId(options, request);
     return options.service.updateClaim(viewerId, request.params.id, request.body);
@@ -222,6 +242,10 @@ export function buildApp(options: BuildAppOptions) {
       || error.message.includes('administrator')
       || error.message.includes('deactivated')
       ? 403
+      : error.message.includes('Invalid ')
+      || error.message.includes(' is required')
+      || error.message.includes(' must be ')
+      ? 400
       : 500
     );
     reply.status(statusCode).send({ error: error.message });

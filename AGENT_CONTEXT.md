@@ -1,6 +1,6 @@
 # Mycelium — Agent Context
 
-_Last updated: 2026-05-22_
+_Last updated: 2026-05-26_
 
 This is the live orientation file for agents working on Mycelium. Read this before changing product, UX, engine, roadmap, or docs.
 
@@ -17,12 +17,12 @@ The repo contains a production-shaped MVP foundation:
 - Supabase Auth/Postgres/RLS project files and raw migrations.
 - Deterministic local intelligence engine; no paid APIs or secrets required.
 - Supabase auth trigger bootstraps the first organization admin, profile, team membership, and demo notes for a new local organization; later same-domain users require pending organization invites.
-- Server-side graph materialization for notes, claims, relations, deterministic extraction confidence, relation evidence strength, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, extraction jobs, audio import jobs, and transcript chunks.
+- Server-side graph materialization for notes, claims, relations, deterministic extraction confidence, relation evidence strength, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, extraction jobs, audio import jobs, transcript chunks, transcript claim citations, and permission-scoped external evidence items/events.
 - Deterministic local ontology v1 for core demo issuers/securities, ticker aliases, issuer aliases, industry/sector hierarchy, and default watchlist membership; no external security-master provider required.
 - Minimal note-taking-first research workspace UI with auth, observed-date/location controls for Personal, Team, and Organisation notes, team selection for active memberships, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata token controls, Notes-only pasted meeting-note/transcript import plus TXT/Markdown/DOCX/PDF/VTT/SRT file content import with parser preview, timestamped transcript chunk preview, consent-gated audio transcription import through an injectable provider seam, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive/admin, full-width rendered archive display, Notes-only collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, organization admin lifecycle controls, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls with explicit overflow counts, and responsive mobile layout. Source type is not user-facing note metadata; imported notes use lightweight create-only source provenance, and claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
 - Premium institutional workstation pass layered on the note-first UI: persistent page-aware context header, save/draft/read-only status, compact status toasts, `Ctrl+K` command palette with keyboard selection, focus mode for capture, ontology-backed metadata token suggestions, actionable dashboard drilldowns, active map filter chips, selected-relation density pinning, and relation review controls in the detail drawer.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
-- Tests covering extraction, async extraction-provider fallback, confidence scoring, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract plus opt-in live RLS smoke coverage, normalized entity links, BFF routing including scoped dashboard aggregates and audio import routes, workspace as-of queries, and import-shaped note creation, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations and applied transcript chunks, relation filtering, relation detail UI contracts, map timeline/lane/density/layout UI contracts, note metadata persistence, pasted/TXT/Markdown/DOCX/PDF/VTT/SRT note import parsing, audio transcription normalization/UI contracts, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
+- Tests covering extraction, async extraction-provider fallback, confidence scoring, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract plus opt-in live RLS smoke coverage, normalized entity links, BFF routing including scoped dashboard aggregates, audio import routes, and external evidence routes, workspace as-of queries, and import-shaped note creation, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, applied transcript chunks, and external evidence, relation filtering, relation detail UI contracts, map timeline/lane/density/layout UI contracts, note metadata persistence, pasted/TXT/Markdown/DOCX/PDF/VTT/SRT note import parsing, audio transcription normalization/UI contracts, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
 
 Run it:
 
@@ -74,9 +74,9 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 ### Backend
 
 - `server/index.ts` is the single-service Node entrypoint.
-- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace including `asOf` historical projections, scoped dashboard aggregates, organization admin lifecycle, workspace export/import, notes, note drafts, note history, audio import jobs/transcript chunks, claims, relations, and audit events.
-- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, Personal/Team/Organisation access scopes, multi-team membership, organization admin lifecycle, known-by-date historical as-of graph projections, role-gated dashboard aggregation, workspace JSON export/import, normalized linked metadata compatibility, note editing/history, server drafts, audio transcription provider contract, transcript job/chunk application, source-person memory summaries, review state, audit events, and the extraction provider contract.
-- `server/supabase-repository.ts` adapts the workspace service to Supabase, including organization admin/invite/team lifecycle persistence, normalized research entity and note/claim entity link persistence, audio import jobs, transcript chunks, and note draft audio-job linkage.
+- `server/app.ts` defines Fastify BFF routes for auth bootstrap, workspace including `asOf` historical projections, scoped dashboard aggregates, organization admin lifecycle, workspace export/import, notes, note drafts, note history, audio import jobs/transcript chunks, external evidence items/events, claims, relations, and audit events.
+- `server/workspace-service.ts` owns graph materialization, permission-filtered snapshots, Personal/Team/Organisation access scopes, multi-team membership, organization admin lifecycle, known-by-date historical as-of graph projections, role-gated dashboard aggregation, workspace JSON export/import, normalized linked metadata compatibility, note editing/history, server drafts, audio transcription provider contract, opt-in HTTP transcription provider adapter, transcript job/chunk application, transcript claim citations, external evidence persistence/listing/export/import, source-person memory summaries, review state, audit events, and the extraction provider contract.
+- `server/supabase-repository.ts` adapts the workspace service to Supabase, including organization admin/invite/team lifecycle persistence, normalized research entity and note/claim entity link persistence, audio import jobs, transcript chunks, note draft audio-job linkage, claim transcript citations, and external evidence item/event mapping.
 
 ### Supabase
 
@@ -87,6 +87,7 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 - `supabase/migrations/202605090002_normalized_research_entities.sql` adds `research_entities`, note/claim entity link tables, draft/revision linked-entity JSON, access-following RLS policies, and supporting indexes.
 - `supabase/migrations/202605100001_organization_admin_structure.sql` adds org admin/member status, active/archived teams, pending signup invites, nullable team links for personal/organization notes, canonical note/claim `access_scope`, and invite-aware auth bootstrap.
 - `supabase/migrations/202605220001_audio_transcription_imports.sql` adds transcript-only audio import jobs, timestamped transcript chunks with optional speaker/confidence metadata, draft audio-job linkage, author-only pre-application access, note-access-following applied chunks, and a null-only raw audio storage path guard.
+- `supabase/migrations/202605260001_external_evidence_events.sql` adds claim transcript citation JSON, permission-scoped external evidence items, external events, licensing metadata, raw-body null guard, and RLS policies that reuse `app.can_access_note`.
 
 ### Intelligence Engine
 
@@ -114,9 +115,9 @@ RAG/vector retrieval may later help find candidate related claims, but the graph
 
 ### Tests
 
-- `tests/schema.test.ts` checks the migration/RLS contract, including normalized entity/link tables and transcript-only audio import persistence.
-- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, role-gated dashboard aggregation, workspace export/import restore, note update/history/drafts, normalized entity links, source-person memory summaries, audio transcription job/chunk application, claim edit/reject, relation dismissal/reclassification.
-- `tests/bff.test.ts` checks Fastify API auth, scoped dashboard routes, audio import multipart routes, note update/history/draft routes, normalized metadata round trips, export/import, and route behavior.
+- `tests/schema.test.ts` checks the migration/RLS contract, including normalized entity/link tables, transcript-only audio import persistence, and external evidence/event policies.
+- `tests/workspace-service.test.ts` checks server-side materialization, permissions, audit, role-gated dashboard aggregation, workspace export/import restore, note update/history/drafts, normalized entity links, source-person memory summaries, audio transcription job/chunk application, transcript claim citations, opt-in HTTP transcription provider behavior, external evidence permissions/export/import, claim edit/reject, relation dismissal/reclassification.
+- `tests/bff.test.ts` checks Fastify API auth, scoped dashboard routes, audio import multipart routes, external evidence routes, note update/history/draft routes, normalized metadata round trips, export/import, and route behavior.
 - `tests/audio-transcription.test.ts` checks pure audio job normalization, transcript chunk metadata preservation, and audio file validation.
 - `tests/note-import.test.ts` checks pasted note/transcript parsing, VTT/SRT/plain timestamped transcript chunks, audio summary validation, conservative date handling, metadata canonicalization, and preservation of the claim-window inference boundary.
 - `tests/note-import-docx.test.ts` and `tests/note-import-pdf.test.ts` check client-side document text extraction helpers.
@@ -232,20 +233,20 @@ Design principles:
 
 ## Current Validation Status
 
-As of 2026-05-22:
+As of 2026-05-26:
 
 - `npm run validate` passes.
 - Build passes.
-- 208/208 default tests pass; the opt-in live Supabase RLS test skips when Docker/local Supabase is unavailable.
+- 214/214 default tests pass; the opt-in live Supabase RLS test skips when Docker/local Supabase is unavailable.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
 
 - Extraction is deterministic heuristic logic, not LLM-backed.
 - Permissions are enforced in the server-side workspace service and represented in Supabase RLS policies.
-- Note capture is typed/pasted text plus TXT/Markdown/DOCX/PDF/VTT/SRT file-content import and consent-gated audio transcription import, with imports applying parsed content to the unsaved workbench, explicit save for existing notes, and server-backed draft recovery for unsaved workbench content. Audio transcription v1 uses an injectable provider seam that is not configured by default; no raw audio is durably stored, and only job metadata plus applied transcript chunks persist. Durable file storage, scanned-PDF OCR, real/default transcription provider wiring, and RMS integrations remain deferred.
+- Note capture is typed/pasted text plus TXT/Markdown/DOCX/PDF/VTT/SRT file-content import and consent-gated audio transcription import, with imports applying parsed content to the unsaved workbench, explicit save for existing notes, and server-backed draft recovery for unsaved workbench content. Audio transcription v1 uses an injectable provider seam and an opt-in HTTP adapter, but no default vendor is configured; no raw audio is durably stored, and only job metadata plus applied transcript chunks persist. Transcript-derived claims now carry chunk citations when note text came from applied chunks. Durable file storage, scanned-PDF OCR, vendor-specific transcription selection, and RMS integrations remain deferred.
 - Real Supabase Auth and Postgres/RLS schema are present; deployment still needs real hosted Supabase credentials.
-- No external news/filings ingestion yet.
+- External evidence has a permission-scoped item/event schema, BFF routes, export/import support, licensing metadata, and a raw-body null guard. Automated external news/filings ingestion, provider connectors, and external-vs-internal claim matching remain deferred.
 - Relationship topic matching and confidence scoring are deterministic and conservative; they handle a small set of business-driver term families and bounded evidence-strength heuristics but do not use fuzzy semantics, embeddings, or LLM calls.
 - The map is a dependency-free lane-based affordance with data-driven node positions and density overflow counts, not a full interactive graph canvas yet.
 - Normalized research entities use deterministic/manual keys plus the small local ontology for known issuers, securities, parent sectors, and default demo watchlists. There is still no external security-master provider, portfolio-specific membership provider, fuzzy source-person identity resolution, or identity-confidence workflow beyond explicit/manual source-person scoring evidence.
@@ -258,12 +259,13 @@ See `LIVE_ROADMAP.md`. The highest-leverage next phase is to turn the demo into 
 2. Improve temporal claim extraction and analyst review controls.
 3. Continue relationship map polish around graph readability, drilldowns, and richer visual layout.
 4. Continue dashboard polish around richer drilldowns and production role semantics as pilot data clarifies team/org reporting expectations.
-5. Wire a real transcription provider only when product/compliance requirements justify it; keep the current default provider unconfigured.
+5. Choose a real transcription provider only when product/compliance requirements justify it; keep the current default provider unconfigured and use the HTTP adapter only for explicit pilot wiring.
 6. Extend transcription beyond capture v1 with richer speaker diarization, correction workflow, source confidence review, and compliance/consent controls.
 7. Expand beyond the local ontology with a real security-master/taxonomy provider, portfolio-specific membership, and source-person identity confidence once real pilot data clarifies the right taxonomy.
 8. Add richer document workflows on top of the existing text/DOCX/PDF import and provider seams.
-9. Add a mobile capture roadmap: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
-10. Wire model-backed extraction behind the existing auditable provider interface only when a pilot requires it.
+9. Turn the PWA-first mobile capture scope into implementation tasks: quick text notes, voice memos, offline queue, lightweight claim review, and high-signal push notifications.
+10. Add external evidence matching against internal claims without reusing internal note-to-note relation labels for public evidence.
+11. Wire model-backed extraction behind the existing auditable provider interface only when a pilot requires it.
 
 ## Agent Operating Notes
 

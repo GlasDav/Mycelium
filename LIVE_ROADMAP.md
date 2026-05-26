@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-22_
+_Last updated: 2026-05-26_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -137,6 +137,14 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - audio bytes are passed only in memory to an injectable transcription provider; the default provider is intentionally not configured,
   - applied jobs persist transcript job metadata and timestamped/speaker/confidence chunks while raw audio storage is explicitly blocked,
   - note create/update can apply a ready audio import job, link chunks to the saved note, audit the event, and preserve claim-window inference at the graph layer.
+- [x] Transcript claim provenance added:
+  - claims materialized from notes with applied transcript chunks now carry chunk citations with import job, chunk index, speaker, timestamp, confidence, and text,
+  - Supabase claims persist transcript citation JSON through the new external evidence migration,
+  - workspace export/import preserves accessible applied transcript jobs, chunks, and claim citations.
+- [x] Opt-in HTTP audio transcription provider wiring added:
+  - `MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER=http`, endpoint, API key, and provider name can configure an injectable HTTP adapter,
+  - the default provider remains `not-configured`,
+  - provider requests pass audio bytes in memory as base64 and do not add raw audio storage paths.
 - [x] Optional extraction-provider seam added:
   - server graph materialization can use an injected async claim extraction provider,
   - provider drafts are normalized through deterministic temporal/provenance/confidence helpers,
@@ -147,6 +155,14 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Opt-in live Supabase RLS smoke test added:
   - `npm run test:supabase:live` checks local auth bootstrap and same-domain invite gating when Supabase is running,
   - the test skips cleanly when Docker/local Supabase is unavailable and is not part of `npm run validate`.
+- [x] External evidence schema foundation added:
+  - permission-scoped `external_evidence_items` and `external_events` tables with licensing metadata, raw-body null guard, RLS policies, and indexes,
+  - BFF/service routes for creating and listing external evidence separately from internal note-to-note relations,
+  - workspace export/import includes accessible external evidence.
+- [x] Mobile/PWA capture scope defined:
+  - scope artifact saved at `docs/superpowers/specs/2026-05-26-mobile-pwa-capture-scope.md`,
+  - direction is PWA-first capture companion, not desktop replacement,
+  - native/Expo remains a contingency for proven audio, background, offline, notification, or distribution constraints.
 
 ### Current MVP Validation
 
@@ -181,10 +197,10 @@ Expected result:
   - note filtering and sorting helpers.
   - premium context header, command palette, metadata token options, dashboard drilldowns, and imported premium CSS contracts.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
-  - pasted note/transcript plus TXT/Markdown/DOCX/PDF/VTT/SRT file import parsing, audio transcription normalization/UI contracts, audio import BFF routes, and existing note-create/update route contracts.
+  - pasted note/transcript plus TXT/Markdown/DOCX/PDF/VTT/SRT file import parsing, audio transcription normalization/UI contracts, audio import BFF routes, transcript claim citations, and existing note-create/update route contracts.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
-  - organization admin lifecycle, invite/team/member tests, multi-team access scopes, personal-note graph privacy, and transcript chunk export/import contracts.
+  - organization admin lifecycle, invite/team/member tests, multi-team access scopes, personal-note graph privacy, transcript chunk export/import contracts, and external evidence schema/service/BFF contracts.
 
 ## Priority Ladder
 
@@ -339,14 +355,16 @@ Goal: reduce friction for actual analysts by capturing research where it already
 - [x] Add transcript/file upload path. **Done for client-side TXT/Markdown/DOCX/PDF/VTT/SRT content import; durable file storage remains deferred.**
 - [x] Parse DOCX/PDF/TXT/Markdown/VTT/SRT. **Done for client-side text extraction and timestamped transcript previews; scanned-PDF OCR remains deferred.**
 - [x] Add transcript-only audio transcription capture foundation for expert calls, company meetings, and internal research discussions. **Done with consent-gated multipart upload, injectable provider seam, preview/apply-to-workbench flow, applied transcript chunk persistence, and no durable raw audio storage. The default provider remains not configured.**
-- [ ] Wire a real transcription provider once compliance, cost, and data-retention requirements are explicit.
+- [x] Add opt-in transcription provider wiring for explicit pilot configuration. **Done as an HTTP adapter controlled by `MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER=http`; no default vendor is configured.**
+- [ ] Choose and wire a real transcription vendor once compliance, cost, and data-retention requirements are explicit.
 - [ ] Add live/near-live meeting transcription design:
   - speaker diarization,
   - richer timestamped transcript chunks,
   - source confidence review,
   - correction workflow,
   - expanded consent/compliance controls.
-- [ ] Convert transcript chunks directly into reviewed claims with source timestamps and temporal windows. **Current v1 materializes claims from the reviewed saved note body; chunk-level claim provenance remains deferred.**
+- [x] Link transcript-derived claims to source timestamps. **Done as claim-level transcript citations over applied chunks; claims still materialize from reviewed saved note body.**
+- [ ] Convert transcript chunks directly into reviewed claims with source timestamps and temporal windows. **Current v1 does not create reviewed claims directly from chunks.**
 - [ ] Add calendar/meeting metadata attachment.
 - [ ] Add Slack/Teams/email ingest design, not necessarily implementation.
 - [ ] Add source licensing/compliance notes for external data.
@@ -355,7 +373,7 @@ Goal: reduce friction for actual analysts by capturing research where it already
 
 Goal: make capture effortless at the edge — immediately after meetings, calls, conferences, site visits, and channel checks.
 
-- [ ] Define mobile app scope: capture-first companion, not full desktop replacement.
+- [x] Define mobile app scope: capture-first companion, not full desktop replacement. **Done as PWA-first scope artifact; native/Expo is reserved for proven device constraints.**
 - [ ] Add mobile note capture:
   - quick text note,
   - voice memo,
@@ -379,7 +397,7 @@ Goal: make capture effortless at the edge — immediately after meetings, calls,
 
 Goal: connect internal claims to external corroboration/contradiction.
 
-- [ ] Define external event schema.
+- [x] Define external event schema. **Done with permission-scoped external evidence items/events, licensing metadata, raw-body null guard, and BFF list/create routes.**
 - [ ] Add watchlist/portfolio prioritization.
 - [ ] Add SEC/ASX/news ingestion prototype.
 - [ ] Classify external events against internal claims.

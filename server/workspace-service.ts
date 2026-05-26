@@ -13,6 +13,9 @@ import {
   type Claim,
   type ClaimExtractionProvider,
   type Direction,
+  type ExternalEvent,
+  type ExternalEvidenceItem,
+  type ExternalSourceKind,
   type Horizon,
   type Note,
   type Relation,
@@ -22,6 +25,7 @@ import {
   type TeamMembership,
   type TeamStatus,
   type UserStatus,
+  type TranscriptCitation,
   type Visibility
 } from '../src/engine';
 import {
@@ -189,6 +193,73 @@ export interface TranscriptChunkRecord {
   createdAt: string;
 }
 
+export interface WorkspaceExternalEvidenceItem extends ExternalEvidenceItem {
+  orgId: string;
+  authorName: string;
+  linkedEntities: LinkedEntity[];
+  tickers: string[];
+  industries: string[];
+  companyTags: string[];
+  kpis: string[];
+  watchlistTags: string[];
+  sourcePeople: string[];
+}
+
+export interface WorkspaceExternalEvent extends ExternalEvent {
+  orgId: string;
+  linkedEntities: LinkedEntity[];
+  tickers: string[];
+  industries: string[];
+  companyTags: string[];
+  kpis: string[];
+  watchlistTags: string[];
+  sourcePeople: string[];
+}
+
+export interface CreateExternalEventInput {
+  subject: string;
+  text: string;
+  direction?: Direction;
+  evidence?: string;
+  confidence?: number;
+  observedAt?: string;
+  linkedEntities?: LinkedEntity[];
+  tickers?: string[];
+  industries?: string[];
+  companyTags?: string[];
+  kpis?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
+}
+
+export interface CreateExternalEvidenceInput {
+  sourceKind: ExternalSourceKind;
+  title: string;
+  summary: string;
+  sourceUrl?: string;
+  sourceId?: string;
+  provider?: string;
+  publishedAt: string;
+  observedAt?: string;
+  visibility?: Visibility;
+  accessScope?: AccessScope;
+  teamId?: string;
+  linkedEntities?: LinkedEntity[];
+  tickers?: string[];
+  industries?: string[];
+  companyTags?: string[];
+  kpis?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
+  licenseMetadata?: Record<string, unknown>;
+  events?: CreateExternalEventInput[];
+}
+
+export interface ExternalEvidenceListing {
+  evidenceItems: WorkspaceExternalEvidenceItem[];
+  events: WorkspaceExternalEvent[];
+}
+
 export interface CreateAudioImportJobInput {
   fileName: string;
   contentType: string;
@@ -228,6 +299,12 @@ export interface AudioTranscriptionOutput {
 export interface AudioTranscriptionProvider {
   name: string;
   transcribe(input: AudioTranscriptionProviderInput): Promise<AudioTranscriptionOutput>;
+}
+
+export interface HttpAudioTranscriptionProviderConfig {
+  name?: string;
+  endpointUrl: string;
+  apiKey?: string;
 }
 
 export interface WorkspaceSummary {
@@ -396,6 +473,8 @@ export interface WorkspaceExport {
   reviewedRelations: WorkspaceRelation[];
   audioImportJobs: AudioImportJob[];
   transcriptChunks: TranscriptChunkRecord[];
+  externalEvidenceItems?: WorkspaceExternalEvidenceItem[];
+  externalEvents?: WorkspaceExternalEvent[];
 }
 
 export interface CreateNoteInput {
@@ -514,6 +593,10 @@ export interface WorkspaceRepository {
   updateAudioImportJob(job: AudioImportJob): Promise<void>;
   listTranscriptChunks(orgId: string): Promise<TranscriptChunkRecord[]>;
   replaceTranscriptChunksForJob(orgId: string, importJobId: string, chunks: TranscriptChunkRecord[]): Promise<void>;
+  listExternalEvidenceItems(orgId: string): Promise<WorkspaceExternalEvidenceItem[]>;
+  insertExternalEvidenceItem(item: WorkspaceExternalEvidenceItem): Promise<void>;
+  listExternalEvents(orgId: string): Promise<WorkspaceExternalEvent[]>;
+  replaceExternalEventsForItem(orgId: string, evidenceItemId: string, events: WorkspaceExternalEvent[]): Promise<void>;
   addAuditEvent(event: AuditEvent): Promise<void>;
   listAuditEvents(orgId: string): Promise<AuditEvent[]>;
 }
@@ -542,6 +625,7 @@ export function createWorkspaceService(
     const notes = await repository.listNotes(orgId);
     const existingClaims = new Map((await repository.listClaims(orgId)).map(claim => [claim.id, claim]));
     const previousRelations = new Map((await repository.listRelations(orgId)).map(relation => [relation.id, relation]));
+    const transcriptChunksByNote = chunksByNoteId(await repository.listTranscriptChunks(orgId));
     const asOf = maxDate(notes.flatMap(note => [note.createdAt, note.observedAt]).filter(Boolean) as string[]);
     const extracted: WorkspaceClaim[] = [];
 
@@ -549,7 +633,7 @@ export function createWorkspaceService(
       const claims = await extractionProvider.extractClaims(note, { asOf });
       for (const claim of claims) {
         const existing = existingClaims.get(claim.id);
-        extracted.push(mergeClaim(orgId, note, claim, existing, asOf));
+        extracted.push(mergeClaim(orgId, note, claim, existing, asOf, transcriptChunksByNote.get(note.id) ?? []));
       }
     }
 
@@ -684,13 +768,17 @@ export function createWorkspaceService(
     const exportedJobIds = new Set(audioImportJobs.map(job => job.id));
     const transcriptChunks = (await repository.listTranscriptChunks(viewer.orgId))
       .filter(chunk => Boolean(chunk.noteId && visibleNoteIds.has(chunk.noteId)) && exportedJobIds.has(chunk.importJobId));
+    const externalEvidence = await listExternalEvidence(viewerId);
+    const exportedEvidenceIds = new Set(externalEvidence.evidenceItems.map(item => item.id));
     return {
       kind: 'mycelium.workspace.v1',
       exportedAt: new Date().toISOString(),
       snapshot,
       reviewedRelations: await listAccessibleRelations(viewer),
       audioImportJobs,
-      transcriptChunks
+      transcriptChunks,
+      externalEvidenceItems: externalEvidence.evidenceItems,
+      externalEvents: externalEvidence.events.filter(event => exportedEvidenceIds.has(event.evidenceItemId))
     };
   }
 
@@ -722,6 +810,7 @@ export function createWorkspaceService(
 
     await materializeGraph(viewer.orgId, viewer.id);
     await restoreImportedTranscriptJobs(viewer, input, usersById, importedNoteIds);
+    await restoreImportedExternalEvidence(viewer, input, usersById);
     await restoreImportedClaimState(viewer, snapshot, importedNoteIds);
     await restoreImportedRelationState(viewer, input.reviewedRelations ?? snapshot.relations, importedNoteIds);
     await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'workspace.imported', 'organization', viewer.orgId, {
@@ -965,6 +1054,66 @@ export function createWorkspaceService(
     return (await repository.listTranscriptChunks(viewer.orgId))
       .filter(chunk => chunk.noteId === noteId)
       .sort((a, b) => a.chunkIndex - b.chunkIndex);
+  }
+
+  async function createExternalEvidenceItem(viewerId: string, input: CreateExternalEvidenceInput): Promise<WorkspaceExternalEvidenceItem> {
+    const viewer = await requireViewer(viewerId);
+    const sourceKind = readExternalSourceKind(input.sourceKind);
+    const title = input.title?.trim();
+    if (!title) throw new Error('External evidence title is required');
+    const summary = input.summary?.trim();
+    if (!summary) throw new Error('External evidence summary is required');
+    const publishedAt = readDateOnly(input.publishedAt, 'External evidence publishedAt');
+    const observedAt = readDateOnly(input.observedAt ?? input.publishedAt, 'External evidence observedAt');
+    const now = new Date().toISOString();
+    const access = await resolveNoteAccess(viewer, input.accessScope, input.visibility, input.teamId);
+    const metadata = metadataFromInput(input);
+    const item: WorkspaceExternalEvidenceItem = {
+      id: `external-evidence-${Date.now()}-${slug(title)}`,
+      orgId: viewer.orgId,
+      title,
+      summary,
+      sourceKind,
+      sourceUrl: input.sourceUrl?.trim() || undefined,
+      sourceId: input.sourceId?.trim() || undefined,
+      provider: input.provider?.trim() || undefined,
+      publishedAt,
+      observedAt,
+      authorId: viewer.id,
+      authorName: viewer.name,
+      visibility: access.visibility,
+      accessScope: access.accessScope,
+      team: access.teamName,
+      teamId: access.teamId,
+      licenseMetadata: input.licenseMetadata ?? {},
+      createdAt: now,
+      updatedAt: now,
+      ...metadata
+    };
+    const events = normalizeExternalEvents(viewer.orgId, item, input.events ?? []);
+
+    await repository.insertExternalEvidenceItem(item);
+    await repository.replaceExternalEventsForItem(viewer.orgId, item.id, events);
+    await repository.addAuditEvent(createAuditEvent(viewer.orgId, viewer.id, 'external_evidence.created', 'external_evidence_item', item.id, {
+      sourceKind: item.sourceKind,
+      provider: item.provider,
+      eventCount: events.length,
+      accessScope: item.accessScope,
+      teamId: item.teamId
+    }));
+    return item;
+  }
+
+  async function listExternalEvidence(viewerId: string): Promise<ExternalEvidenceListing> {
+    const viewer = await requireViewer(viewerId);
+    const evidenceItems = (await repository.listExternalEvidenceItems(viewer.orgId))
+      .filter(item => canAccess(viewer, item))
+      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt) || a.title.localeCompare(b.title));
+    const itemIds = new Set(evidenceItems.map(item => item.id));
+    const events = (await repository.listExternalEvents(viewer.orgId))
+      .filter(event => itemIds.has(event.evidenceItemId))
+      .sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt) || a.subject.localeCompare(b.subject));
+    return { evidenceItems, events };
   }
 
   async function requireReadyAudioImportJob(
@@ -1290,6 +1439,7 @@ export function createWorkspaceService(
         appliesToStart: exportedClaim.appliesToStart,
         appliesToEnd: exportedClaim.appliesToEnd,
         horizon: exportedClaim.horizon,
+        transcriptCitations: exportedClaim.transcriptCitations ?? claim.transcriptCitations,
         reviewStatus: exportedClaim.reviewStatus,
         reviewNote: exportedClaim.reviewNote,
         reviewerId: exportedClaim.reviewerId,
@@ -1332,6 +1482,46 @@ export function createWorkspaceService(
       await repository.replaceTranscriptChunksForJob(viewer.orgId, restoredJob.id, (chunksByJob.get(job.id) ?? []).map(chunk => ({
         ...chunk,
         orgId: viewer.orgId
+      })));
+    }
+  }
+
+  async function restoreImportedExternalEvidence(
+    viewer: WorkspaceUser,
+    input: WorkspaceExport,
+    usersById: Map<string, WorkspaceUser>
+  ): Promise<void> {
+    const existingIds = new Set((await repository.listExternalEvidenceItems(viewer.orgId)).map(item => item.id));
+    const items = (input.externalEvidenceItems ?? []).filter(item => item.id && !existingIds.has(item.id));
+    if (!items.length) return;
+
+    const importedIds = new Set(items.map(item => item.id));
+    const eventsByItem = new Map<string, WorkspaceExternalEvent[]>();
+    for (const event of input.externalEvents ?? []) {
+      if (!importedIds.has(event.evidenceItemId)) continue;
+      eventsByItem.set(event.evidenceItemId, [...eventsByItem.get(event.evidenceItemId) ?? [], event]);
+    }
+
+    for (const item of items) {
+      const author = usersById.get(item.authorId) ?? viewer;
+      const accessScope = item.accessScope ?? accessScopeFromVisibility(item.visibility);
+      const restoredItem: WorkspaceExternalEvidenceItem = withDerivedMetadata({
+        ...item,
+        orgId: viewer.orgId,
+        authorId: author.id,
+        authorName: author.name,
+        visibility: accessScope === 'organization' ? 'public' : accessScope === 'personal' ? 'private' : 'team',
+        accessScope,
+        team: accessScope === 'team' ? author.team : undefined,
+        teamId: accessScope === 'team' ? author.teamId : undefined,
+        licenseMetadata: item.licenseMetadata ?? {},
+        updatedAt: item.updatedAt ?? new Date().toISOString()
+      });
+      await repository.insertExternalEvidenceItem(restoredItem);
+      await repository.replaceExternalEventsForItem(viewer.orgId, restoredItem.id, (eventsByItem.get(item.id) ?? []).map(event => withDerivedMetadata({
+        ...event,
+        orgId: viewer.orgId,
+        linkedEntities: event.linkedEntities ?? []
       })));
     }
   }
@@ -1434,6 +1624,8 @@ export function createWorkspaceService(
     getAudioImportJob,
     listAudioImportJobTranscriptChunks,
     listNoteTranscriptChunks,
+    createExternalEvidenceItem,
+    listExternalEvidence,
     getNoteDraft,
     upsertNoteDraft,
     deleteNoteDraft,
@@ -1458,12 +1650,169 @@ function readWorkspaceExport(input: WorkspaceExport): WorkspaceExport {
   return input;
 }
 
+const externalSourceKinds: ExternalSourceKind[] = ['news', 'filing', 'press_release', 'transcript', 'other'];
+
 const defaultAudioTranscriptionProvider: AudioTranscriptionProvider = {
   name: 'not-configured',
   async transcribe() {
     throw new Error('Audio transcription provider is not configured');
   }
 };
+
+export function createHttpAudioTranscriptionProvider(
+  config: HttpAudioTranscriptionProviderConfig,
+  fetcher: typeof fetch = fetch
+): AudioTranscriptionProvider {
+  return {
+    name: config.name?.trim() || 'http-transcription-provider',
+    async transcribe(input) {
+      const response = await fetcher(config.endpointUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {})
+        },
+        body: JSON.stringify({
+          fileName: input.fileName,
+          contentType: input.contentType,
+          bytesBase64: bytesToBase64(input.bytes),
+          language: input.language,
+          durationSeconds: input.durationSeconds
+        })
+      });
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(`Audio transcription provider request failed (${response.status})${message ? `: ${message}` : ''}`);
+      }
+      const body = await response.json() as Partial<AudioTranscriptionOutput>;
+      return {
+        text: typeof body.text === 'string' ? body.text : '',
+        chunks: Array.isArray(body.chunks) ? body.chunks : undefined
+      };
+    }
+  };
+}
+
+export function createConfiguredAudioTranscriptionProvider(
+  env: Record<string, string | undefined> = runtimeEnv(),
+  fetcher: typeof fetch = fetch
+): AudioTranscriptionProvider {
+  const provider = env.MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER?.trim().toLowerCase();
+  if (!provider) return defaultAudioTranscriptionProvider;
+  if (provider !== 'http') throw new Error(`Unsupported audio transcription provider ${provider}`);
+  const endpointUrl = env.MYCELIUM_AUDIO_TRANSCRIPTION_ENDPOINT?.trim();
+  if (!endpointUrl) throw new Error('MYCELIUM_AUDIO_TRANSCRIPTION_ENDPOINT is required for the HTTP audio transcription provider');
+  return createHttpAudioTranscriptionProvider({
+    name: env.MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER_NAME,
+    endpointUrl,
+    apiKey: env.MYCELIUM_AUDIO_TRANSCRIPTION_API_KEY
+  }, fetcher);
+}
+
+function runtimeEnv(): Record<string, string | undefined> {
+  return ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env) ?? {};
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function chunksByNoteId(chunks: TranscriptChunkRecord[]): Map<string, TranscriptChunkRecord[]> {
+  const result = new Map<string, TranscriptChunkRecord[]>();
+  for (const chunk of chunks) {
+    if (!chunk.noteId) continue;
+    result.set(chunk.noteId, [...result.get(chunk.noteId) ?? [], chunk]);
+  }
+  return result;
+}
+
+function transcriptCitationsForClaim(claim: Claim, chunks: TranscriptChunkRecord[]): TranscriptCitation[] | undefined {
+  if (!chunks.length) return undefined;
+  const evidence = normalizeEvidenceText(`${claim.evidence} ${claim.text}`);
+  const citations = chunks
+    .filter(chunk => {
+      const chunkText = normalizeEvidenceText(chunk.text);
+      return chunkText.length > 0 && (evidence.includes(chunkText) || chunkText.includes(evidence));
+    })
+    .sort((a, b) => a.chunkIndex - b.chunkIndex)
+    .map(chunk => ({
+      chunkId: chunk.id,
+      importJobId: chunk.importJobId,
+      chunkIndex: chunk.chunkIndex,
+      startMs: chunk.startMs,
+      endMs: chunk.endMs,
+      speaker: chunk.speaker,
+      text: chunk.text,
+      confidence: chunk.confidence
+    }));
+  return citations.length ? citations : undefined;
+}
+
+function normalizeEvidenceText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function readExternalSourceKind(value: string): ExternalSourceKind {
+  if ((externalSourceKinds as string[]).includes(value)) return value as ExternalSourceKind;
+  throw new Error('Invalid external evidence source kind');
+}
+
+function readDateOnly(value: string | undefined, fieldName: string): string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00.000Z`))) {
+    throw new Error(`${fieldName} must be a YYYY-MM-DD date`);
+  }
+  return value;
+}
+
+function normalizeExternalEvents(
+  orgId: string,
+  item: WorkspaceExternalEvidenceItem,
+  events: CreateExternalEventInput[]
+): WorkspaceExternalEvent[] {
+  return events.map((event, index) => {
+    const subject = event.subject?.trim();
+    const text = event.text?.replace(/\s+/g, ' ').trim();
+    if (!subject || !text) throw new Error('External evidence events require subject and text');
+    const direction = event.direction ?? 'neutral';
+    if (direction !== 'positive' && direction !== 'negative' && direction !== 'neutral') throw new Error('Invalid external event direction');
+    const confidence = normalizeRequiredConfidence(event.confidence ?? 0.5);
+    const eventMetadataInput: MetadataInput = {
+      linkedEntities: mergeLinkedEntities(
+        item.linkedEntities,
+        event.linkedEntities,
+        [linkedEntity('company', 'subject', subject)]
+      )
+    };
+    if (event.tickers) eventMetadataInput.tickers = event.tickers;
+    if (event.industries) eventMetadataInput.industries = event.industries;
+    if (event.companyTags) eventMetadataInput.companyTags = event.companyTags;
+    if (event.kpis) eventMetadataInput.kpis = event.kpis;
+    if (event.watchlistTags) eventMetadataInput.watchlistTags = event.watchlistTags;
+    if (event.sourcePeople) eventMetadataInput.sourcePeople = event.sourcePeople;
+    const eventMetadata = withDerivedMetadata(eventMetadataInput);
+    return {
+      id: `external-event-${item.id}-${index}`,
+      orgId,
+      evidenceItemId: item.id,
+      subject,
+      text,
+      direction,
+      evidence: event.evidence?.replace(/\s+/g, ' ').trim() || text,
+      confidence,
+      observedAt: readDateOnly(event.observedAt ?? item.observedAt, 'External event observedAt'),
+      ...eventMetadata
+    };
+  });
+}
+
+function normalizeRequiredConfidence(value: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error('External event confidence must be between 0 and 1');
+  }
+  return value;
+}
 
 function normalizeTranscriptChunks(
   orgId: string,
@@ -1854,6 +2203,8 @@ export function createMemoryWorkspaceRepository() {
     noteDrafts: NoteDraft[] = [];
     audioImportJobs: AudioImportJob[] = [];
     transcriptChunks: TranscriptChunkRecord[] = [];
+    externalEvidenceItems: WorkspaceExternalEvidenceItem[] = [];
+    externalEvents: WorkspaceExternalEvent[] = [];
 
     seed(input: { organizationId: string; users: User[]; notes: Note[] }) {
       this.organization = { id: input.organizationId, name: 'Mycelium Capital', domain: 'example.test' };
@@ -1923,6 +2274,8 @@ export function createMemoryWorkspaceRepository() {
       this.noteDrafts = [];
       this.audioImportJobs = [];
       this.transcriptChunks = [];
+      this.externalEvidenceItems = [];
+      this.externalEvents = [];
       this.invites = [];
     }
 
@@ -2020,6 +2373,21 @@ export function createMemoryWorkspaceRepository() {
         ...chunks
       ];
     }
+    async listExternalEvidenceItems(orgId: string) {
+      return this.externalEvidenceItems.filter(item => item.orgId === orgId);
+    }
+    async insertExternalEvidenceItem(item: WorkspaceExternalEvidenceItem) {
+      this.externalEvidenceItems.unshift(item);
+    }
+    async listExternalEvents(orgId: string) {
+      return this.externalEvents.filter(event => event.orgId === orgId);
+    }
+    async replaceExternalEventsForItem(orgId: string, evidenceItemId: string, events: WorkspaceExternalEvent[]) {
+      this.externalEvents = [
+        ...this.externalEvents.filter(event => event.orgId !== orgId || event.evidenceItemId !== evidenceItemId),
+        ...events
+      ];
+    }
     async addAuditEvent(event: AuditEvent) {
       this.auditEvents.unshift(event);
     }
@@ -2031,18 +2399,29 @@ export function createMemoryWorkspaceRepository() {
   return new MemoryWorkspaceRepository();
 }
 
-function mergeClaim(orgId: string, note: WorkspaceNote, claim: Claim, existing: WorkspaceClaim | undefined, asOf: string): WorkspaceClaim {
+function mergeClaim(
+  orgId: string,
+  note: WorkspaceNote,
+  claim: Claim,
+  existing: WorkspaceClaim | undefined,
+  asOf: string,
+  transcriptChunks: TranscriptChunkRecord[] = []
+): WorkspaceClaim {
   const preserved = Boolean(existing && existing.reviewStatus !== 'machine');
   const base = preserved && existing ? existing : claim;
   const metadata = preserved && existing
     ? metadataForExistingClaim(existing)
     : metadataForMaterializedClaim(note, claim);
+  const transcriptCitations = preserved && existing
+    ? existing.transcriptCitations
+    : transcriptCitationsForClaim(claim, transcriptChunks);
   return {
     ...claim,
     orgId,
     authorName: note.authorName,
     teamId: note.teamId,
     accessScope: note.accessScope,
+    transcriptCitations,
     text: base.text,
     subject: base.subject,
     direction: base.direction,

@@ -473,6 +473,72 @@ test('BFF note creation with audioImportJobId links transcript chunks to the sav
   assert.equal(appliedJob.json().job.noteId, note.id);
 });
 
+test('BFF exposes permission-filtered external evidence routes', async () => {
+  const { app } = buildTestApp();
+
+  const unauthorized = await app.inject({ method: 'GET', url: '/api/external-evidence' });
+  assert.equal(unauthorized.statusCode, 401);
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/external-evidence',
+    headers: { authorization: 'Bearer u1' },
+    payload: {
+      sourceKind: 'press_release',
+      title: 'Nvidia Blackwell update',
+      summary: 'Nvidia says Blackwell demand remains strong; full licensed text is not stored.',
+      sourceUrl: 'https://example.test/press/nvidia-blackwell',
+      sourceId: 'press:nvda-blackwell',
+      provider: 'Company IR',
+      publishedAt: '2026-05-12',
+      accessScope: 'personal',
+      licenseMetadata: { fullTextStored: false },
+      events: [{
+        subject: 'Nvidia',
+        text: 'Nvidia Blackwell demand remains strong.',
+        direction: 'positive',
+        evidence: 'Blackwell demand remains strong.',
+        confidence: 0.84,
+        observedAt: '2026-05-12'
+      }]
+    }
+  });
+  assert.equal(created.statusCode, 200);
+  assert.equal(created.json().item.sourceKind, 'press_release');
+  assert.equal(created.json().events.length, 1);
+  assert.equal(created.json().events[0].subject, 'Nvidia');
+
+  const analystList = await app.inject({
+    method: 'GET',
+    url: '/api/external-evidence',
+    headers: { authorization: 'Bearer u1' }
+  });
+  assert.equal(analystList.statusCode, 200);
+  assert(analystList.json().evidenceItems.some((item: { id: string }) => item.id === created.json().item.id));
+
+  const otherUserList = await app.inject({
+    method: 'GET',
+    url: '/api/external-evidence',
+    headers: { authorization: 'Bearer u2' }
+  });
+  assert.equal(otherUserList.statusCode, 200);
+  assert(!otherUserList.json().evidenceItems.some((item: { id: string }) => item.id === created.json().item.id));
+
+  const invalid = await app.inject({
+    method: 'POST',
+    url: '/api/external-evidence',
+    headers: { authorization: 'Bearer u1' },
+    payload: {
+      sourceKind: 'blog',
+      title: 'Invalid source kind',
+      publishedAt: '2026-05-12',
+      events: []
+    }
+  });
+  assert.equal(invalid.statusCode, 400);
+  assert.match(invalid.json().error, /source kind/i);
+});
+
 test('BFF updates notes, exposes history, and reloads persisted review state', async () => {
   const { app } = buildTestApp();
 

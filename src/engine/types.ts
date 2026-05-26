@@ -12,6 +12,18 @@ export type Freshness = 'fresh' | 'aging' | 'stale';
 export type RelationType = 'contradiction' | 'update_or_trend_reversal' | 'historical_tension' | 'open_tension' | 'corroboration' | 'agreement' | 'stale_evidence';
 export type SourcePersonContext = 'same_source_person' | 'different_source_people' | 'unknown';
 export type ClaimWindowStatus = 'future' | 'active' | 'expired';
+export type ExternalSourceKind = 'news' | 'filing' | 'press_release' | 'transcript' | 'other';
+
+export interface TranscriptCitation {
+  chunkId: string;
+  importJobId: string;
+  chunkIndex: number;
+  startMs?: number;
+  endMs?: number;
+  speaker?: string;
+  text: string;
+  confidence?: number;
+}
 
 export interface TeamMembership {
   teamId: string;
@@ -90,6 +102,52 @@ export interface Claim {
   accessScope?: AccessScope;
   team?: string;
   teamId?: string;
+  transcriptCitations?: TranscriptCitation[];
+}
+
+export interface ExternalEvidenceItem {
+  id: string;
+  title: string;
+  summary: string;
+  sourceKind: ExternalSourceKind;
+  sourceUrl?: string;
+  sourceId?: string;
+  provider?: string;
+  publishedAt: string;
+  observedAt: string;
+  authorId: string;
+  visibility: Visibility;
+  accessScope: AccessScope;
+  team?: string;
+  teamId?: string;
+  linkedEntities?: LinkedEntity[];
+  tickers?: string[];
+  industries?: string[];
+  companyTags?: string[];
+  kpis?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
+  licenseMetadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExternalEvent {
+  id: string;
+  evidenceItemId: string;
+  subject: string;
+  text: string;
+  direction: Direction;
+  evidence: string;
+  confidence: number;
+  observedAt: string;
+  linkedEntities?: LinkedEntity[];
+  tickers?: string[];
+  industries?: string[];
+  companyTags?: string[];
+  kpis?: string[];
+  watchlistTags?: string[];
+  sourcePeople?: string[];
 }
 
 export interface Relation {

@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ClaimExtractionProvider, Note, User } from '../src/engine';
 import {
+  createConfiguredAudioTranscriptionProvider,
   createMemoryWorkspaceRepository,
+  createHttpAudioTranscriptionProvider,
   createWorkspaceService,
   type AudioTranscriptionProvider,
   type ClaimReviewStatus,
@@ -180,6 +182,100 @@ test('audio import job fails clearly when provider returns no transcript content
   assert.equal(repository.transcriptChunks.length, 0);
 });
 
+test('configured HTTP audio transcription provider posts audio without durable raw storage', async () => {
+  const calls: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }> = [];
+  const provider = createHttpAudioTranscriptionProvider({
+    name: 'http-fixture',
+    endpointUrl: 'https://transcription.example.test/v1/jobs',
+    apiKey: 'secret-key'
+  }, async (url, init) => {
+    calls.push({
+      url: String(url),
+      headers: init?.headers as Record<string, string>,
+      body: JSON.parse(String(init?.body))
+    });
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          text: 'Nvidia demand is strong from a configured provider.',
+          chunks: [{
+            chunkIndex: 0,
+            startMs: 250,
+            endMs: 1250,
+            speaker: 'Dana Lee',
+            text: 'Nvidia demand is strong from a configured provider.',
+            confidence: 0.94
+          }]
+        };
+      },
+      async text() {
+        return '';
+      }
+    } as Response;
+  });
+
+  const output = await provider.transcribe({
+    fileName: 'configured.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1, 2, 3]),
+    orgId: 'org1',
+    userId: 'u1',
+    userName: 'Maya Chen',
+    visibility: 'team',
+    accessScope: 'team',
+    teamId: 'team-semis',
+    teamName: 'Semis',
+    language: 'en'
+  });
+
+  assert.equal(provider.name, 'http-fixture');
+  assert.deepEqual(output.chunks?.map(chunk => [chunk.speaker, chunk.startMs, chunk.endMs, chunk.confidence]), [
+    ['Dana Lee', 250, 1250, 0.94]
+  ]);
+  assert.equal(calls[0].url, 'https://transcription.example.test/v1/jobs');
+  assert.equal(calls[0].headers.authorization, 'Bearer secret-key');
+  assert.equal(calls[0].body.fileName, 'configured.wav');
+  assert.equal(calls[0].body.bytesBase64, 'AQID');
+  assert.equal(Object.prototype.hasOwnProperty.call(calls[0].body, 'rawStoragePath'), false);
+  for (const internalKey of ['selectedNoteId', 'orgId', 'userId', 'accessScope', 'teamId']) {
+    assert.equal(Object.prototype.hasOwnProperty.call(calls[0].body, internalKey), false, `${internalKey} should not leave Mycelium`);
+  }
+});
+
+test('configured audio transcription provider is opt-in through env', async () => {
+  const provider = createConfiguredAudioTranscriptionProvider({
+    MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER: 'http',
+    MYCELIUM_AUDIO_TRANSCRIPTION_ENDPOINT: 'https://transcription.example.test/v1/jobs',
+    MYCELIUM_AUDIO_TRANSCRIPTION_API_KEY: 'secret-key',
+    MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER_NAME: 'pilot-transcriber'
+  }, async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { text: 'Nvidia demand is strong.' };
+    },
+    async text() {
+      return '';
+    }
+  } as Response));
+
+  assert.equal(provider.name, 'pilot-transcriber');
+  const output = await provider.transcribe({
+    fileName: 'pilot.wav',
+    contentType: 'audio/wav',
+    bytes: new Uint8Array([1]),
+    orgId: 'org1',
+    userId: 'u1',
+    userName: 'Maya Chen',
+    visibility: 'personal',
+    accessScope: 'personal'
+  });
+  assert.equal(output.text, 'Nvidia demand is strong.');
+  assert.equal(createConfiguredAudioTranscriptionProvider({}, async () => { throw new Error('unused'); }).name, 'not-configured');
+});
+
 test('applying a ready audio import job to note creation links chunks, audits, and materializes graph', async () => {
   const provider: AudioTranscriptionProvider = {
     name: 'deterministic-test',
@@ -221,7 +317,20 @@ test('applying a ready audio import job to note creation links chunks, audits, a
     [note.id, 0, 'Dana', 'Nvidia Blackwell demand is strong into Q3.', 0.92],
     [note.id, 1, 'Dana', 'GPU supply is tight.', undefined]
   ]);
-  assert(snapshot.claims.some(claim => claim.noteId === note.id && claim.text.includes('Blackwell demand')));
+  const transcriptClaim = snapshot.claims.find(claim => claim.noteId === note.id && claim.text.includes('Blackwell demand'));
+  assert(transcriptClaim);
+  assert.deepEqual(transcriptClaim.transcriptCitations?.map(citation => [
+    citation.chunkId,
+    citation.importJobId,
+    citation.chunkIndex,
+    citation.speaker,
+    citation.startMs,
+    citation.endMs,
+    citation.text
+  ]), [
+    [chunks[0].id, job.id, 0, 'Dana', 0, 2200, 'Nvidia Blackwell demand is strong into Q3.'],
+    [chunks[1].id, job.id, 1, 'Dana', 2200, 4100, 'GPU supply is tight.']
+  ]);
   assert(repository.auditEvents.some(event => event.action === 'audio_import_job.created'));
   assert(repository.auditEvents.some(event => event.action === 'audio_import_job.applied' && event.entityId === job.id));
   assert(repository.auditEvents.some(event => event.action === 'graph.materialized'));
@@ -407,6 +516,77 @@ test('pasted transcript imports use existing note scopes for permission-safe gra
   assert(pmAfterSharedImports.visibleNotes.some(note => note.title === 'team transcript import' && note.accessScope === 'team'));
   assert(pmAfterSharedImports.visibleNotes.some(note => note.title === 'org transcript import' && note.accessScope === 'organization'));
   assert(pmAfterSharedImports.claims.some(claim => claim.sourcePeople.includes('Dana Lee')));
+});
+
+test('external evidence items and events are permission filtered, audited, and exportable', async () => {
+  const source = buildService();
+
+  const created = await source.service.createExternalEvidenceItem('u1', {
+    sourceKind: 'news',
+    title: 'Nvidia supplier checks improve',
+    summary: 'Supplier checks point to improving Blackwell demand without storing the full article body.',
+    sourceUrl: 'https://example.test/nvidia-supplier-checks',
+    sourceId: 'provider:nvda-2026-05-10',
+    provider: 'Example News',
+    publishedAt: '2026-05-10',
+    observedAt: '2026-05-10',
+    accessScope: 'team',
+    teamId: 'team-semis',
+    licenseMetadata: { snippetAllowed: true, fullTextStored: false },
+    linkedEntities: [
+      { type: 'security', role: 'security', key: 'nvda', name: 'NVDA', externalIds: { ticker: 'NVDA' } },
+      { type: 'kpi', role: 'kpi', key: 'demand', name: 'Demand' }
+    ],
+    events: [{
+      subject: 'Nvidia',
+      text: 'Nvidia Blackwell demand improved according to supplier checks.',
+      direction: 'positive',
+      evidence: 'Supplier checks point to improving Blackwell demand.',
+      confidence: 0.82,
+      observedAt: '2026-05-10'
+    }]
+  });
+  const hidden = await source.service.createExternalEvidenceItem('u2', {
+    sourceKind: 'filing',
+    title: 'Private Apple filing note',
+    summary: 'Private external evidence summary.',
+    publishedAt: '2026-05-11',
+    accessScope: 'personal',
+    events: [{
+      subject: 'Apple',
+      text: 'Apple services revenue improved.',
+      direction: 'positive',
+      evidence: 'Services revenue improved.',
+      confidence: 0.76,
+      observedAt: '2026-05-11'
+    }]
+  });
+
+  const analystEvidence = await source.service.listExternalEvidence('u1');
+  assert.deepEqual(analystEvidence.evidenceItems.map(item => item.id), [created.id]);
+  assert.deepEqual(analystEvidence.events.map(event => [event.evidenceItemId, event.subject, event.tickers]), [
+    [created.id, 'Nvidia', ['NVDA']]
+  ]);
+  assert.equal(analystEvidence.evidenceItems[0].licenseMetadata.fullTextStored, false);
+
+  const pmEvidence = await source.service.listExternalEvidence('u3');
+  assert(pmEvidence.evidenceItems.some(item => item.id === created.id));
+  assert(!pmEvidence.evidenceItems.some(item => item.id === hidden.id));
+  assert(source.repository.auditEvents.some(event => event.action === 'external_evidence.created' && event.entityId === created.id));
+
+  const exported = await source.service.exportWorkspace('u1');
+  assert(exported.externalEvidenceItems?.some(item => item.id === created.id));
+  assert(!exported.externalEvidenceItems?.some(item => item.id === hidden.id));
+  assert(exported.externalEvents?.some(event => event.evidenceItemId === created.id));
+
+  const targetRepository = createMemoryWorkspaceRepository();
+  targetRepository.seed({ organizationId: 'org2', users, notes: [] });
+  const targetService = createWorkspaceService(targetRepository);
+  await targetService.importWorkspace('u1', exported satisfies WorkspaceExport);
+
+  const restored = await targetService.listExternalEvidence('u1');
+  assert(restored.evidenceItems.some(item => item.id === created.id && item.orgId === 'org2'));
+  assert(restored.events.some(event => event.evidenceItemId === created.id && event.orgId === 'org2'));
 });
 
 test('organization admins manage teams, invites, memberships, and deactivation without research visibility escalation', async () => {
