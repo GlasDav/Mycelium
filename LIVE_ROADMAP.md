@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-26_
+_Last updated: 2026-05-30_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -28,6 +28,10 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - active map filter chips, polished current/historical lanes, and selected-relation density pinning,
   - relation review controls in the detail drawer,
   - imported premium CSS partial with focus-visible and responsive layout coverage.
+- [x] Comprehensive premium UI finishing pass completed:
+  - note capture/editor/metadata/import surfaces tightened into a cohesive workstation,
+  - sidebar filters, note cards, live extraction, current-note intelligence, dashboard, map, archive, admin, context header, command palette, toasts, and empty states all share the same visual system,
+  - desktop/tablet/mobile browser QA covered overflow, clipping, console errors, and primary workflow smoke.
 - [x] Notes-only collapsible all-notes sidebar with collapsible search/filter controls, non-stretching dense one-line title/date rows, click-to-load note behavior, and search, sort, date, stock/ticker, theme, KPI, access scope/location, and team filters.
 - [x] Explicit blank-note action in the note workbench; sample prompt buttons removed.
 - [x] Titled display-mode markdown note editor with formatting toolbar, slash-command palette, keyboard shortcuts, undo/redo controls, and markdown archive display.
@@ -51,7 +55,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 208 default tests.
+- [x] Validation passing: build + 259 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,

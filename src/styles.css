@@ -8,10 +8,16 @@
   --paper: #f7f7f4;
   --surface: #ffffff;
   --surface-soft: #f0f3f1;
+  --surface-wash: rgb(251, 251, 248);
+  --surface-muted: rgb(245, 244, 240);
+  --surface-map: rgb(238, 244, 242);
   --line: #dbe1de;
   --line-strong: #c8d0cc;
   --rail: #101817;
   --rail-soft: #172321;
+  --rail-ink: rgb(232, 241, 236);
+  --rail-muted: rgb(154, 168, 163);
+  --rail-accent: rgb(233, 255, 239);
   --accent: #0f766e;
   --accent-soft: #dff4ee;
   --blue: #3f6fb5;
@@ -36,7 +42,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  background: linear-gradient(135deg, #edf4f1 0%, #f6f3f7 48%, #e7eef7 100%);
+  background: var(--app-bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -81,7 +87,7 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: var(--rail);
-  color: #e8f1ec;
+  color: var(--rail-ink);
   box-shadow: var(--shadow);
 }
 
@@ -93,7 +99,7 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background: var(--rail-soft);
-  color: #e9ffef;
+  color: var(--rail-accent);
 }
 
 .mark span {
@@ -115,7 +121,7 @@ button {
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: #9aa8a3;
+  color: var(--rail-muted);
   transition: 0.16s ease;
 }
 
@@ -136,7 +142,7 @@ button {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #9aa8a3;
+  color: var(--rail-muted);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0;
@@ -230,7 +236,7 @@ button {
   min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--muted);
   padding: 6px 8px;
   font-size: 12px;
@@ -274,7 +280,7 @@ button {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 8px 9px;
   outline: none;
@@ -316,7 +322,7 @@ button {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 5px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 1px 5px;
   text-align: left;
@@ -456,7 +462,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text);
+  color: var(--ink);
   font-size: 12px;
 }
 
@@ -471,7 +477,7 @@ button {
 .admin-member-controls span {
   color: var(--muted);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -483,8 +489,8 @@ button {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
+  background: var(--surface);
+  color: var(--ink);
   padding: 10px 11px;
   font: inherit;
 }
@@ -749,6 +755,7 @@ textarea:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -827,7 +834,7 @@ textarea {
   resize: vertical;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 18px;
   line-height: 1.58;
@@ -842,7 +849,7 @@ textarea {
   min-height: 420px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   overflow: hidden;
 }
 
@@ -886,7 +893,7 @@ textarea {
   min-height: 378px;
   border: 0;
   border-radius: 0;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   box-shadow: none;
 }
 
@@ -1023,7 +1030,7 @@ textarea {
   overflow: auto;
   border-radius: 8px;
   background: var(--rail);
-  color: #e8f1ec;
+  color: var(--rail-ink);
   padding: 12px;
 }
 
@@ -1053,6 +1060,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   gap: 10px;
+  min-height: 38px;
   border: 0;
   border-radius: 8px;
   background: var(--rail);
@@ -1060,6 +1068,7 @@ textarea::placeholder {
   padding: 0 16px;
   font-size: 13px;
   font-weight: 760;
+  white-space: nowrap;
 }
 
 .capture-actions button span {
@@ -1069,6 +1078,7 @@ textarea::placeholder {
   color: #b8c5c1;
   font-size: 12px;
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .capture-actions button:disabled {
@@ -1128,6 +1138,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   gap: 5px;
+  min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1135,11 +1146,16 @@ textarea::placeholder {
   padding: 8px;
 }
 
+.metadata-chip-entry button {
+  min-width: 32px;
+}
+
 .metadata-chip-list {
   flex-wrap: wrap;
 }
 
 .metadata-chip-list button {
+  min-height: 28px;
   padding: 6px 8px;
   font-size: 11px;
   font-weight: 700;
@@ -1373,6 +1389,7 @@ textarea::placeholder {
 
 .dashboard-scope-toggle button,
 .dashboard-range-toggle button {
+  min-height: 30px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -1380,6 +1397,7 @@ textarea::placeholder {
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 760;
+  white-space: nowrap;
 }
 
 .dashboard-scope-toggle button.active,
@@ -1664,6 +1682,11 @@ textarea::placeholder {
   display: block;
 }
 
+body .workspace.archive-workspace {
+  max-width: 1180px;
+  margin-inline: 0;
+}
+
 .subject-rail,
 .right-stack {
   position: sticky;
@@ -1677,7 +1700,7 @@ textarea::placeholder {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 11px;
   text-align: left;
@@ -1811,7 +1834,7 @@ textarea::placeholder {
   border: 1px solid var(--line);
   border-left: 4px solid var(--quiet);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   padding: 12px 100px 12px 12px;
 }
 
@@ -1891,7 +1914,7 @@ textarea::placeholder {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 10px;
   text-align: left;
@@ -1921,7 +1944,7 @@ textarea::placeholder {
   margin: 0 0 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 11px;
   text-align: left;
@@ -1997,7 +2020,9 @@ textarea::placeholder {
 .empty-actions button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -2005,6 +2030,7 @@ textarea::placeholder {
   padding: 7px 9px;
   font-size: 12px;
   font-weight: 760;
+  white-space: nowrap;
 }
 
 .empty-actions button:hover,
@@ -2062,7 +2088,7 @@ textarea::placeholder {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 10px;
   text-align: left;
@@ -2110,7 +2136,7 @@ textarea::placeholder {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
 }
 
 .timeline-control label {
@@ -2229,7 +2255,7 @@ textarea::placeholder {
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
 }
 
 .map-density-control small {
@@ -2305,7 +2331,7 @@ textarea::placeholder {
   margin: 4px 0 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: linear-gradient(135deg, #fbfbf8, #eef4f2);
+  background: linear-gradient(135deg, var(--surface-wash), var(--surface-map));
 }
 
 .node {
@@ -2425,7 +2451,7 @@ textarea::placeholder {
   gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f5f4f0;
+  background: var(--surface-muted);
   padding: 10px;
 }
 
@@ -2471,7 +2497,7 @@ textarea::placeholder {
 .relation-list article {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   padding: 11px;
 }
 
@@ -2571,7 +2597,7 @@ textarea::placeholder {
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .relation-detail-drawer {
@@ -2580,7 +2606,7 @@ textarea::placeholder {
   margin-top: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   padding: 13px;
 }
 
@@ -2601,7 +2627,7 @@ textarea::placeholder {
   padding: 8px;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 .relation-detail-grid b {
@@ -2745,7 +2771,7 @@ textarea::placeholder {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbf8;
+  background: var(--surface-wash);
   color: var(--ink);
   padding: 10px;
   text-align: left;
@@ -2989,7 +3015,7 @@ textarea::placeholder {
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .auth-grid input,
@@ -3005,8 +3031,8 @@ textarea::placeholder {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
+  background: var(--surface);
+  color: var(--ink);
   padding: 10px 11px;
   font: inherit;
 }
@@ -3034,25 +3060,23 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   gap: 7px;
+  min-height: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
+  background: var(--surface);
+  color: var(--ink);
   padding: 9px 12px;
   font: inherit;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .auth-actions button:first-child,
 .review-actions button:first-child {
   background: var(--accent);
   border-color: transparent;
-  color: #12140f;
+  color: #ffffff;
   font-weight: 700;
-}
-
-.ghost-action {
-  white-space: nowrap;
 }
 
 .inline-error,
@@ -3064,15 +3088,15 @@ textarea::placeholder {
 }
 
 .inline-error {
-  border: 1px solid rgba(255, 98, 98, 0.4);
-  background: rgba(255, 98, 98, 0.1);
-  color: #ffb7b7;
+  border: 1px solid rgba(189, 75, 69, 0.28);
+  background: var(--rose-soft);
+  color: var(--rose);
 }
 
 .inline-success {
-  border: 1px solid rgba(169, 255, 94, 0.35);
-  background: rgba(169, 255, 94, 0.1);
-  color: #d8ffc2;
+  border: 1px solid rgba(47, 143, 100, 0.28);
+  background: var(--sage-soft);
+  color: var(--sage);
 }
 
 .claim-editor {

@@ -1,6 +1,6 @@
 # Mycelium — Agent Context
 
-_Last updated: 2026-05-26_
+_Last updated: 2026-05-30_
 
 This is the live orientation file for agents working on Mycelium. Read this before changing product, UX, engine, roadmap, or docs.
 
@@ -20,7 +20,7 @@ The repo contains a production-shaped MVP foundation:
 - Server-side graph materialization for notes, claims, relations, deterministic extraction confidence, relation evidence strength, normalized research entities, note/claim entity links, source-person summaries, note drafts, note revision history, audit events, extraction jobs, audio import jobs, transcript chunks, transcript claim citations, and permission-scoped external evidence items/events.
 - Deterministic local ontology v1 for core demo issuers/securities, ticker aliases, issuer aliases, industry/sector hierarchy, and default watchlist membership; no external security-master provider required.
 - Minimal note-taking-first research workspace UI with auth, observed-date/location controls for Personal, Team, and Organisation notes, team selection for active memberships, normalized stock/security, industry/sector, theme, KPI, watchlist, and participant metadata token controls, Notes-only pasted meeting-note/transcript import plus TXT/Markdown/DOCX/PDF/VTT/SRT file content import with parser preview, timestamped transcript chunk preview, consent-gated audio transcription import through an injectable provider seam, titled display-mode markdown note editing with toolbar shortcuts, slash-command formatting palette, undo/redo controls, explicit blank-note action, selected-note explicit save, server-backed draft recovery, read-only note history drawer, richer action-backed empty states, left-rail page navigation for notes/dashboard/map/archive/admin, full-width rendered archive display, Notes-only collapsible all-notes sidebar, collapsible sidebar filters, non-stretching dense one-line note rows, live extraction side panel with addable suggestions, current-note claim/relation review, scoped research dashboard with workspace/team/org toggles and 30-day/90-day/all-time ranges, organization admin lifecycle controls, relationship detail drawer, source-person dashboard coverage, server-backed map as-of timeline, current/historical map lanes, map author/team/metadata filters, map density controls with explicit overflow counts, and responsive mobile layout. Source type is not user-facing note metadata; imported notes use lightweight create-only source provenance, and claim applies-to windows and horizon are inferred during extraction and reviewed at the claim layer.
-- Premium institutional workstation pass layered on the note-first UI: persistent page-aware context header, save/draft/read-only status, compact status toasts, `Ctrl+K` command palette with keyboard selection, focus mode for capture, ontology-backed metadata token suggestions, actionable dashboard drilldowns, active map filter chips, selected-relation density pinning, and relation review controls in the detail drawer.
+- Premium institutional workstation pass layered on the note-first UI: persistent page-aware context header, save/draft/read-only status, compact status toasts, `Ctrl+K` command palette with keyboard selection, focus mode for capture, ontology-backed metadata token suggestions, tactile note/editor/metadata/import controls, actionable dashboard drilldowns, active map filter chips, selected-relation density pinning, relation review controls in the detail drawer, polished archive/admin/empty states, and responsive visual QA coverage.
 - API-level workspace JSON export/import for demo restore through authenticated BFF routes, including dismissed relation review decisions.
 - Tests covering extraction, async extraction-provider fallback, confidence scoring, ontology canonicalization, direct temporal helper behavior, table-driven temporal eval fixtures, historical as-of workspace snapshots, schema/RLS contract plus opt-in live RLS smoke coverage, normalized entity links, BFF routing including scoped dashboard aggregates, audio import routes, and external evidence routes, workspace as-of queries, and import-shaped note creation, permissions, temporal contradiction logic, trend reversals, stale evidence, source-person relation context and memory summaries, review decisions and review notes, note editing, server drafts, note revision history, export/import restore including dismissed relations, applied transcript chunks, and external evidence, relation filtering, relation detail UI contracts, map timeline/lane/density/layout UI contracts, note metadata persistence, pasted/TXT/Markdown/DOCX/PDF/VTT/SRT note import parsing, audio transcription normalization/UI contracts, note sidebar filtering helpers, empty-state copy/actions, sidebar layout density, page navigation, dashboard layout, archive width, and markdown toolbar/slash-command formatting helpers.
 
@@ -233,11 +233,11 @@ Design principles:
 
 ## Current Validation Status
 
-As of 2026-05-26:
+As of 2026-05-30:
 
 - `npm run validate` passes.
 - Build passes.
-- 214/214 default tests pass; the opt-in live Supabase RLS test skips when Docker/local Supabase is unavailable.
+- 259/259 default tests pass; the opt-in live Supabase RLS test skips when Docker/local Supabase is unavailable.
 - Supabase CLI is installed through npm scripts. Live local Supabase verification requires Docker Desktop to be running.
 
 ## Known MVP Tradeoffs
