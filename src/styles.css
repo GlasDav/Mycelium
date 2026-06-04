@@ -505,6 +505,22 @@ button {
   font-size: 12px;
 }
 
+.archive-note-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.archive-note-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -751,7 +767,9 @@ textarea:focus {
 
 .new-note-action,
 .history-note-action,
-.note-import-action {
+.note-import-action,
+.note-copy-action,
+.note-export-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -768,7 +786,9 @@ textarea:focus {
 
 .new-note-action:hover,
 .history-note-action:hover,
-.note-import-action:hover {
+.note-import-action:hover,
+.note-copy-action:hover,
+.note-export-action:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }

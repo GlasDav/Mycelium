@@ -110,8 +110,8 @@ test('note import panel does not shift the workbench editor row or button stylin
 
   assert(primaryMatch?.groups?.body, 'primary-note rule is missing');
   assert.doesNotMatch(primaryMatch.groups.body, /minmax\(360px,\s*1fr\)/);
-  assert.match(css, /\.new-note-action,\s*\.history-note-action,\s*\.note-import-action\s*\{/);
-  assert.match(css, /\.new-note-action:hover,\s*\.history-note-action:hover,\s*\.note-import-action:hover\s*\{/);
+  assert.match(css, /\.new-note-action,\s*\.history-note-action,\s*\.note-import-action,\s*\.note-copy-action,\s*\.note-export-action\s*\{/);
+  assert.match(css, /\.new-note-action:hover,\s*\.history-note-action:hover,\s*\.note-import-action:hover,\s*\.note-copy-action:hover,\s*\.note-export-action:hover\s*\{/);
 });
 
 test('sidebar note rows stay one line and vertically dense', () => {
@@ -472,7 +472,8 @@ test('compact action controls keep stable dimensions across labels and icons', (
   assert.match(css, /\.metadata-chip-entry button,\s*\.metadata-chip-list button\s*\{[^}]*min-height:\s*32px/s);
   assert.match(css, /\.metadata-chip-entry button\s*\{[^}]*min-width:\s*32px/s);
   assert.match(css, /\.metadata-chip-list button\s*\{[^}]*min-height:\s*28px/s);
-  assert.match(css, /\.new-note-action,\s*\.history-note-action,\s*\.note-import-action\s*\{[^}]*min-height:\s*34px/s);
+  assert.match(css, /\.new-note-action,\s*\.history-note-action,\s*\.note-import-action,\s*\.note-copy-action,\s*\.note-export-action\s*\{[^}]*min-height:\s*34px/s);
+  assert.match(css, /\.archive-note-actions\s*\{[^}]*display:\s*inline-flex/s);
   assert.match(css, /\.context-header-meta button,\s*\.command-trigger\s*\{[^}]*min-width:\s*34px/s);
 });
 

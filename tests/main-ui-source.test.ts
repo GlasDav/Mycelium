@@ -275,6 +275,44 @@ test('audio transcription import stays preview-first and saves through the workb
   assert.match(source.slice(saveExistingStart, saveExistingEnd), /audioImportJobId: workbenchAudioImportJobId \|\| undefined/);
 });
 
+test('note copy and export actions use portable markdown without server routes', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
+  const appReturnStart = source.indexOf('return <main');
+  const archiveStart = source.indexOf('function ArchivePage');
+  const archiveEnd = source.indexOf('function NotesSidebar', archiveStart);
+  const copyStart = source.indexOf('async function copyNoteToClipboard');
+  const copyEnd = source.indexOf('function exportNoteAsMarkdown', copyStart);
+  const exportStart = source.indexOf('function exportNoteAsMarkdown');
+  const exportEnd = source.indexOf('async function signOut', exportStart);
+  assert(appReturnStart >= 0, 'App return source is missing');
+  assert(archiveStart >= 0 && archiveEnd > archiveStart, 'Archive page source is missing');
+  assert(copyStart >= 0 && copyEnd > copyStart, 'Copy helper source is missing');
+  assert(exportStart >= 0 && exportEnd > exportStart, 'Export helper source is missing');
+
+  const appReturn = source.slice(appReturnStart);
+  const archiveSource = source.slice(archiveStart, archiveEnd);
+  const copySource = source.slice(copyStart, copyEnd);
+  const exportSource = source.slice(exportStart, exportEnd);
+
+  assert.match(source, /Copy,\s*Download/);
+  assert.match(source, /formatNoteCopyMarkdown/);
+  assert.match(source, /formatNoteExportMarkdown/);
+  assert.match(source, /safeMarkdownFilename/);
+  assert.match(appReturn, /className="note-copy-action"/);
+  assert.match(appReturn, /className="note-export-action"/);
+  assert.match(archiveSource, /onCopyNote/);
+  assert.match(archiveSource, /onExportNote/);
+  assert.match(archiveSource, /className="archive-note-actions"/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
+  assert.match(source, /document\.execCommand\('copy'\)/);
+  assert.match(copySource, /formatNoteCopyMarkdown\(note\)/);
+  assert.match(exportSource, /new Blob/);
+  assert.match(exportSource, /URL\.createObjectURL/);
+  assert.match(exportSource, /download = safeMarkdownFilename\(note\.title\)/);
+  assert.match(exportSource, /formatNoteExportMarkdown\(note\)/);
+  assert.doesNotMatch(exportSource, /fetch\(/);
+});
+
 test('imported source type is saved only through new-note creation', () => {
   const source = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8');
   const draftEffectStart = source.indexOf('const draftInput: FrontendDraftPayload');
@@ -306,6 +344,9 @@ test('imported source type is saved only through new-note creation', () => {
   assert.match(source.slice(restoreStart, restoreEnd), /setNoteSourceType\(DEFAULT_NOTE_SOURCE_TYPE\)/);
   assert.match(source.slice(newNoteStart, newNoteEnd), /setNoteSourceType\(DEFAULT_NOTE_SOURCE_TYPE\)/);
   assert.match(source.slice(selectStart, selectEnd), /setNoteSourceType\(DEFAULT_NOTE_SOURCE_TYPE\)/);
+  assert.match(source.slice(selectStart, selectEnd), /setAccessScope\(note\.accessScope/);
+  assert.match(source, /if \(imported\.accessScope === 'personal' \|\| imported\.accessScope === 'organization'\)/);
+  assert.match(source, /if \(imported\.accessScope === 'team' && activeTeamMemberships\.length\)/);
 });
 
 test('note workbench supports explicit saved-note editing and server draft recovery', () => {

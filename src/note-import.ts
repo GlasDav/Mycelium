@@ -7,6 +7,7 @@ import {
 } from './entity-links';
 import { detectEntities } from './engine/entity-extraction';
 import { companyLexicon, kpiWords, themeLexicon } from './engine/lexicon';
+import type { AccessScope } from './engine/types';
 
 export interface NoteImportParseOptions {
   fallbackTitle?: string;
@@ -34,6 +35,7 @@ export interface ParsedNoteImport extends MetadataArrays {
   title: string;
   body: string;
   observedAt?: string;
+  accessScope?: AccessScope;
   linkedEntities: LinkedEntity[];
   transcriptChunks?: TranscriptChunk[];
   warnings: NoteImportWarning[];

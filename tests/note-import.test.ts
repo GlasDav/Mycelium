@@ -272,11 +272,25 @@ test('text note import uses filename fallback when body has no title', async () 
   assertIncludes(warningCodes(parsed), 'missing_body');
 });
 
-test('markdown note import preserves markdown content', async () => {
-  const parsed = await readNoteImportFile(importFile('Management Meeting.MARKDOWN', '# Nvidia meeting\n\n- Demand remains **strong**.'));
+test('markdown note import uses portable markdown title and frontmatter metadata', async () => {
+  const parsed = await readNoteImportFile(importFile('Management Meeting.MARKDOWN', `---
+title: Nvidia meeting
+observedAt: 2026-05-12
+accessScope: organization
+tickers:
+  - NVDA
+participants:
+  - Dana Lee
+---
 
-  assert.equal(parsed.title, '# Nvidia meeting');
-  assert.equal(parsed.body, '# Nvidia meeting\n- Demand remains **strong**.');
+- Demand remains **strong**.`));
+
+  assert.equal(parsed.title, 'Nvidia meeting');
+  assert.equal(parsed.observedAt, '2026-05-12');
+  assert.equal(parsed.accessScope, 'organization');
+  assert.equal(parsed.body, '- Demand remains **strong**.');
+  assert.deepEqual(parsed.tickers, ['NVDA']);
+  assert.deepEqual(parsed.sourcePeople, ['Dana Lee']);
 });
 
 test('VTT and SRT transcript files are accepted as timestamped transcript fixtures', async () => {

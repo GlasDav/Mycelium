@@ -22,6 +22,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDot,
+  Copy,
+  Download,
   ClipboardPaste,
   Edit3,
   Eye,
@@ -114,6 +116,12 @@ import {
 import { slashMarkdownCommands, type MarkdownCommand, type SlashMarkdownCommand } from './markdown-tools';
 import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
 import { NOTE_IMPORT_FILE_ACCEPT, AUDIO_IMPORT_FILE_ACCEPT, readNoteImportFile, summarizeAudioImportFile } from './note-import-files';
+import {
+  formatNoteCopyMarkdown,
+  formatNoteExportMarkdown,
+  safeMarkdownFilename,
+  type PortableNoteInput
+} from './note-interchange';
 import { normalizeReadyAudioTranscriptionJob } from './audio-transcription';
 import {
   buildMapLaneModel,
@@ -863,6 +871,12 @@ function App() {
     setNoteTitle(imported.title ?? '');
     setDraft(imported.body);
     setObservedAt(imported.observedAt ?? today());
+    if (imported.accessScope === 'personal' || imported.accessScope === 'organization') setAccessScope(imported.accessScope);
+    if (imported.accessScope === 'team' && activeTeamMemberships.length) {
+      const defaultTeam = activeTeamMemberships.find(team => team.teamId === workspace?.viewer.primaryTeamId) ?? activeTeamMemberships[0];
+      setAccessScope('team');
+      setNoteTeamId(defaultTeam.teamId);
+    }
     applyWorkbenchMetadata(metadataFromParsedNoteImport(imported));
     setWorkbenchAudioImportJobId(audioJobId ?? '');
     setNoteHistory([]);
@@ -873,6 +887,28 @@ function App() {
     workbenchBaselineSignatureRef.current = '';
     setDraftRecovered(false);
     setViewMode('notes');
+  }
+
+  async function copyNoteToClipboard(note: PortableNoteInput) {
+    try {
+      await writeClipboardText(formatNoteCopyMarkdown(note));
+      pushToast({ tone: 'success', title: 'Note copied', body: 'Copied the title and body as Markdown.' });
+    } catch (error) {
+      pushToast({ tone: 'error', title: 'Could not copy note', body: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  function exportNoteAsMarkdown(note: PortableNoteInput) {
+    const blob = new Blob([formatNoteExportMarkdown(note)], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = safeMarkdownFilename(note.title);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    pushToast({ tone: 'success', title: 'Note exported', body: `Downloaded ${link.download}.` });
   }
 
   async function signOut() {
@@ -1152,6 +1188,8 @@ function App() {
             <div className="panel-title"><FilePlus2/> Note</div>
             <div className="note-panel-actions">
               {selectedNoteId && <button type="button" className="history-note-action" onClick={openNoteHistory}><History size={14}/>History</button>}
+              <button type="button" className="note-copy-action" onClick={() => void copyNoteToClipboard(previewNote())} disabled={!currentWorkbenchHasContent}><Copy size={14}/>Copy</button>
+              <button type="button" className="note-export-action" onClick={() => exportNoteAsMarkdown(previewNote())} disabled={!currentWorkbenchHasContent}><Download size={14}/>Export</button>
               <button type="button" className="note-import-action" onClick={() => setNoteImportOpen(open => !open)}><ClipboardPaste size={14}/>Import</button>
               <button type="button" className="new-note-action" onClick={startNewNote}><FilePlus2 size={14}/>New note</button>
             </div>
@@ -1350,7 +1388,7 @@ function App() {
         </section>
       </MapPage>}
 
-      {viewMode === 'archive' && <ArchivePage notes={filteredNotes} totalNotes={graph.visibleNotes.length} selectedNoteId={selectedNoteId} hasActiveFilters={activeFilterCount(noteFilters) > 0} onClearFilters={clearNoteFilters} onStartCapture={focusCapture} />}
+      {viewMode === 'archive' && <ArchivePage notes={filteredNotes} totalNotes={graph.visibleNotes.length} selectedNoteId={selectedNoteId} hasActiveFilters={activeFilterCount(noteFilters) > 0} onClearFilters={clearNoteFilters} onStartCapture={focusCapture} onCopyNote={note => void copyNoteToClipboard(note)} onExportNote={exportNoteAsMarkdown} />}
       {viewMode === 'admin' && <AdminPage session={session} snapshot={adminSnapshot} loading={adminLoading} error={adminError} onLoad={refreshAdmin} onError={setAdminError} />}
     </section>
   </main>;
@@ -1682,7 +1720,9 @@ function ArchivePage({
   selectedNoteId,
   hasActiveFilters,
   onClearFilters,
-  onStartCapture
+  onStartCapture,
+  onCopyNote,
+  onExportNote
 }: {
   notes: FrontendWorkspaceNote[];
   totalNotes: number;
@@ -1690,6 +1730,8 @@ function ArchivePage({
   hasActiveFilters: boolean;
   onClearFilters: () => void;
   onStartCapture: () => void;
+  onCopyNote: (note: FrontendWorkspaceNote) => void;
+  onExportNote: (note: FrontendWorkspaceNote) => void;
 }) {
   const emptyState = emptyStateForNotes({ hasWorkspaceNotes: totalNotes > 0, hasActiveFilters });
   return <div className="page-layout archive-layout">
@@ -1698,7 +1740,13 @@ function ArchivePage({
         <div className="panel-title"><LockKeyhole/> Permission-aware note archive</div>
         <p className="archive-count">{notes.length} of {totalNotes} visible notes</p>
         {notes.length ? notes.map(n => <article key={n.id} className={`note-card ${selectedNoteId === n.id ? 'selected' : ''}`}>
-          <div><h3>{n.title}</h3><small>{noteLocationLabel(n)} · {n.createdAt}</small></div>
+          <div className="archive-note-card-head">
+            <div><h3>{n.title}</h3><small>{noteLocationLabel(n)} · {n.createdAt}</small></div>
+            <div className="archive-note-actions">
+              <button type="button" className="note-copy-action" onClick={() => onCopyNote(n)}><Copy size={14}/>Copy</button>
+              <button type="button" className="note-export-action" onClick={() => onExportNote(n)}><Download size={14}/>Export</button>
+            </div>
+          </div>
           <NoteMetadataChips note={n} />
           <MarkdownPreview source={n.body} />
         </article>) : <EmptyState title={emptyState.title} body={emptyState.body} actions={emptyStateActions(emptyState, { capture: onStartCapture, 'clear-filters': onClearFilters })} />}
@@ -2674,6 +2722,24 @@ function hasDraftContent(draft: Partial<FrontendNoteDraft>) {
     || metadata.sourcePeople.length
     || draft.audioImportJobId
   );
+}
+
+async function writeClipboardText(text: string) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('Clipboard copy was blocked by the browser.');
 }
 
 function draftSignature(draft: Partial<FrontendNoteDraft>) {

@@ -1,6 +1,7 @@
 import { parsePastedNoteImport, type ParsedNoteImport } from './note-import';
 import { extractDocxText } from './note-import-docx';
 import { extractPdfText } from './note-import-pdf';
+import { parsePortableMarkdownNote } from './note-interchange';
 
 export interface NoteImportFileLike {
   name: string;
@@ -34,7 +35,10 @@ export async function readNoteImportFile(file: NoteImportFileLike): Promise<Pars
   }
 
   const text = await readFileTextByType(file, extension);
-  return parsePastedNoteImport(text, { fallbackTitle: filenameWithoutExtension(file.name) });
+  const options = { fallbackTitle: filenameWithoutExtension(file.name) };
+  return extension === 'md' || extension === 'markdown'
+    ? parsePortableMarkdownNote(text, options)
+    : parsePastedNoteImport(text, options);
 }
 
 export function summarizeAudioImportFile(file: Pick<NoteImportFileLike, 'name' | 'size'>): AudioImportFileSummary {

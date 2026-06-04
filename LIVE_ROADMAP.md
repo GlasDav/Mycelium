@@ -1,6 +1,6 @@
 # Mycelium — Live Roadmap
 
-_Last updated: 2026-05-30_
+_Last updated: 2026-06-04_
 
 This is the active build roadmap. It reflects the current repo state, not the original long-form product roadmap.
 
@@ -55,7 +55,7 @@ Build the best research memory layer for investment teams: fast capture, trusted
 - [x] Temporal claim graph relation model implemented.
 - [x] Time-aware distinction between true contradictions, trend reversals, tensions, corroboration, and stale evidence.
 - [x] Seed data includes 12-month-apart opposing notes that classify as trend reversal rather than contradiction.
-- [x] Validation passing: build + 259 default tests.
+- [x] Validation passing: build + 265 default tests.
 - [x] Review spine completed:
   - claim review cards persist analyst review notes on save, approve, and reject,
   - relation review cards persist analyst review notes on confirm, dismiss, and reclassify,
@@ -132,6 +132,11 @@ Build the best research memory layer for investment teams: fast capture, trusted
   - Notes-only import panel reads `.docx` and `.pdf` files client-side,
   - DOCX document text and selectable PDF text use the same parser preview and unsaved workbench apply path,
   - scanned/image-only PDF OCR, durable file storage, and backend upload routes remain deferred.
+- [x] Portable Markdown note interop v1 added:
+  - current workbench and archive notes expose Copy and Export actions,
+  - Copy places a readable title-plus-body Markdown note on the clipboard,
+  - Export downloads a single `.md` file with simple frontmatter for observed date, access scope, tickers, themes, KPIs, industries, companies, watchlists, and participants,
+  - Markdown imports parse Mycelium frontmatter and generic leading-H1 titles into the existing unsaved workbench apply path.
 - [x] Transcript/audio foundation added:
   - VTT/SRT/plain transcript timestamps are exposed as typed preview chunks while saved notes remain clean text,
   - the Notes import panel supports consent-gated audio selection for supported audio extensions,
@@ -202,6 +207,7 @@ Expected result:
   - premium context header, command palette, metadata token options, dashboard drilldowns, and imported premium CSS contracts.
   - page-level notes/dashboard/map/archive layout and full-width archive behavior.
   - pasted note/transcript plus TXT/Markdown/DOCX/PDF/VTT/SRT file import parsing, audio transcription normalization/UI contracts, audio import BFF routes, transcript claim citations, and existing note-create/update route contracts.
+  - portable Markdown copy/export and frontmatter import parsing.
   - markdown toolbar/slash-command helpers and sidebar layout/metadata contracts.
   - dashboard route aggregation, guide helper storage/content, and empty-state copy/action contracts.
   - organization admin lifecycle, invite/team/member tests, multi-team access scopes, personal-note graph privacy, transcript chunk export/import contracts, and external evidence schema/service/BFF contracts.
@@ -358,6 +364,7 @@ Goal: reduce friction for actual analysts by capturing research where it already
 - [x] Import pasted meeting notes with templates. **Done for Notes-only pasted note/transcript import v1.**
 - [x] Add transcript/file upload path. **Done for client-side TXT/Markdown/DOCX/PDF/VTT/SRT content import; durable file storage remains deferred.**
 - [x] Parse DOCX/PDF/TXT/Markdown/VTT/SRT. **Done for client-side text extraction and timestamped transcript previews; scanned-PDF OCR remains deferred.**
+- [x] Add single-note portable Markdown copy/export for external notetaking tools. **Done with title/body clipboard copy, frontmatter-backed `.md` export, and frontmatter/leading-H1 Markdown import into the workbench.**
 - [x] Add transcript-only audio transcription capture foundation for expert calls, company meetings, and internal research discussions. **Done with consent-gated multipart upload, injectable provider seam, preview/apply-to-workbench flow, applied transcript chunk persistence, and no durable raw audio storage. The default provider remains not configured.**
 - [x] Add opt-in transcription provider wiring for explicit pilot configuration. **Done as an HTTP adapter controlled by `MYCELIUM_AUDIO_TRANSCRIPTION_PROVIDER=http`; no default vendor is configured.**
 - [ ] Choose and wire a real transcription vendor once compliance, cost, and data-retention requirements are explicit.
